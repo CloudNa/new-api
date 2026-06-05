@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,42 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const eventStreamJSONProbeLimit = 512
+
+type prependReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r prependReadCloser) Close() error {
+	return r.closer.Close()
+}
+
+func normalizeMislabeledEventStreamResponse(info *relaycommon.RelayInfo, resp *http.Response) {
+	if info == nil || resp == nil || resp.Body == nil || info.IsStream {
+		return
+	}
+	if !strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		return
+	}
+
+	prefix := make([]byte, eventStreamJSONProbeLimit)
+	n, _ := resp.Body.Read(prefix)
+	prefix = prefix[:n]
+
+	if len(prefix) > 0 {
+		resp.Body = prependReadCloser{
+			Reader: io.MultiReader(bytes.NewReader(prefix), resp.Body),
+			closer: resp.Body,
+		}
+	}
+
+	trimmed := bytes.TrimLeft(prefix, " \t\r\n")
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+		resp.Header.Set("Content-Type", "application/json")
+	}
+}
 
 func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
@@ -195,6 +232,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	if resp != nil {
 		httpResp = resp.(*http.Response)
+		normalizeMislabeledEventStreamResponse(info, httpResp)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
 			newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
