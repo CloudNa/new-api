@@ -147,11 +147,11 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       GLART_STACK_UPDATER_TOKEN: ${GLART_STACK_UPDATER_TOKEN}
-      GLART_STACK_ROOT: /workspace
-      GLART_STACK_COMPOSE_DIR: /workspace/deploy/glart-stack
+      GLART_STACK_ROOT: ${GLART_STACK_HOST_ROOT:-/workspace}
+      GLART_STACK_COMPOSE_DIR: ${GLART_STACK_HOST_ROOT:-/workspace}/deploy/glart-stack
       GLART_STACK_COMPOSE_FILE: compose.yml
     volumes:
-      - ../..:/workspace
+      - ${GLART_STACK_HOST_ROOT:-../..}:${GLART_STACK_HOST_ROOT:-/workspace}
       - /var/run/docker.sock:/var/run/docker.sock
     expose:
       - "8787"

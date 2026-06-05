@@ -65,3 +65,5 @@ Optional proxy-test chat smoke can be enabled by setting `GLART_SMOKE_MODEL` and
 Set `GLART_STACK_RUN_TESTS=0` or `GLART_STACK_SKIP_TESTS=1` only for emergency updates where the test container cannot run. Normal one-click updates should keep tests enabled.
 
 The Go test stage uses `GLART_STACK_GO_TEST_IMAGE`, defaulting to `golang:1.26.1` because it includes `git`. The updater marks the mounted `/workspace` repository as a Git safe directory before running tests, which avoids dubious-ownership failures when Docker mounts the host checkout into the test container.
+
+Set `GLART_STACK_HOST_ROOT` in the private server `.env` to the absolute checkout path on the Docker host, for example `/opt/glart-api/app`. The updater mounts the repository at that same absolute path inside its container so Docker bind mounts resolve against the real host checkout instead of a container-only path.
