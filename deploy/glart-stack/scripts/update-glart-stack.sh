@@ -186,6 +186,8 @@ git_update_and_tests() {
   grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "CLIProxyAPI" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "GetSystemUpdateStatus" "$ROOT_DIR/controller/system_update.go" || fail
+  grep -q 'apiRouter.Group("/profit")' "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "GetProfitAnalytics" "$ROOT_DIR/controller/profit.go" || fail
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"
@@ -198,7 +200,7 @@ git_update_and_tests() {
       -e GOCACHE=/tmp/go-cache \
       -e GOMODCACHE=/tmp/gomodcache \
       "$GO_TEST_IMAGE" \
-      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1'
+      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit -count=1'
   else
     log "go test stage skipped by configuration"
   fi
