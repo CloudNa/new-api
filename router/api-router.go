@@ -245,6 +245,29 @@ func SetApiRouter(router *gin.Engine) {
 			profitRoute.GET("/events", controller.GetProfitEvents)
 			profitRoute.POST("/route-preview", controller.PreviewProfitRoute)
 		}
+		compressionSettingsRoute := apiRouter.Group("/settings/compression")
+		compressionSettingsRoute.Use(middleware.RootAuth())
+		{
+			compressionSettingsRoute.GET("", controller.GetCompressionSettings)
+			compressionSettingsRoute.PUT("", controller.UpdateCompressionSettings)
+		}
+		compressionRoute := apiRouter.Group("/compression")
+		compressionRoute.Use(middleware.RootAuth())
+		{
+			compressionRoute.POST("/preview", controller.PreviewCompression)
+		}
+		rtkRoute := apiRouter.Group("/context/rtk")
+		rtkRoute.Use(middleware.RootAuth())
+		{
+			rtkRoute.GET("/filters", controller.GetRTKFilters)
+			rtkRoute.POST("/test", controller.TestRTKCompression)
+		}
+		cavemanRoute := apiRouter.Group("/context/caveman")
+		cavemanRoute.Use(middleware.RootAuth())
+		{
+			cavemanRoute.GET("/config", controller.GetCavemanConfig)
+			cavemanRoute.PUT("/config", controller.UpdateCavemanConfig)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{

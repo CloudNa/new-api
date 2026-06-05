@@ -1,0 +1,175 @@
+package controller
+
+import (
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/promptcompress"
+
+	"github.com/gin-gonic/gin"
+)
+
+type compressionPreviewRequest struct {
+	Mode     promptcompress.Mode      `json:"mode"`
+	Text     string                   `json:"text"`
+	Messages []promptcompress.Message `json:"messages"`
+}
+
+type rtkTestRequest struct {
+	Text string `json:"text"`
+}
+
+func GetCompressionSettings(c *gin.Context) {
+	settings, err := loadCompressionSettings()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, settings)
+}
+
+func UpdateCompressionSettings(c *gin.Context) {
+	var settings promptcompress.Settings
+	if err := common.DecodeJson(c.Request.Body, &settings); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid compression settings"})
+		return
+	}
+	if err := settings.Validate(); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	settings = settings.Normalize()
+	payload, err := common.Marshal(settings)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err = model.UpdateOption(promptcompress.SettingsOptionKey, string(payload)); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, settings)
+}
+
+func PreviewCompression(c *gin.Context) {
+	var req compressionPreviewRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid compression preview request"})
+		return
+	}
+	settings, err := loadCompressionSettings()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	mode := req.Mode
+	if mode == "" {
+		mode = settings.DefaultMode
+	}
+	config := settings.ToConfig(mode)
+	if len(req.Messages) > 0 {
+		messages, stats := promptcompress.CompressMessages(req.Messages, config)
+		common.ApiSuccess(c, gin.H{
+			"messages": messages,
+			"stats":    stats,
+		})
+		return
+	}
+	result := promptcompress.CompressText(req.Text, config)
+	common.ApiSuccess(c, gin.H{
+		"text":       result.Text,
+		"compressed": result.Compressed,
+		"stats":      result.Stats,
+	})
+}
+
+func GetRTKFilters(c *gin.Context) {
+	common.ApiSuccess(c, gin.H{
+		"filters": []gin.H{
+			{"id": "git-diff", "category": "git"},
+			{"id": "git-status", "category": "git"},
+			{"id": "go-test", "category": "test"},
+			{"id": "typescript", "category": "build"},
+			{"id": "docker-build", "category": "docker"},
+			{"id": "docker-logs", "category": "docker"},
+			{"id": "kubectl", "category": "infra"},
+			{"id": "terraform-plan", "category": "infra"},
+			{"id": "vite", "category": "build"},
+		},
+		"attribution": promptcompress.Attribution,
+	})
+}
+
+func TestRTKCompression(c *gin.Context) {
+	var req rtkTestRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid rtk test request"})
+		return
+	}
+	settings, err := loadCompressionSettings()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	result := promptcompress.CompressText(req.Text, settings.ToConfig(promptcompress.ModeRTK))
+	common.ApiSuccess(c, gin.H{
+		"text":       result.Text,
+		"compressed": result.Compressed,
+		"stats":      result.Stats,
+	})
+}
+
+func GetCavemanConfig(c *gin.Context) {
+	settings, err := loadCompressionSettings()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, settings.Caveman)
+}
+
+func UpdateCavemanConfig(c *gin.Context) {
+	var caveman promptcompress.CavemanSettings
+	if err := common.DecodeJson(c.Request.Body, &caveman); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid caveman config"})
+		return
+	}
+	settings, err := loadCompressionSettings()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	settings.Caveman = caveman
+	if err = settings.Validate(); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	settings = settings.Normalize()
+	payload, err := common.Marshal(settings)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err = model.UpdateOption(promptcompress.SettingsOptionKey, string(payload)); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, settings.Caveman)
+}
+
+func loadCompressionSettings() (promptcompress.Settings, error) {
+	settings := promptcompress.DefaultSettings()
+	common.OptionMapRWMutex.RLock()
+	raw := common.OptionMap[promptcompress.SettingsOptionKey]
+	common.OptionMapRWMutex.RUnlock()
+	if strings.TrimSpace(raw) == "" {
+		return settings, nil
+	}
+	if err := common.UnmarshalJsonStr(raw, &settings); err != nil {
+		return promptcompress.Settings{}, errors.New("invalid stored compression settings")
+	}
+	return settings.Normalize(), nil
+}

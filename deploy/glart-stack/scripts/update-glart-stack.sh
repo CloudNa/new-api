@@ -188,6 +188,9 @@ git_update_and_tests() {
   grep -q "GetSystemUpdateStatus" "$ROOT_DIR/controller/system_update.go" || fail
   grep -q 'apiRouter.Group("/profit")' "$ROOT_DIR/router/api-router.go" || fail
   grep -q "GetProfitAnalytics" "$ROOT_DIR/controller/profit.go" || fail
+  grep -q 'apiRouter.Group("/settings/compression")' "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "PreviewCompression" "$ROOT_DIR/controller/compression.go" || fail
+  require_file "$ROOT_DIR/pkg/promptcompress/compressor.go"
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"
