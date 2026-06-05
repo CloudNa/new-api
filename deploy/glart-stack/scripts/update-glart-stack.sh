@@ -196,19 +196,42 @@ git_update_and_tests() {
   fi
 }
 
+retry_smoke() {
+  label="$1"
+  attempts="$2"
+  delay_seconds="$3"
+  shift 3
+
+  attempt=1
+  while [ "$attempt" -le "$attempts" ]; do
+    if "$@"; then
+      log "$label smoke passed on attempt $attempt/$attempts"
+      return 0
+    fi
+    if [ "$attempt" -lt "$attempts" ]; then
+      log "$label smoke not ready (attempt $attempt/$attempts); retrying in ${delay_seconds}s"
+      sleep "$delay_seconds"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  log "$label smoke failed after $attempts attempts"
+  return 1
+}
+
 smoke_new_api() {
   STAGE="smoke-new-api"
-  run sh -c "docker exec glart-new-api wget -q -O - http://localhost:3000/api/status | grep -q '\"success\"[[:space:]]*:[[:space:]]*true'"
+  retry_smoke "new-api" 40 3 sh -c "docker exec glart-new-api wget -q -O - http://localhost:3000/api/status | grep -q '\"success\"[[:space:]]*:[[:space:]]*true'"
 }
 
 smoke_gpt_load() {
   STAGE="smoke-gpt-load"
-  run docker exec glart-gpt-load wget -q --spider -T 10 -O /dev/null http://localhost:3001/health
+  retry_smoke "gpt-load" 30 2 docker exec glart-gpt-load wget -q --spider -T 10 -O /dev/null http://localhost:3001/health
 }
 
 smoke_cliproxyapi() {
   STAGE="smoke-cliproxyapi"
-  run docker exec glart-cliproxyapi wget -q --spider -T 10 -O /dev/null http://localhost:8317/management.html
+  retry_smoke "cliproxyapi" 30 2 docker exec glart-cliproxyapi wget -q --spider -T 10 -O /dev/null http://localhost:8317/management.html
 }
 
 optional_proxy_test_chat_smoke() {
