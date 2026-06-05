@@ -33,6 +33,10 @@ compose() {
   docker compose -f "$COMPOSE_DIR/$COMPOSE_FILE" "$@"
 }
 
+git_root() {
+  git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" "$@"
+}
+
 require_file() {
   if [ ! -f "$1" ]; then
     log "missing required file: $1"
@@ -110,8 +114,8 @@ create_backup() {
   component="$(normalize_component "$1")"
   STAGE="backup-$component"
   backup_stamp="$(date '+%Y%m%d-%H%M%S')"
-  before_commit="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf 'unknown')"
-  before_short_commit="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+  before_commit="$(git_root rev-parse HEAD 2>/dev/null || printf 'unknown')"
+  before_short_commit="$(git_root rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
   backup_dir="$BACKUP_ROOT/$component/$backup_stamp-$before_short_commit"
   rollback_tag="glart/rollback-$component:$backup_stamp"
   container="$(component_container "$component")"
@@ -129,8 +133,8 @@ create_backup() {
     docker tag "$current_image_id" "$rollback_tag" 2>/dev/null || true
   fi
 
-  git -C "$ROOT_DIR" rev-parse HEAD > "$backup_dir/before_commit.txt" 2>/dev/null || true
-  git -C "$ROOT_DIR" status --short --branch > "$backup_dir/git_status.txt" 2>/dev/null || true
+  git_root rev-parse HEAD > "$backup_dir/before_commit.txt" 2>/dev/null || true
+  git_root status --short --branch > "$backup_dir/git_status.txt" 2>/dev/null || true
   compose ps > "$backup_dir/compose_ps_before.txt" 2>/dev/null || true
 
   if [ -n "$runtime_path" ] && [ -e "$COMPOSE_DIR/$runtime_path" ]; then
@@ -167,9 +171,9 @@ git_update_and_tests() {
   fi
 
   STAGE="git-update"
-  run git -C "$ROOT_DIR" fetch --prune origin
-  branch="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)"
-  run git -C "$ROOT_DIR" pull --ff-only origin "$branch"
+  run git_root fetch --prune origin
+  branch="$(git_root rev-parse --abbrev-ref HEAD)"
+  run git_root pull --ff-only origin "$branch"
   GIT_UPDATED=1
 
   STAGE="custom-smoke-source"
@@ -193,7 +197,7 @@ git_update_and_tests() {
       -e GOCACHE=/tmp/go-cache \
       -e GOMODCACHE=/tmp/gomodcache \
       golang:1.26.1-alpine \
-      sh -c 'go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1'
+      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1'
   else
     log "go test stage skipped by configuration"
   fi

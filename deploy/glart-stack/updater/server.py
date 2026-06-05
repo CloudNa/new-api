@@ -185,7 +185,7 @@ def precheck() -> dict:
         ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
         add("update script syntax", ok, out)
 
-    ok, out = run_command(["git", "status", "--short", "--branch"], ROOT)
+    ok, out = run_command(["git", "-c", f"safe.directory={ROOT}", "status", "--short", "--branch"], ROOT)
     add("git status", ok, out.splitlines()[0] if out else "")
 
     ok, out = run_command(["docker", "compose", "-f", COMPOSE_FILE, "config", "--quiet"], COMPOSE_DIR, 60)
