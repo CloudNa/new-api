@@ -197,7 +197,7 @@ git_update_and_tests() {
       -e GOCACHE=/tmp/go-cache \
       -e GOMODCACHE=/tmp/gomodcache \
       golang:1.26.1-alpine \
-      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1'
+      sh -c 'if command -v git >/dev/null 2>&1; then git config --global --add safe.directory /workspace; fi; go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1'
   else
     log "go test stage skipped by configuration"
   fi
