@@ -194,6 +194,8 @@ git_update_and_tests() {
   grep -q "ApplyPromptCompressionForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
   grep -q "PromptCompressionStats" "$ROOT_DIR/relay/common/relay_info.go" || fail
   grep -q "compression_rules_version" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "PromptCompressionSection" "$ROOT_DIR/web/default/src/features/system-settings/operations/section-registry.tsx" || fail
+  require_file "$ROOT_DIR/web/default/src/features/system-settings/maintenance/prompt-compression-section.tsx"
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"

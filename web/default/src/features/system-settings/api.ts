@@ -146,6 +146,53 @@ export async function getSystemUpdateBackups(
   }
 }
 
+export async function getCompressionSettings() {
+  const res = await api.get('/api/settings/compression')
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: PromptCompressionSettings
+  }
+}
+
+export async function updateCompressionSettings(
+  settings: PromptCompressionSettings
+) {
+  const res = await api.put('/api/settings/compression', settings)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: PromptCompressionSettings
+  }
+}
+
+export async function previewCompression(request: CompressionPreviewRequest) {
+  const res = await api.post('/api/compression/preview', request)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: CompressionPreviewResponse
+  }
+}
+
+export async function getRtkFilters() {
+  const res = await api.get('/api/context/rtk/filters')
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: RtkFiltersResponse
+  }
+}
+
+export async function testRtkCompression(text: string) {
+  const res = await api.post('/api/context/rtk/test', { text })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: CompressionPreviewResponse
+  }
+}
+
 export type SystemUpdateComponent =
   | 'all'
   | 'new-api'
@@ -219,4 +266,77 @@ export type SystemUpdateBackups = {
   component: SystemRollbackComponent
   backups?: SystemUpdateBackup[]
   message?: string
+}
+
+export type CompressionMode =
+  | 'off'
+  | 'lite'
+  | 'standard'
+  | 'aggressive'
+  | 'ultra'
+  | 'rtk'
+  | 'stacked'
+
+export type CavemanIntensity = 'lite' | 'standard' | 'aggressive' | 'ultra'
+
+export type PromptCompressionSettings = {
+  enabled: boolean
+  default_mode: CompressionMode
+  auto_trigger_mode: CompressionMode
+  auto_trigger_tokens: number
+  min_tokens: number
+  preserve_system_prompt: boolean
+  allowed_groups: string[]
+  group_modes: Record<string, CompressionMode>
+  model_modes: Record<string, CompressionMode>
+  channel_modes: Record<string, CompressionMode>
+  global_kill_switch: boolean
+  rtk: {
+    max_lines: number
+    max_chars: number
+    deduplicate_threshold: number
+    enabled_filters: string[]
+    disabled_filters: string[]
+  }
+  caveman: {
+    intensity: CavemanIntensity
+    compress_roles: string[]
+    min_message_length: number
+  }
+  attribution: string
+}
+
+export type CompressionStats = {
+  original_tokens: number
+  compressed_tokens: number
+  savings_percent: number
+  mode: CompressionMode
+  techniques_used?: string[]
+  rules_applied?: string[]
+  preserved_block_count: number
+  redacted_secret_count: number
+  compression_saved_tokens: number
+  duration_ms: number
+  bypassed: boolean
+  bypass_reason?: string
+  omniroute_compatible_mode?: string
+}
+
+export type CompressionPreviewRequest = {
+  mode?: CompressionMode
+  text: string
+}
+
+export type CompressionPreviewResponse = {
+  text: string
+  compressed: boolean
+  stats: CompressionStats
+}
+
+export type RtkFiltersResponse = {
+  filters: Array<{
+    id: string
+    category: string
+  }>
+  attribution: string
 }
