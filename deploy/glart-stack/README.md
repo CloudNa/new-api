@@ -38,7 +38,7 @@ Use these internal base URLs when adding channels in `new-api`:
 - GPT-Load OpenAI-compatible group: `http://gpt-load:3001/proxy/openai`
 - GPT-Load Gemini group: `http://gpt-load:3001/proxy/gemini`
 - GPT-Load Anthropic group: `http://gpt-load:3001/proxy/anthropic`
-- CLIProxyAPI OpenAI-compatible endpoint: `http://cliproxyapi:8317/v1`
+- CLIProxyAPI OpenAI-compatible endpoint: `http://cliproxyapi:8317`
 
 Use a `proxy-test` group for initial validation before moving channels to default production groups.
 
