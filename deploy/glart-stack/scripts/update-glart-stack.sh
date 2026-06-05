@@ -184,8 +184,11 @@ git_update_and_tests() {
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"
+    mkdir -p "$COMPOSE_DIR/runtime/cache/go-build" "$COMPOSE_DIR/runtime/cache/gomod"
     run docker run --rm \
       -v "$ROOT_DIR:/workspace" \
+      -v "$COMPOSE_DIR/runtime/cache/go-build:/tmp/go-cache" \
+      -v "$COMPOSE_DIR/runtime/cache/gomod:/tmp/gomodcache" \
       -w /workspace \
       -e GOCACHE=/tmp/go-cache \
       -e GOMODCACHE=/tmp/gomodcache \
