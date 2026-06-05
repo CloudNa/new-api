@@ -200,7 +200,7 @@ git_update_and_tests() {
       -e GOCACHE=/tmp/go-cache \
       -e GOMODCACHE=/tmp/gomodcache \
       "$GO_TEST_IMAGE" \
-      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit -count=1'
+      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit ./pkg/promptcompress -count=1'
   else
     log "go test stage skipped by configuration"
   fi

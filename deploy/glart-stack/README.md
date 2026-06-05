@@ -49,7 +49,7 @@ The dashboard system maintenance page calls the private `glart-stack-updater` se
 ```bash
 backup runtime/.env into runtime/backups/
 git pull --ff-only
-go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit -count=1
+go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit ./pkg/promptcompress -count=1
 docker compose pull gpt-load cliproxyapi caddy redis
 docker compose build new-api glart-stack-updater
 docker compose up -d --remove-orphans new-api gpt-load cliproxyapi caddy redis
