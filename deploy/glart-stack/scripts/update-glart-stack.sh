@@ -191,6 +191,9 @@ git_update_and_tests() {
   grep -q 'apiRouter.Group("/settings/compression")' "$ROOT_DIR/router/api-router.go" || fail
   grep -q "PreviewCompression" "$ROOT_DIR/controller/compression.go" || fail
   require_file "$ROOT_DIR/pkg/promptcompress/compressor.go"
+  grep -q "ApplyPromptCompressionForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
+  grep -q "PromptCompressionStats" "$ROOT_DIR/relay/common/relay_info.go" || fail
+  grep -q "compression_rules_version" "$ROOT_DIR/pkg/profit/observation.go" || fail
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"

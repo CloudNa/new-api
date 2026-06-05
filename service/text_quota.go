@@ -328,6 +328,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if originUsage != nil {
 		ObserveChannelAffinityUsageCacheByRelayFormat(ctx, usage, relayInfo.GetFinalRequestRelayFormat())
 	}
+	usage = billingUsageForPromptCompression(relayInfo, usage)
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
@@ -461,10 +462,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 	upstreamPromptTokens := summary.PromptTokens
 	upstreamCompletionTokens := summary.CompletionTokens
-	if usage != nil {
-		upstreamPromptTokens = usage.PromptTokens
-		upstreamCompletionTokens = usage.CompletionTokens
+	if originUsage != nil {
+		upstreamPromptTokens = originUsage.PromptTokens
+		upstreamCompletionTokens = originUsage.CompletionTokens
 	}
+	compressionSavedTokens := injectPromptCompressionOther(other, relayInfo)
 	profit.AppendObservation(other, profit.ObservationInput{
 		Group:                          relayInfo.UsingGroup,
 		BillablePromptTokens:           summary.PromptTokens,
@@ -472,6 +474,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		UpstreamActualPromptTokens:     upstreamPromptTokens,
 		UpstreamActualCompletionTokens: upstreamCompletionTokens,
 		UserQuota:                      summary.Quota,
+		CompressionSavedTokens:         compressionSavedTokens,
 	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

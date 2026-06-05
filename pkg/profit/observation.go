@@ -18,6 +18,14 @@ const (
 	KeyGrossMarginUSD                 = "gross_margin_usd"
 	KeyGrossMarginPct                 = "gross_margin_pct"
 	KeyCompressionSavedTokens         = "compression_saved_tokens"
+	KeyCompressionMode                = "compression_mode"
+	KeyCompressionSavingsPercent      = "compression_savings_percent"
+	KeyCompressionBypassed            = "compression_bypassed"
+	KeyCompressionBypassReason        = "compression_bypass_reason"
+	KeyCompressionRulesApplied        = "compression_rules_applied"
+	KeyCompressionRulesVersion        = "compression_rules_version"
+	KeyCompressionPreservedBlocks     = "compression_preserved_blocks"
+	KeyCompressionRedactedSecrets     = "compression_redacted_secrets"
 	KeyCacheSavedUSD                  = "cache_saved_usd"
 	KeyRetryCostUSD                   = "retry_cost_usd"
 	CostStatusMissingCostProfile      = "missing_cost_profile"
@@ -35,6 +43,14 @@ var userHiddenKeys = []string{
 	KeyGrossMarginUSD,
 	KeyGrossMarginPct,
 	KeyCompressionSavedTokens,
+	KeyCompressionMode,
+	KeyCompressionSavingsPercent,
+	KeyCompressionBypassed,
+	KeyCompressionBypassReason,
+	KeyCompressionRulesApplied,
+	KeyCompressionRulesVersion,
+	KeyCompressionPreservedBlocks,
+	KeyCompressionRedactedSecrets,
 	KeyCacheSavedUSD,
 	KeyRetryCostUSD,
 }

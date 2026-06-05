@@ -13,4 +13,7 @@ package promptcompress
 // compress noisy command output with RTK-style filters, then condense prose with
 // Caveman-style rules.
 
-const Attribution = "Inspired by OmniRoute RTK/Caveman compression (MIT), RTK, and Caveman."
+const (
+	Attribution = "Inspired by OmniRoute RTK/Caveman compression (MIT), RTK, and Caveman."
+	RuleVersion = "omniroute-style-go-v1"
+)

@@ -72,6 +72,10 @@ func TestStripUserVisibleFields(t *testing.T) {
 		"profit_observe_version":            1,
 		"billable_prompt_tokens":            100,
 		"upstream_actual_completion_tokens": 20,
+		"compression_mode":                  "stacked",
+		"compression_bypassed":              false,
+		"compression_bypass_reason":         "no_savings",
+		"compression_rules_version":         "omniroute-style-go-v1",
 		"model_ratio":                       1.5,
 	}
 
@@ -80,5 +84,9 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "profit_observe_version")
 	require.NotContains(t, other, "billable_prompt_tokens")
 	require.NotContains(t, other, "upstream_actual_completion_tokens")
+	require.NotContains(t, other, "compression_mode")
+	require.NotContains(t, other, "compression_bypassed")
+	require.NotContains(t, other, "compression_bypass_reason")
+	require.NotContains(t, other, "compression_rules_version")
 	require.Equal(t, 1.5, other["model_ratio"])
 }

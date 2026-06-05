@@ -1,13 +1,12 @@
 package controller
 
 import (
-	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/promptcompress"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -161,15 +160,5 @@ func UpdateCavemanConfig(c *gin.Context) {
 }
 
 func loadCompressionSettings() (promptcompress.Settings, error) {
-	settings := promptcompress.DefaultSettings()
-	common.OptionMapRWMutex.RLock()
-	raw := common.OptionMap[promptcompress.SettingsOptionKey]
-	common.OptionMapRWMutex.RUnlock()
-	if strings.TrimSpace(raw) == "" {
-		return settings, nil
-	}
-	if err := common.UnmarshalJsonStr(raw, &settings); err != nil {
-		return promptcompress.Settings{}, errors.New("invalid stored compression settings")
-	}
-	return settings.Normalize(), nil
+	return service.LoadPromptCompressionSettings()
 }
