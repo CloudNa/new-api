@@ -63,3 +63,5 @@ Backups are written under `runtime/backups/` by default. They include `.env`, ru
 Optional proxy-test chat smoke can be enabled by setting `GLART_SMOKE_MODEL` and `GLART_SMOKE_API_KEY` in the private server `.env`. Leave them empty to skip that smoke safely.
 
 Set `GLART_STACK_RUN_TESTS=0` or `GLART_STACK_SKIP_TESTS=1` only for emergency updates where the test container cannot run. Normal one-click updates should keep tests enabled.
+
+The Go test stage uses `GLART_STACK_GO_TEST_IMAGE`, defaulting to `golang:1.26.1` because it includes `git`. The updater marks the mounted `/workspace` repository as a Git safe directory before running tests, which avoids dubious-ownership failures when Docker mounts the host checkout into the test container.

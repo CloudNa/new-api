@@ -6,6 +6,7 @@ COMPOSE_DIR="${GLART_STACK_COMPOSE_DIR:-$ROOT_DIR/deploy/glart-stack}"
 COMPOSE_FILE="${GLART_STACK_COMPOSE_FILE:-compose.yml}"
 BACKUP_ROOT="${GLART_STACK_BACKUP_DIR:-$COMPOSE_DIR/runtime/backups}"
 RUN_TESTS="${GLART_STACK_RUN_TESTS:-1}"
+GO_TEST_IMAGE="${GLART_STACK_GO_TEST_IMAGE:-golang:1.26.1}"
 ACTION="${1:-${GLART_STACK_ACTION:-update}}"
 COMPONENT="${2:-${GLART_STACK_COMPONENT:-all}}"
 BACKUP_ID="${3:-${GLART_STACK_BACKUP_ID:-latest}}"
@@ -196,8 +197,8 @@ git_update_and_tests() {
       -w /workspace \
       -e GOCACHE=/tmp/go-cache \
       -e GOMODCACHE=/tmp/gomodcache \
-      golang:1.26.1-alpine \
-      sh -c 'if command -v git >/dev/null 2>&1; then git config --global --add safe.directory /workspace; fi; go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1'
+      "$GO_TEST_IMAGE" \
+      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1'
   else
     log "go test stage skipped by configuration"
   fi
