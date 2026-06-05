@@ -20,6 +20,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
+import { ROLE } from '@/lib/roles'
 import { useStatus } from '@/hooks/use-status'
 
 export type TopNavLink = {
@@ -58,6 +59,7 @@ export function useTopNavLinks(): TopNavLink[] {
   const docsLink: string | undefined = status?.docs_link as string | undefined
 
   const isAuthed = !!auth?.user
+  const isRoot = (auth?.user?.role ?? ROLE.GUEST) >= ROLE.SUPER_ADMIN
 
   const links: TopNavLink[] = []
 
@@ -69,6 +71,11 @@ export function useTopNavLinks(): TopNavLink[] {
   // Console -> /dashboard (new console path)
   if (modules?.console !== false) {
     links.push({ title: t('Console'), href: '/dashboard' })
+  }
+
+  if (isRoot) {
+    links.push({ title: 'GPT-Load', href: '/gl', external: true })
+    links.push({ title: 'CLIProxyAPI', href: '/cpa', external: true })
   }
 
   // Pricing

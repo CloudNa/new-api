@@ -224,6 +224,14 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		systemUpdateRoute := apiRouter.Group("/system_update")
+		systemUpdateRoute.Use(middleware.RootAuth())
+		{
+			systemUpdateRoute.GET("/status", controller.GetSystemUpdateStatus)
+			systemUpdateRoute.GET("/precheck", controller.PrecheckSystemUpdate)
+			systemUpdateRoute.POST("/smoke", middleware.CriticalRateLimit(), controller.SmokeSystemUpdate)
+			systemUpdateRoute.POST("/start", middleware.CriticalRateLimit(), controller.StartSystemUpdate)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{

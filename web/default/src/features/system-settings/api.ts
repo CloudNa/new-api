@@ -74,3 +74,86 @@ export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
   )
   return res.data
 }
+
+export async function getSystemUpdateStatus() {
+  const res = await api.get('/api/system_update/status', {
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdateStatus
+  }
+}
+
+export async function precheckSystemUpdate() {
+  const res = await api.get('/api/system_update/precheck', {
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdatePrecheck
+  }
+}
+
+export async function smokeSystemUpdate() {
+  const res = await api.post(
+    '/api/system_update/smoke',
+    {},
+    {
+      disableDuplicate: true,
+    }
+  )
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdateSmoke
+  }
+}
+
+export async function startSystemUpdate() {
+  const res = await api.post('/api/system_update/start', {})
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdateStatus
+  }
+}
+
+export type SystemUpdateStatus = {
+  enabled: boolean
+  running: boolean
+  last_exit?: number | null
+  started_at?: string
+  finished_at?: string
+  message?: string
+  log_tail?: string[]
+}
+
+export type SystemUpdatePrecheckItem = {
+  name: string
+  ok: boolean
+  message?: string
+}
+
+export type SystemUpdatePrecheck = {
+  enabled: boolean
+  ok: boolean
+  message?: string
+  checked_at?: string
+  checks?: SystemUpdatePrecheckItem[]
+}
+
+export type SystemUpdateSmoke = {
+  enabled: boolean
+  ok: boolean
+  message?: string
+  checked_at?: string
+  status?: number | null
+  content_type?: string
+  new_api_healthy: boolean
+  gpt_load_healthy: boolean
+  cliproxyapi_ready: boolean
+  error?: string
+}

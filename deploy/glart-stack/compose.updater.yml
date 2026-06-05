@@ -1,0 +1,26 @@
+services:
+  glart-stack-updater:
+    build:
+      context: ./updater
+    image: glart/stack-updater:clean
+    container_name: glart-stack-updater
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      GLART_STACK_UPDATER_TOKEN: ${GLART_STACK_UPDATER_TOKEN}
+      GLART_STACK_ROOT: /workspace
+      GLART_STACK_COMPOSE_DIR: /workspace/deploy/glart-stack
+      GLART_STACK_COMPOSE_FILE: compose.yml
+    volumes:
+      - ../..:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "8787"
+    networks:
+      - glart-internal
+
+networks:
+  glart-internal:
+    external: true

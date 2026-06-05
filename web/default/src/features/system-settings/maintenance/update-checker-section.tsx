@@ -16,30 +16,31 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
-import { ExternalLinkIcon, RefreshCcwIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  CheckCircle2Icon,
+  ClipboardCheckIcon,
+  RefreshCcwIcon,
+  RocketIcon,
+  SendIcon,
+  XCircleIcon,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatTimestamp, formatTimestampToDate } from '@/lib/format'
+import { formatTimestamp } from '@/lib/format'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Markdown } from '@/components/ui/markdown'
+  getSystemUpdateStatus,
+  precheckSystemUpdate,
+  smokeSystemUpdate,
+  startSystemUpdate,
+  type SystemUpdatePrecheck,
+  type SystemUpdateSmoke,
+  type SystemUpdateStatus,
+} from '../api'
 import { SettingsSection } from '../components/settings-section'
-
-type ReleaseInfo = {
-  tag_name: string
-  name?: string
-  body?: string
-  html_url?: string
-  published_at?: string
-}
 
 type UpdateCheckerSectionProps = {
   currentVersion?: string | null
@@ -51,143 +52,332 @@ export function UpdateCheckerSection({
   startTime,
 }: UpdateCheckerSectionProps) {
   const { t } = useTranslation()
-  const [checking, setChecking] = useState(false)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [release, setRelease] = useState<ReleaseInfo | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [prechecking, setPrechecking] = useState(false)
+  const [smoking, setSmoking] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [precheck, setPrecheck] = useState<SystemUpdatePrecheck | null>(null)
+  const [smoke, setSmoke] = useState<SystemUpdateSmoke | null>(null)
+  const [status, setStatus] = useState<SystemUpdateStatus | null>(null)
 
   const uptime = startTime ? formatTimestamp(startTime) : t('Unknown')
   const version = currentVersion || t('Unknown')
+  const updaterEnabled = status?.enabled ?? false
+  const updaterRunning = status?.running ?? false
+  const precheckPassed = precheck?.ok === true
+  const smokePassed = smoke?.ok === true
+  const updateChecksPassed = precheckPassed && smokePassed
+  const logLines = status?.log_tail ?? []
 
-  const handleCheckUpdates = async () => {
-    setChecking(true)
+  const refreshStatus = async () => {
     try {
-      const response = await fetch(
-        'https://api.github.com/repos/Calcium-Ion/new-api/releases/latest',
-        {
-          headers: {
-            Accept: 'application/vnd.github+json',
-            'User-Agent': 'new-api-dashboard',
-          },
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(t('Failed to contact GitHub releases API'))
+      const res = await getSystemUpdateStatus()
+      if (res.data) {
+        setStatus(res.data)
       }
+    } catch {
+      setStatus({
+        enabled: false,
+        running: false,
+        message: t('Failed to load updater status'),
+      })
+    }
+  }
 
-      const data = (await response.json()) as ReleaseInfo
-      if (!data?.tag_name) {
-        throw new Error(t('Unexpected release payload'))
+  useEffect(() => {
+    void refreshStatus()
+  }, [])
+
+  useEffect(() => {
+    if (!updaterRunning) return
+    const timer = window.setInterval(() => {
+      void refreshStatus()
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [updaterRunning])
+
+  const handlePrecheck = async () => {
+    setPrechecking(true)
+    try {
+      const res = await precheckSystemUpdate()
+      if (res.data) {
+        setPrecheck(res.data)
       }
-
-      if (currentVersion && data.tag_name === currentVersion) {
-        toast.success(
-          t('You are running the latest version ({{version}}).', {
-            version: data.tag_name,
-          })
-        )
-        return
+      if (res.success) {
+        toast.success(t('Precheck passed.'))
+      } else {
+        toast.error(res.message || t('Precheck failed'))
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t('Precheck failed')
+      toast.error(message)
+    } finally {
+      setPrechecking(false)
+    }
+  }
 
-      setRelease(data)
-      setDialogOpen(true)
+  const handleSmoke = async () => {
+    setSmoking(true)
+    try {
+      const res = await smokeSystemUpdate()
+      if (res.data) {
+        setSmoke(res.data)
+      }
+      if (res.success) {
+        toast.success(t('Smoke test passed.'))
+      } else {
+        toast.error(res.message || t('Smoke test failed'))
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t('Smoke test failed')
+      toast.error(message)
+    } finally {
+      setSmoking(false)
+    }
+  }
+
+  const handleStartUpdate = async () => {
+    setConfirmOpen(false)
+    setLoading(true)
+    try {
+      const res = await startSystemUpdate()
+      if (res.data) {
+        setStatus(res.data)
+      }
+      if (res.success) {
+        toast.success(t('Update task started.'))
+      } else {
+        toast.error(res.message || t('Failed to start update task'))
+      }
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : t('Failed to check for updates')
+          : t('Failed to start update task')
       toast.error(message)
     } finally {
-      setChecking(false)
-    }
-  }
-
-  const goToRelease = () => {
-    if (release?.html_url) {
-      window.open(release.html_url, '_blank', 'noopener,noreferrer')
+      setLoading(false)
     }
   }
 
   return (
-    <>
-      <SettingsSection title={t('System maintenance')}>
-        <div className='space-y-6'>
-          <div className='grid gap-4 md:grid-cols-2'>
-            <div className='rounded-lg border p-4'>
-              <div className='text-muted-foreground text-sm'>
-                {t('Current version')}
-              </div>
-              <div className='text-lg font-semibold'>{version}</div>
+    <SettingsSection title={t('System maintenance')}>
+      <div className='space-y-6'>
+        <div className='grid gap-4 md:grid-cols-2'>
+          <div className='rounded-lg border p-4'>
+            <div className='text-muted-foreground text-sm'>
+              {t('Current version')}
             </div>
-            <div className='rounded-lg border p-4'>
-              <div className='text-muted-foreground text-sm'>
-                {t('Uptime since')}
-              </div>
-              <div className='text-lg font-semibold'>{uptime}</div>
-            </div>
+            <div className='text-lg font-semibold'>{version}</div>
           </div>
+          <div className='rounded-lg border p-4'>
+            <div className='text-muted-foreground text-sm'>
+              {t('Uptime since')}
+            </div>
+            <div className='text-lg font-semibold'>{uptime}</div>
+          </div>
+        </div>
 
-          <Button onClick={handleCheckUpdates} disabled={checking}>
-            {checking ? (
-              t('Checking updates...')
+        <div className='flex flex-wrap gap-2'>
+          <Button
+            onClick={() => setConfirmOpen(true)}
+            disabled={
+              !updaterEnabled || updaterRunning || loading || !updateChecksPassed
+            }
+          >
+            {updaterRunning || loading ? (
+              t('Updating...')
             ) : (
               <>
-                <RefreshCcwIcon className='me-2 h-4 w-4' />
-                {t('Check for updates')}
+                <RocketIcon className='me-2 h-4 w-4' />
+                {t('Combined update')}
               </>
             )}
           </Button>
+          <Button
+            type='button'
+            variant='secondary'
+            onClick={handlePrecheck}
+            disabled={!updaterEnabled || updaterRunning || prechecking}
+          >
+            <ClipboardCheckIcon className='me-2 h-4 w-4' />
+            {prechecking ? t('Checking...') : t('Run precheck')}
+          </Button>
+          <Button
+            type='button'
+            variant='secondary'
+            onClick={handleSmoke}
+            disabled={!updaterEnabled || updaterRunning || smoking}
+          >
+            <SendIcon className='me-2 h-4 w-4' />
+            {smoking ? t('Running smoke...') : t('Run smoke')}
+          </Button>
+          <Button type='button' variant='secondary' onClick={refreshStatus}>
+            <RefreshCcwIcon className='me-2 h-4 w-4' />
+            {t('Refresh status')}
+          </Button>
         </div>
-      </SettingsSection>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className='max-h-[80vh] overflow-y-auto'>
-          <DialogHeader>
-            <DialogTitle>
-              {release?.tag_name
-                ? t('New version available: {{version}}', {
-                    version: release.tag_name,
-                  })
-                : t('Release details')}
-            </DialogTitle>
-            {release?.published_at && (
-              <DialogDescription>
-                {t('Published')}{' '}
-                {formatTimestampToDate(
-                  new Date(release.published_at).getTime(),
-                  'milliseconds'
-                )}
-              </DialogDescription>
+        <div className='flex flex-wrap items-center gap-2 text-sm'>
+          <Badge variant={precheckPassed ? 'default' : 'secondary'}>
+            {precheckPassed ? t('Precheck passed') : t('Precheck required')}
+          </Badge>
+          <Badge variant={smokePassed ? 'default' : 'secondary'}>
+            {smokePassed ? t('Smoke passed') : t('Smoke required')}
+          </Badge>
+          <div className='text-muted-foreground'>
+            {updateChecksPassed
+              ? t('Combined update is ready.')
+              : t('Run precheck and smoke before combined update.')}
+          </div>
+        </div>
+
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={t('Start combined one-click update?')}
+          desc={t(
+            'This will update new-api, GPT-Load, and CLIProxyAPI together while preserving the Glart bridge and private sidecar ports.'
+          )}
+          confirmText={t('Start combined update')}
+          isLoading={loading}
+          disabled={!updaterEnabled || updaterRunning || !updateChecksPassed}
+          handleConfirm={handleStartUpdate}
+        />
+
+        <div className='rounded-lg border p-4'>
+          <div className='grid gap-3 text-sm md:grid-cols-2'>
+            <div>
+              <div className='text-muted-foreground'>{t('Updater status')}</div>
+              <div className='font-medium'>
+                {!updaterEnabled
+                  ? t('Not configured')
+                  : updaterRunning
+                    ? t('Running')
+                    : status?.last_exit === 0
+                      ? t('Last update succeeded')
+                      : status?.last_exit
+                        ? t('Last update failed')
+                        : t('Idle')}
+              </div>
+            </div>
+            <div>
+              <div className='text-muted-foreground'>{t('Last message')}</div>
+              <div className='font-medium'>{status?.message || t('Unknown')}</div>
+            </div>
+            {status?.started_at && (
+              <div>
+                <div className='text-muted-foreground'>{t('Started at')}</div>
+                <div className='font-medium'>{status.started_at}</div>
+              </div>
             )}
-          </DialogHeader>
-
-          <div className='space-y-4'>
-            {release?.body ? (
-              <Markdown>{release.body}</Markdown>
-            ) : (
-              <p className='text-muted-foreground text-sm'>
-                {t('No release notes provided.')}
-              </p>
+            {status?.finished_at && (
+              <div>
+                <div className='text-muted-foreground'>{t('Finished at')}</div>
+                <div className='font-medium'>{status.finished_at}</div>
+              </div>
             )}
           </div>
 
-          <DialogFooter>
-            <Button
-              type='button'
-              variant='secondary'
-              onClick={() => setDialogOpen(false)}
-            >
-              {t('Close')}
-            </Button>
-            {release?.html_url && (
-              <Button type='button' onClick={goToRelease}>
-                <ExternalLinkIcon className='me-2 h-4 w-4' />
-                {t('Open release')}
-              </Button>
+          {logLines.length > 0 && (
+            <div className='mt-4'>
+              <div className='text-muted-foreground mb-2 text-sm'>
+                {t('Current task log')}
+              </div>
+              <pre className='bg-muted max-h-80 overflow-auto rounded-md p-3 text-xs whitespace-pre-wrap'>
+                {logLines.join('\n')}
+              </pre>
+            </div>
+          )}
+        </div>
+
+        {smoke && (
+          <div className='rounded-lg border p-4'>
+            <div className='mb-3 flex flex-wrap items-center gap-2'>
+              <div className='font-medium'>{t('Smoke test results')}</div>
+              <Badge variant={smoke.ok ? 'default' : 'destructive'}>
+                {smoke.ok ? t('Passed') : t('Failed')}
+              </Badge>
+              {smoke.checked_at && (
+                <div className='text-muted-foreground text-sm'>
+                  {smoke.checked_at}
+                </div>
+              )}
+            </div>
+            <div className='grid gap-3 text-sm md:grid-cols-2'>
+              <HealthRow
+                label={t('new-api health')}
+                ok={smoke.new_api_healthy}
+              />
+              <HealthRow
+                label={t('GPT-Load health')}
+                ok={smoke.gpt_load_healthy}
+              />
+              <HealthRow
+                label={t('CLIProxyAPI health')}
+                ok={smoke.cliproxyapi_ready}
+              />
+              <div>
+                <div className='text-muted-foreground'>{t('HTTP status')}</div>
+                <div className='font-medium'>
+                  {smoke.status ?? t('Unknown')}
+                </div>
+              </div>
+            </div>
+            {smoke.error && (
+              <div className='text-destructive mt-3 text-sm'>{smoke.error}</div>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          </div>
+        )}
+
+        {precheck && (
+          <div className='rounded-lg border p-4'>
+            <div className='mb-3 flex flex-wrap items-center gap-2'>
+              <div className='font-medium'>{t('Precheck results')}</div>
+              <Badge variant={precheck.ok ? 'default' : 'destructive'}>
+                {precheck.ok ? t('Passed') : t('Failed')}
+              </Badge>
+              {precheck.checked_at && (
+                <div className='text-muted-foreground text-sm'>
+                  {precheck.checked_at}
+                </div>
+              )}
+            </div>
+            <div className='divide-y rounded-md border'>
+              {(precheck.checks ?? []).map((item) => (
+                <div
+                  key={item.name}
+                  className='grid gap-2 p-3 text-sm md:grid-cols-[220px_1fr]'
+                >
+                  <div className='flex items-center gap-2 font-medium'>
+                    {item.ok ? (
+                      <CheckCircle2Icon className='text-primary h-4 w-4' />
+                    ) : (
+                      <XCircleIcon className='text-destructive h-4 w-4' />
+                    )}
+                    {item.name}
+                  </div>
+                  <div className='text-muted-foreground break-words'>
+                    {item.message || (item.ok ? t('OK') : t('Failed'))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </SettingsSection>
+  )
+}
+
+function HealthRow({ label, ok }: { label: string; ok: boolean }) {
+  const { t } = useTranslation()
+  return (
+    <div>
+      <div className='text-muted-foreground'>{label}</div>
+      <div className='font-medium'>{ok ? t('OK') : t('Failed')}</div>
+    </div>
   )
 }

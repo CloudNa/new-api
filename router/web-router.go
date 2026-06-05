@@ -28,6 +28,18 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 
 	router.Use(gzip.Gzip(gzip.DefaultCompression))
 	router.Use(middleware.GlobalWebRateLimit())
+	gptLoad := router.Group("/gl")
+	gptLoad.Use(middleware.RootSessionAuth())
+	{
+		gptLoad.Any("", controller.GPTLoadProxy)
+		gptLoad.Any("/*path", controller.GPTLoadProxy)
+	}
+	cliProxyAPI := router.Group("/cpa")
+	cliProxyAPI.Use(middleware.RootSessionAuth())
+	{
+		cliProxyAPI.Any("", controller.CLIProxyAPIProxy)
+		cliProxyAPI.Any("/*path", controller.CLIProxyAPIProxy)
+	}
 	router.Use(middleware.Cache())
 	router.Use(static.Serve("/", themeFS))
 	router.NoRoute(func(c *gin.Context) {
