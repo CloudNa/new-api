@@ -112,13 +112,52 @@ export async function smokeSystemUpdate() {
   }
 }
 
-export async function startSystemUpdate() {
-  const res = await api.post('/api/system_update/start', {})
+export async function startSystemUpdate(
+  component: SystemUpdateComponent = 'all'
+) {
+  const res = await api.post('/api/system_update/start', { component })
   return res.data as {
     success: boolean
     message?: string
     data?: SystemUpdateStatus
   }
+}
+
+export async function rollbackSystemUpdate(request: SystemUpdateRollbackRequest) {
+  const res = await api.post('/api/system_update/rollback', request)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdateStatus
+  }
+}
+
+export async function getSystemUpdateBackups(
+  component: SystemRollbackComponent
+) {
+  const res = await api.get('/api/system_update/backups', {
+    params: { component },
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdateBackups
+  }
+}
+
+export type SystemUpdateComponent =
+  | 'all'
+  | 'new-api'
+  | 'gpt-load'
+  | 'cliproxyapi'
+
+export type SystemRollbackComponent = Exclude<SystemUpdateComponent, 'all'>
+
+export type SystemUpdateRollbackRequest = {
+  component: SystemRollbackComponent
+  backup_id?: string
+  restore_runtime?: boolean
 }
 
 export type SystemUpdateStatus = {
@@ -128,6 +167,9 @@ export type SystemUpdateStatus = {
   started_at?: string
   finished_at?: string
   message?: string
+  current_action?: string
+  current_component?: SystemUpdateComponent
+  current_backup_id?: string
   log_tail?: string[]
 }
 
@@ -155,5 +197,26 @@ export type SystemUpdateSmoke = {
   new_api_healthy: boolean
   gpt_load_healthy: boolean
   cliproxyapi_ready: boolean
+  sidecar_bridge_sources_ok?: boolean
+  proxy_test_chat_checked?: boolean
+  proxy_test_chat_ok?: boolean
+  proxy_test_chat_skipped?: boolean
   error?: string
+}
+
+export type SystemUpdateBackup = {
+  id: string
+  component: SystemRollbackComponent
+  created_at?: string
+  before_commit?: string
+  service_image?: string
+  rollback_tag?: string
+  runtime_path?: string
+}
+
+export type SystemUpdateBackups = {
+  enabled: boolean
+  component: SystemRollbackComponent
+  backups?: SystemUpdateBackup[]
+  message?: string
 }

@@ -47,10 +47,19 @@ Use a `proxy-test` group for initial validation before moving channels to defaul
 The dashboard system maintenance page calls the private `glart-stack-updater` service. The updater runs:
 
 ```bash
+backup runtime/.env into runtime/backups/
 git pull --ff-only
+go test ./service ./controller ./relay ./pkg/billingexpr ./setting/billing_setting -count=1
 docker compose pull gpt-load cliproxyapi caddy redis
 docker compose build new-api glart-stack-updater
-docker compose up -d --remove-orphans
+docker compose up -d --remove-orphans new-api gpt-load cliproxyapi caddy redis
+smoke new-api, GPT-Load, CLIProxyAPI, and Glart bridge source retention
 ```
 
 This keeps the Glart bridge and deployment scripts in the Git branch, so future upstream `new-api` updates do not overwrite the local sidecar integration.
+
+Backups are written under `runtime/backups/` by default. They include `.env`, runtime databases, auth state, Caddy data, and a small manifest with the pre-update Git commit and Compose status. Keep this directory private and never commit it.
+
+Optional proxy-test chat smoke can be enabled by setting `GLART_SMOKE_MODEL` and `GLART_SMOKE_API_KEY` in the private server `.env`. Leave them empty to skip that smoke safely.
+
+Set `GLART_STACK_RUN_TESTS=0` or `GLART_STACK_SKIP_TESTS=1` only for emergency updates where the test container cannot run. Normal one-click updates should keep tests enabled.

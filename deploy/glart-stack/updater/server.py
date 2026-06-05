@@ -7,6 +7,8 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -18,6 +20,9 @@ COMPOSE_DIR = Path(os.environ.get("GLART_STACK_COMPOSE_DIR", str(ROOT / "deploy/
 COMPOSE_FILE = os.environ.get("GLART_STACK_COMPOSE_FILE", "compose.yml")
 SCRIPT = ROOT / "deploy/glart-stack/scripts/update-glart-stack.sh"
 LOG_LIMIT = 200
+BACKUP_DIR = Path(os.environ.get("GLART_STACK_BACKUP_DIR", str(COMPOSE_DIR / "runtime/backups")))
+VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi"}
+VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi"}
 
 state_lock = threading.Lock()
 state = {
@@ -26,6 +31,9 @@ state = {
     "started_at": "",
     "finished_at": "",
     "message": "idle",
+    "current_action": "",
+    "current_component": "",
+    "current_backup_id": "",
     "log_tail": [],
 }
 
@@ -76,6 +84,71 @@ def run_command(cmd: list[str], cwd: Path, timeout: int = 30) -> tuple[bool, str
         return False, str(exc)
 
 
+def parse_json_body(handler: BaseHTTPRequestHandler) -> dict:
+    length = int(handler.headers.get("Content-Length", "0") or "0")
+    if length <= 0:
+        return {}
+    body = handler.rfile.read(length)
+    if not body.strip():
+        return {}
+    try:
+        parsed = json.loads(body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON body: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("JSON body must be an object")
+    return parsed
+
+
+def normalize_component(value: object, valid_components: set[str], default: str) -> str:
+    component = str(value or default).strip().lower()
+    if component not in valid_components:
+        allowed = ", ".join(sorted(valid_components))
+        raise ValueError(f"invalid component '{component}', allowed: {allowed}")
+    return component
+
+
+def list_backups(component: str) -> dict:
+    component = normalize_component(component, VALID_ROLLBACK_COMPONENTS, "new-api")
+    component_dir = BACKUP_DIR / component
+    backups = []
+    if component_dir.exists():
+        for path in sorted(component_dir.iterdir(), key=lambda item: item.name, reverse=True):
+            if not path.is_dir():
+                continue
+            manifest_path = path / "manifest.env"
+            manifest = read_manifest(manifest_path)
+            backups.append(
+                {
+                    "id": path.name,
+                    "component": manifest.get("COMPONENT", component),
+                    "created_at": manifest.get("CREATED_AT", ""),
+                    "before_commit": manifest.get("BEFORE_COMMIT", ""),
+                    "service_image": manifest.get("SERVICE_IMAGE", ""),
+                    "rollback_tag": manifest.get("ROLLBACK_TAG", ""),
+                    "runtime_path": manifest.get("RUNTIME_PATH", ""),
+                }
+            )
+    return {
+        "enabled": bool(TOKEN),
+        "component": component,
+        "backups": backups,
+    }
+
+
+def read_manifest(path: Path) -> dict[str, str]:
+    manifest = {}
+    if not path.exists():
+        return manifest
+    for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        manifest[key.strip()] = value.strip()
+    return manifest
+
+
 def precheck() -> dict:
     checks = []
 
@@ -87,6 +160,30 @@ def precheck() -> dict:
     add("compose dir", COMPOSE_DIR.exists(), str(COMPOSE_DIR))
     add("compose file", (COMPOSE_DIR / COMPOSE_FILE).exists(), str(COMPOSE_DIR / COMPOSE_FILE))
     add("update script", SCRIPT.exists(), str(SCRIPT))
+    add("env file", (COMPOSE_DIR / ".env").exists(), str(COMPOSE_DIR / ".env"))
+    add("docker socket", Path("/var/run/docker.sock").exists(), "/var/run/docker.sock")
+
+    try:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        probe = BACKUP_DIR / ".write-test"
+        probe.write_text(now(), encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        add("backup dir writable", True, str(BACKUP_DIR))
+    except Exception as exc:
+        add("backup dir writable", False, f"{BACKUP_DIR}: {exc}")
+
+    custom_files = [
+        ROOT / "controller/sidecar_proxy.go",
+        ROOT / "router/web-router.go",
+        ROOT / "web/default/src/hooks/use-top-nav-links.ts",
+        ROOT / "controller/system_update.go",
+    ]
+    missing_custom = [str(path) for path in custom_files if not path.exists()]
+    add("custom bridge sources", not missing_custom, ", ".join(missing_custom) if missing_custom else "present")
+
+    if SCRIPT.exists():
+        ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
+        add("update script syntax", ok, out)
 
     ok, out = run_command(["git", "status", "--short", "--branch"], ROOT)
     add("git status", ok, out.splitlines()[0] if out else "")
@@ -115,16 +212,24 @@ def smoke() -> dict:
         "new_api_healthy": False,
         "gpt_load_healthy": False,
         "cliproxyapi_ready": False,
+        "sidecar_bridge_sources_ok": False,
+        "proxy_test_chat_checked": False,
+        "proxy_test_chat_ok": False,
+        "proxy_test_chat_skipped": False,
     }
     try:
-        result["new_api_healthy"] = http_ok("http://new-api:3000/api/status")
+        result["new_api_healthy"], result["status"], result["content_type"] = http_status_ok("http://new-api:3000/api/status")
         result["gpt_load_healthy"] = http_ok("http://gpt-load:3001/health")
         result["cliproxyapi_ready"] = http_ok("http://cliproxyapi:8317/management.html")
+        result["sidecar_bridge_sources_ok"] = custom_bridge_sources_ok()
+        result["proxy_test_chat_checked"], result["proxy_test_chat_ok"], result["proxy_test_chat_skipped"] = proxy_test_chat_smoke()
         result["ok"] = all(
             [
                 result["new_api_healthy"],
                 result["gpt_load_healthy"],
                 result["cliproxyapi_ready"],
+                result["sidecar_bridge_sources_ok"],
+                result["proxy_test_chat_ok"] or result["proxy_test_chat_skipped"],
             ]
         )
         result["message"] = "smoke passed" if result["ok"] else "smoke failed"
@@ -135,24 +240,87 @@ def smoke() -> dict:
 
 
 def http_ok(url: str) -> bool:
+    ok, _, _ = http_status_ok(url)
+    return ok
+
+
+def http_status_ok(url: str) -> tuple[bool, int | None, str]:
     req = Request(url, headers={"User-Agent": "glart-stack-updater"})
     with urlopen(req, timeout=10) as resp:
-        return 200 <= resp.status < 400
+        return 200 <= resp.status < 400, resp.status, resp.headers.get("Content-Type", "")
 
 
-def run_update() -> None:
+def custom_bridge_sources_ok() -> bool:
+    try:
+        web_router = (ROOT / "router/web-router.go").read_text(encoding="utf-8")
+        top_nav = (ROOT / "web/default/src/hooks/use-top-nav-links.ts").read_text(encoding="utf-8")
+        controller = (ROOT / "controller/sidecar_proxy.go").read_text(encoding="utf-8")
+        return all(
+            [
+                '"/gl"' in web_router,
+                '"/cpa"' in web_router,
+                "GPT-Load" in top_nav,
+                "CLIProxyAPI" in top_nav,
+                "GPT_LOAD_INTERNAL_URL" in controller,
+                "CLIPROXYAPI_INTERNAL_URL" in controller,
+            ]
+        )
+    except Exception:
+        return False
+
+
+def proxy_test_chat_smoke() -> tuple[bool, bool, bool]:
+    api_key = os.environ.get("GLART_SMOKE_API_KEY", "").strip()
+    model = os.environ.get("GLART_SMOKE_MODEL", "").strip()
+    if not api_key or not model:
+        return False, False, True
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": "Return exactly: ok"}],
+            "max_tokens": 8,
+        }
+    ).encode("utf-8")
+    req = Request(
+        "http://new-api:3000/v1/chat/completions",
+        data=payload,
+        headers={
+            "User-Agent": "glart-stack-updater",
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=60) as resp:
+            return True, 200 <= resp.status < 400, False
+    except URLError:
+        return True, False, False
+
+
+def run_operation(
+    action: str,
+    component: str,
+    backup_id: str = "latest",
+    restore_runtime: bool = False,
+) -> None:
     set_state(
         running=True,
         started_at=now(),
         finished_at="",
         last_exit=None,
-        message="update running",
+        message=f"{action} {component} running",
+        current_action=action,
+        current_component=component,
+        current_backup_id=backup_id,
         log_tail=[],
     )
-    append_log(f"[{now()}] starting glart stack update")
+    append_log(f"[{now()}] starting glart stack {action} {component}")
     env = os.environ.copy()
+    if restore_runtime:
+        env["GLART_STACK_RESTORE_RUNTIME_ON_ROLLBACK"] = "1"
     process = subprocess.Popen(
-        ["sh", str(SCRIPT)],
+        ["sh", str(SCRIPT), action, component, backup_id],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -163,7 +331,11 @@ def run_update() -> None:
     for line in process.stdout:
         append_log(line)
     exit_code = process.wait()
-    message = "update completed" if exit_code == 0 else f"update failed with exit code {exit_code}"
+    message = (
+        f"{action} {component} completed"
+        if exit_code == 0
+        else f"{action} {component} failed with exit code {exit_code}"
+    )
     append_log(f"[{now()}] {message}")
     set_state(running=False, last_exit=exit_code, finished_at=now(), message=message)
 
@@ -172,27 +344,81 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if not self.ensure_auth():
             return
-        if self.path == "/status":
+        parsed = urlparse(self.path)
+        if parsed.path == "/status":
             self.write_json(snapshot())
             return
-        if self.path == "/precheck":
+        if parsed.path == "/precheck":
             self.write_json(precheck())
+            return
+        if parsed.path == "/backups":
+            params = parse_qs(parsed.query)
+            try:
+                component = normalize_component(
+                    params.get("component", ["new-api"])[0],
+                    VALID_ROLLBACK_COMPONENTS,
+                    "new-api",
+                )
+                self.write_json(list_backups(component))
+            except ValueError as exc:
+                self.write_json({"message": str(exc)}, 400)
             return
         self.write_json({"message": "not found"}, 404)
 
     def do_POST(self) -> None:
         if not self.ensure_auth():
             return
-        if self.path == "/smoke":
+        parsed = urlparse(self.path)
+        if parsed.path == "/smoke":
             self.write_json(smoke())
             return
-        if self.path == "/update":
+        if parsed.path == "/update":
+            try:
+                body = parse_json_body(self)
+                component = normalize_component(
+                    body.get("component"),
+                    VALID_UPDATE_COMPONENTS,
+                    "all",
+                )
+            except ValueError as exc:
+                self.write_json({"message": str(exc)}, 400)
+                return
             with state_lock:
                 if state["running"]:
                     self.write_json(snapshot(), 409)
                     return
                 state["running"] = True
-            threading.Thread(target=run_update, daemon=True).start()
+            threading.Thread(
+                target=run_operation,
+                args=("update", component, "latest", False),
+                daemon=True,
+            ).start()
+            time.sleep(0.2)
+            self.write_json(snapshot())
+            return
+        if parsed.path == "/rollback":
+            try:
+                body = parse_json_body(self)
+                component = normalize_component(
+                    body.get("component"),
+                    VALID_ROLLBACK_COMPONENTS,
+                    "new-api",
+                )
+                backup_id = str(body.get("backup_id") or "latest").strip() or "latest"
+                restore_runtime = bool(body.get("restore_runtime", False))
+            except ValueError as exc:
+                self.write_json({"message": str(exc)}, 400)
+                return
+            with state_lock:
+                if state["running"]:
+                    self.write_json(snapshot(), 409)
+                    return
+                state["running"] = True
+            threading.Thread(
+                target=run_operation,
+                args=("rollback", component, backup_id, restore_runtime),
+                daemon=True,
+            ).start()
             time.sleep(0.2)
             self.write_json(snapshot())
             return

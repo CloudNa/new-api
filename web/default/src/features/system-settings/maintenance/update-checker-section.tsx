@@ -25,6 +25,7 @@ import {
   SendIcon,
   XCircleIcon,
 } from 'lucide-react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatTimestamp } from '@/lib/format'
@@ -32,15 +33,43 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
+  getSystemUpdateBackups,
   getSystemUpdateStatus,
   precheckSystemUpdate,
+  rollbackSystemUpdate,
   smokeSystemUpdate,
   startSystemUpdate,
+  type SystemRollbackComponent,
+  type SystemUpdateBackup,
   type SystemUpdatePrecheck,
   type SystemUpdateSmoke,
   type SystemUpdateStatus,
+  type SystemUpdateComponent,
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
+
+const UPDATE_COMPONENTS: SystemUpdateComponent[] = [
+  'all',
+  'new-api',
+  'gpt-load',
+  'cliproxyapi',
+]
+const ROLLBACK_COMPONENTS: SystemRollbackComponent[] = [
+  'new-api',
+  'gpt-load',
+  'cliproxyapi',
+]
+
+type PendingOperation =
+  | {
+      action: 'update'
+      component: SystemUpdateComponent
+    }
+  | {
+      action: 'rollback'
+      component: SystemRollbackComponent
+      backupId: string
+    }
 
 type UpdateCheckerSectionProps = {
   currentVersion?: string | null
@@ -56,6 +85,16 @@ export function UpdateCheckerSection({
   const [prechecking, setPrechecking] = useState(false)
   const [smoking, setSmoking] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingOperation, setPendingOperation] =
+    useState<PendingOperation | null>(null)
+  const [backupsLoading, setBackupsLoading] = useState(false)
+  const [backups, setBackups] = useState<
+    Record<SystemRollbackComponent, SystemUpdateBackup[]>
+  >({
+    'new-api': [],
+    'gpt-load': [],
+    cliproxyapi: [],
+  })
   const [precheck, setPrecheck] = useState<SystemUpdatePrecheck | null>(null)
   const [smoke, setSmoke] = useState<SystemUpdateSmoke | null>(null)
   const [status, setStatus] = useState<SystemUpdateStatus | null>(null)
@@ -68,6 +107,35 @@ export function UpdateCheckerSection({
   const smokePassed = smoke?.ok === true
   const updateChecksPassed = precheckPassed && smokePassed
   const logLines = status?.log_tail ?? []
+  const canStartUpdate =
+    updaterEnabled && !updaterRunning && !loading && updateChecksPassed
+  const canStartRollback = updaterEnabled && !updaterRunning && !loading
+
+  const refreshBackups = async () => {
+    if (!updaterEnabled && status) return
+    setBackupsLoading(true)
+    try {
+      const results = await Promise.all(
+        ROLLBACK_COMPONENTS.map(async (component) => ({
+          component,
+          response: await getSystemUpdateBackups(component),
+        }))
+      )
+      setBackups((current) => {
+        const next = { ...current }
+        for (const { component, response } of results) {
+          if (response.data?.backups) {
+            next[component] = response.data.backups
+          }
+        }
+        return next
+      })
+    } catch {
+      toast.error(t('Failed to load component backups'))
+    } finally {
+      setBackupsLoading(false)
+    }
+  }
 
   const refreshStatus = async () => {
     try {
@@ -86,6 +154,7 @@ export function UpdateCheckerSection({
 
   useEffect(() => {
     void refreshStatus()
+    void refreshBackups()
   }, [])
 
   useEffect(() => {
@@ -95,6 +164,11 @@ export function UpdateCheckerSection({
     }, 5000)
     return () => window.clearInterval(timer)
   }, [updaterRunning])
+
+  useEffect(() => {
+    if (updaterRunning || status?.last_exit !== 0) return
+    void refreshBackups()
+  }, [updaterRunning, status?.last_exit])
 
   const handlePrecheck = async () => {
     setPrechecking(true)
@@ -138,29 +212,67 @@ export function UpdateCheckerSection({
     }
   }
 
-  const handleStartUpdate = async () => {
+  const openUpdateConfirm = (component: SystemUpdateComponent) => {
+    setPendingOperation({ action: 'update', component })
+    setConfirmOpen(true)
+  }
+
+  const openRollbackConfirm = (
+    component: SystemRollbackComponent,
+    backupId: string
+  ) => {
+    setPendingOperation({ action: 'rollback', component, backupId })
+    setConfirmOpen(true)
+  }
+
+  const handleConfirmOperation = async () => {
+    const operation = pendingOperation
+    if (!operation) return
     setConfirmOpen(false)
     setLoading(true)
     try {
-      const res = await startSystemUpdate()
+      const res =
+        operation.action === 'update'
+          ? await startSystemUpdate(operation.component)
+          : await rollbackSystemUpdate({
+              component: operation.component,
+              backup_id: operation.backupId,
+            })
       if (res.data) {
         setStatus(res.data)
       }
       if (res.success) {
-        toast.success(t('Update task started.'))
+        toast.success(
+          operation.action === 'update'
+            ? t('Update task started.')
+            : t('Rollback task started.')
+        )
       } else {
-        toast.error(res.message || t('Failed to start update task'))
+        toast.error(
+          res.message ||
+            (operation.action === 'update'
+              ? t('Failed to start update task')
+              : t('Failed to start rollback task'))
+        )
       }
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : t('Failed to start update task')
+          : operation.action === 'update'
+            ? t('Failed to start update task')
+            : t('Failed to start rollback task')
       toast.error(message)
     } finally {
       setLoading(false)
+      setPendingOperation(null)
     }
   }
+
+  const pendingComponentLabel = pendingOperation
+    ? getSystemUpdateComponentLabel(t, pendingOperation.component)
+    : ''
+  const pendingIsRollback = pendingOperation?.action === 'rollback'
 
   return (
     <SettingsSection title={t('System maintenance')}>
@@ -181,21 +293,6 @@ export function UpdateCheckerSection({
         </div>
 
         <div className='flex flex-wrap gap-2'>
-          <Button
-            onClick={() => setConfirmOpen(true)}
-            disabled={
-              !updaterEnabled || updaterRunning || loading || !updateChecksPassed
-            }
-          >
-            {updaterRunning || loading ? (
-              t('Updating...')
-            ) : (
-              <>
-                <RocketIcon className='me-2 h-4 w-4' />
-                {t('Combined update')}
-              </>
-            )}
-          </Button>
           <Button
             type='button'
             variant='secondary'
@@ -234,17 +331,105 @@ export function UpdateCheckerSection({
           </div>
         </div>
 
+        <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
+          {UPDATE_COMPONENTS.map((component) => {
+            const rollbackComponent =
+              component === 'all' ? null : (component as SystemRollbackComponent)
+            const latestBackup = rollbackComponent
+              ? backups[rollbackComponent]?.[0]
+              : null
+            return (
+              <div
+                key={component}
+                className='space-y-3 rounded-lg border p-4'
+              >
+                <div>
+                  <div className='font-medium'>
+                    {getSystemUpdateComponentLabel(t, component)}
+                  </div>
+                  <div className='text-muted-foreground text-sm'>
+                    {component === 'all'
+                      ? t('Runs each component update with separate backups.')
+                      : latestBackup
+                        ? `${t('Latest backup')}: ${latestBackup.id}`
+                        : backupsLoading
+                          ? t('Loading backups...')
+                          : t('No backups yet')}
+                  </div>
+                </div>
+                <div className='flex flex-wrap gap-2'>
+                  <Button
+                    type='button'
+                    size='sm'
+                    onClick={() => openUpdateConfirm(component)}
+                    disabled={!canStartUpdate}
+                  >
+                    <RocketIcon className='me-2 h-4 w-4' />
+                    {component === 'all'
+                      ? t('Combined update')
+                      : t('Update component')}
+                  </Button>
+                  {rollbackComponent && (
+                    <Button
+                      type='button'
+                      size='sm'
+                      variant='secondary'
+                      onClick={() =>
+                        latestBackup &&
+                        openRollbackConfirm(rollbackComponent, latestBackup.id)
+                      }
+                      disabled={!canStartRollback || !latestBackup}
+                    >
+                      <RefreshCcwIcon className='me-2 h-4 w-4' />
+                      {t('Rollback latest')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
         <ConfirmDialog
           open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          title={t('Start combined one-click update?')}
-          desc={t(
-            'This will update new-api, GPT-Load, and CLIProxyAPI together while preserving the Glart bridge and private sidecar ports.'
-          )}
-          confirmText={t('Start combined update')}
+          onOpenChange={(open) => {
+            setConfirmOpen(open)
+            if (!open) setPendingOperation(null)
+          }}
+          title={
+            pendingIsRollback
+              ? t('Rollback component?')
+              : pendingOperation?.component === 'all'
+                ? t('Start combined one-click update?')
+                : t('Start component update?')
+          }
+          desc={
+            pendingIsRollback
+              ? t(
+                  'This will roll back only the selected component image. Runtime data is not restored by default.'
+                )
+              : pendingOperation?.component === 'all'
+                ? t(
+                    'This will update new-api, GPT-Load, and CLIProxyAPI together while preserving separate backups for each component.'
+                  )
+                : t(
+                    'This will update only the selected component and create a component-specific rollback point.'
+                  )
+          }
+          confirmText={
+            pendingIsRollback
+              ? `${t('Rollback')} ${pendingComponentLabel}`
+              : `${t('Update')} ${pendingComponentLabel}`
+          }
+          destructive={pendingIsRollback}
           isLoading={loading}
-          disabled={!updaterEnabled || updaterRunning || !updateChecksPassed}
-          handleConfirm={handleStartUpdate}
+          disabled={
+            !pendingOperation ||
+            !updaterEnabled ||
+            updaterRunning ||
+            (pendingOperation.action === 'update' && !updateChecksPassed)
+          }
+          handleConfirm={handleConfirmOperation}
         />
 
         <div className='rounded-lg border p-4'>
@@ -271,6 +456,23 @@ export function UpdateCheckerSection({
               <div>
                 <div className='text-muted-foreground'>{t('Started at')}</div>
                 <div className='font-medium'>{status.started_at}</div>
+              </div>
+            )}
+            {status?.current_action && status?.current_component && (
+              <div>
+                <div className='text-muted-foreground'>
+                  {t('Current operation')}
+                </div>
+                <div className='font-medium'>
+                  {status.current_action}{' '}
+                  {getSystemUpdateComponentLabel(t, status.current_component)}
+                </div>
+              </div>
+            )}
+            {status?.current_backup_id && status.current_backup_id !== 'latest' && (
+              <div>
+                <div className='text-muted-foreground'>{t('Backup ID')}</div>
+                <div className='font-medium'>{status.current_backup_id}</div>
               </div>
             )}
             {status?.finished_at && (
@@ -318,6 +520,26 @@ export function UpdateCheckerSection({
               <HealthRow
                 label={t('CLIProxyAPI health')}
                 ok={smoke.cliproxyapi_ready}
+              />
+              <HealthRow
+                label={t('Sidecar bridge sources')}
+                ok={smoke.sidecar_bridge_sources_ok ?? false}
+              />
+              <HealthRow
+                label={t('proxy-test chat smoke')}
+                ok={
+                  smoke.proxy_test_chat_ok === true ||
+                  smoke.proxy_test_chat_skipped === true
+                }
+                statusText={
+                  smoke.proxy_test_chat_skipped
+                    ? t('Skipped')
+                    : smoke.proxy_test_chat_checked
+                      ? smoke.proxy_test_chat_ok
+                        ? t('OK')
+                        : t('Failed')
+                      : t('Not configured')
+                }
               />
               <div>
                 <div className='text-muted-foreground'>{t('HTTP status')}</div>
@@ -372,12 +594,38 @@ export function UpdateCheckerSection({
   )
 }
 
-function HealthRow({ label, ok }: { label: string; ok: boolean }) {
+function HealthRow({
+  label,
+  ok,
+  statusText,
+}: {
+  label: string
+  ok: boolean
+  statusText?: string
+}) {
   const { t } = useTranslation()
   return (
     <div>
       <div className='text-muted-foreground'>{label}</div>
-      <div className='font-medium'>{ok ? t('OK') : t('Failed')}</div>
+      <div className='font-medium'>
+        {statusText ?? (ok ? t('OK') : t('Failed'))}
+      </div>
     </div>
   )
+}
+
+function getSystemUpdateComponentLabel(
+  t: TFunction,
+  component: SystemUpdateComponent
+) {
+  switch (component) {
+    case 'all':
+      return t('Combined stack')
+    case 'new-api':
+      return 'new-api'
+    case 'gpt-load':
+      return 'GPT-Load'
+    case 'cliproxyapi':
+      return 'CLIProxyAPI'
+  }
 }

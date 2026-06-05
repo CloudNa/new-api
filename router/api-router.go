@@ -229,8 +229,10 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			systemUpdateRoute.GET("/status", controller.GetSystemUpdateStatus)
 			systemUpdateRoute.GET("/precheck", controller.PrecheckSystemUpdate)
+			systemUpdateRoute.GET("/backups", controller.ListSystemUpdateBackups)
 			systemUpdateRoute.POST("/smoke", middleware.CriticalRateLimit(), controller.SmokeSystemUpdate)
 			systemUpdateRoute.POST("/start", middleware.CriticalRateLimit(), controller.StartSystemUpdate)
+			systemUpdateRoute.POST("/rollback", middleware.CriticalRateLimit(), controller.RollbackSystemUpdate)
 		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())

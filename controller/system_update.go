@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -16,13 +17,16 @@ import (
 const defaultGlartStackUpdaterURL = "http://glart-stack-updater:8787"
 
 type glartStackUpdaterStatus struct {
-	Enabled    bool     `json:"enabled"`
-	Running    bool     `json:"running"`
-	LastExit   *int     `json:"last_exit,omitempty"`
-	StartedAt  string   `json:"started_at,omitempty"`
-	FinishedAt string   `json:"finished_at,omitempty"`
-	Message    string   `json:"message,omitempty"`
-	LogTail    []string `json:"log_tail,omitempty"`
+	Enabled          bool     `json:"enabled"`
+	Running          bool     `json:"running"`
+	LastExit         *int     `json:"last_exit,omitempty"`
+	StartedAt        string   `json:"started_at,omitempty"`
+	FinishedAt       string   `json:"finished_at,omitempty"`
+	Message          string   `json:"message,omitempty"`
+	CurrentAction    string   `json:"current_action,omitempty"`
+	CurrentComponent string   `json:"current_component,omitempty"`
+	CurrentBackupID  string   `json:"current_backup_id,omitempty"`
+	LogTail          []string `json:"log_tail,omitempty"`
 }
 
 type glartStackPrecheckItem struct {
@@ -40,16 +44,60 @@ type glartStackUpdaterPrecheck struct {
 }
 
 type glartStackSmokeResult struct {
-	Enabled          bool   `json:"enabled"`
-	OK               bool   `json:"ok"`
-	Message          string `json:"message,omitempty"`
-	CheckedAt        string `json:"checked_at,omitempty"`
-	Status           *int   `json:"status,omitempty"`
-	ContentType      string `json:"content_type,omitempty"`
-	NewAPIHealthy    bool   `json:"new_api_healthy"`
-	GPTLoadHealthy   bool   `json:"gpt_load_healthy"`
-	CLIProxyAPIReady bool   `json:"cliproxyapi_ready"`
-	Error            string `json:"error,omitempty"`
+	Enabled                bool   `json:"enabled"`
+	OK                     bool   `json:"ok"`
+	Message                string `json:"message,omitempty"`
+	CheckedAt              string `json:"checked_at,omitempty"`
+	Status                 *int   `json:"status,omitempty"`
+	ContentType            string `json:"content_type,omitempty"`
+	NewAPIHealthy          bool   `json:"new_api_healthy"`
+	GPTLoadHealthy         bool   `json:"gpt_load_healthy"`
+	CLIProxyAPIReady       bool   `json:"cliproxyapi_ready"`
+	SidecarBridgeSourcesOK bool   `json:"sidecar_bridge_sources_ok"`
+	ProxyTestChatChecked   bool   `json:"proxy_test_chat_checked"`
+	ProxyTestChatOK        bool   `json:"proxy_test_chat_ok"`
+	ProxyTestChatSkipped   bool   `json:"proxy_test_chat_skipped"`
+	Error                  string `json:"error,omitempty"`
+}
+
+type glartStackBackup struct {
+	ID           string `json:"id"`
+	Component    string `json:"component"`
+	CreatedAt    string `json:"created_at,omitempty"`
+	BeforeCommit string `json:"before_commit,omitempty"`
+	ServiceImage string `json:"service_image,omitempty"`
+	RollbackTag  string `json:"rollback_tag,omitempty"`
+	RuntimePath  string `json:"runtime_path,omitempty"`
+}
+
+type glartStackBackups struct {
+	Enabled   bool               `json:"enabled"`
+	Component string             `json:"component"`
+	Backups   []glartStackBackup `json:"backups"`
+	Message   string             `json:"message,omitempty"`
+}
+
+type systemUpdateStartRequest struct {
+	Component string `json:"component,omitempty"`
+}
+
+type systemUpdateRollbackRequest struct {
+	Component      string `json:"component,omitempty"`
+	BackupID       string `json:"backup_id,omitempty"`
+	RestoreRuntime bool   `json:"restore_runtime,omitempty"`
+}
+
+var validSystemUpdateComponents = map[string]bool{
+	"all":         true,
+	"new-api":     true,
+	"gpt-load":    true,
+	"cliproxyapi": true,
+}
+
+var validSystemRollbackComponents = map[string]bool{
+	"new-api":     true,
+	"gpt-load":    true,
+	"cliproxyapi": true,
 }
 
 func glartStackUpdaterConfig() (string, string, bool) {
@@ -67,6 +115,35 @@ func glartStackUpdaterTimeout(defaultSeconds int) time.Duration {
 		timeoutSeconds = defaultSeconds
 	}
 	return time.Duration(timeoutSeconds) * time.Second
+}
+
+func normalizeSystemUpdateComponent(component string, allowAll bool) (string, error) {
+	component = strings.TrimSpace(strings.ToLower(component))
+	if component == "" {
+		if allowAll {
+			return "all", nil
+		}
+		return "new-api", nil
+	}
+	validComponents := validSystemRollbackComponents
+	if allowAll {
+		validComponents = validSystemUpdateComponents
+	}
+	if !validComponents[component] {
+		return "", fmt.Errorf("unsupported update component: %s", component)
+	}
+	return component, nil
+}
+
+func decodeOptionalSystemUpdateRequest(c *gin.Context, target any) error {
+	raw, err := c.GetRawData()
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	return common.Unmarshal(raw, target)
 }
 
 func callGlartStackUpdater(method string, path string, body []byte) (*glartStackUpdaterStatus, int, error) {
@@ -87,6 +164,13 @@ func callGlartStackUpdaterSmoke() (*glartStackSmokeResult, int, error) {
 	return smoke, code, err
 }
 
+func callGlartStackUpdaterBackups(component string) (*glartStackBackups, int, error) {
+	backups := &glartStackBackups{}
+	path := "/backups?component=" + url.QueryEscape(component)
+	code, err := callGlartStackUpdaterJSON(http.MethodGet, path, nil, backups, 15)
+	return backups, code, err
+}
+
 func callGlartStackUpdaterJSON(method string, path string, body []byte, target any, defaultTimeoutSeconds int) (int, error) {
 	updaterURL, token, enabled := glartStackUpdaterConfig()
 	if !enabled {
@@ -98,6 +182,9 @@ func callGlartStackUpdaterJSON(method string, path string, body []byte, target a
 			value.Enabled = false
 			value.Message = "Glart stack updater is not configured"
 		case *glartStackSmokeResult:
+			value.Enabled = false
+			value.Message = "Glart stack updater is not configured"
+		case *glartStackBackups:
 			value.Enabled = false
 			value.Message = "Glart stack updater is not configured"
 		}
@@ -130,6 +217,8 @@ func callGlartStackUpdaterJSON(method string, path string, body []byte, target a
 		value.Enabled = true
 	case *glartStackSmokeResult:
 		value.Enabled = true
+	case *glartStackBackups:
+		value.Enabled = true
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -148,6 +237,12 @@ func callGlartStackUpdaterJSON(method string, path string, body []byte, target a
 				message = value.Message
 			}
 		case *glartStackSmokeResult:
+			message = value.Message
+			if value.Message == "" {
+				value.Message = fmt.Sprintf("Updater returned HTTP %d", resp.StatusCode)
+				message = value.Message
+			}
+		case *glartStackBackups:
 			message = value.Message
 			if value.Message == "" {
 				value.Message = fmt.Sprintf("Updater returned HTTP %d", resp.StatusCode)
@@ -179,7 +274,32 @@ func GetSystemUpdateStatus(c *gin.Context) {
 }
 
 func StartSystemUpdate(c *gin.Context) {
-	status, _, err := callGlartStackUpdater(http.MethodPost, "/update", []byte("{}"))
+	request := systemUpdateStartRequest{}
+	if err := decodeOptionalSystemUpdateRequest(c, &request); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	component, err := normalizeSystemUpdateComponent(request.Component, true)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	body, err := common.Marshal(systemUpdateStartRequest{Component: component})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	status, _, err := callGlartStackUpdater(http.MethodPost, "/update", body)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -193,6 +313,83 @@ func StartSystemUpdate(c *gin.Context) {
 		"success": true,
 		"message": "Update started",
 		"data":    status,
+	})
+}
+
+func RollbackSystemUpdate(c *gin.Context) {
+	request := systemUpdateRollbackRequest{}
+	if err := decodeOptionalSystemUpdateRequest(c, &request); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	component, err := normalizeSystemUpdateComponent(request.Component, false)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	backupID := strings.TrimSpace(request.BackupID)
+	if backupID == "" {
+		backupID = "latest"
+	}
+	body, err := common.Marshal(systemUpdateRollbackRequest{
+		Component:      component,
+		BackupID:       backupID,
+		RestoreRuntime: request.RestoreRuntime,
+	})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	status, _, err := callGlartStackUpdater(http.MethodPost, "/rollback", body)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+			"data":    status,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Rollback started",
+		"data":    status,
+	})
+}
+
+func ListSystemUpdateBackups(c *gin.Context) {
+	component, err := normalizeSystemUpdateComponent(c.Query("component"), false)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	backups, _, err := callGlartStackUpdaterBackups(component)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+			"data":    backups,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    backups,
 	})
 }
 

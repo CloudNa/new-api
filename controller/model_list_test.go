@@ -30,6 +30,8 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	initModelListColumnNames(t)
+	originalDB := model.DB
+	originalLogDB := model.LOG_DB
 
 	gin.SetMode(gin.TestMode)
 	common.UsingSQLite = true
@@ -50,6 +52,9 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 		if err == nil {
 			_ = sqlDB.Close()
 		}
+		model.DB = originalDB
+		model.LOG_DB = originalLogDB
+		model.InvalidatePricingCache()
 	})
 
 	return db
@@ -224,6 +229,7 @@ func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
 	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimitEnabled, true)
 	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimit, map[string]bool{
 		"zz-token-tiered-visible-model":      true,
