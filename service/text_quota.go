@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/profit"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -458,6 +459,20 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	upstreamPromptTokens := summary.PromptTokens
+	upstreamCompletionTokens := summary.CompletionTokens
+	if usage != nil {
+		upstreamPromptTokens = usage.PromptTokens
+		upstreamCompletionTokens = usage.CompletionTokens
+	}
+	profit.AppendObservation(other, profit.ObservationInput{
+		Group:                          relayInfo.UsingGroup,
+		BillablePromptTokens:           summary.PromptTokens,
+		BillableCompletionTokens:       summary.CompletionTokens,
+		UpstreamActualPromptTokens:     upstreamPromptTokens,
+		UpstreamActualCompletionTokens: upstreamCompletionTokens,
+		UserQuota:                      summary.Quota,
+	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

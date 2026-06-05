@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/profit"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -76,6 +77,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "admin_info")
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
+			profit.StripUserVisibleFields(otherMap)
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 		logs[i].Id = startIdx + i + 1

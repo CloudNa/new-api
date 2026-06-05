@@ -234,6 +234,17 @@ func SetApiRouter(router *gin.Engine) {
 			systemUpdateRoute.POST("/start", middleware.CriticalRateLimit(), controller.StartSystemUpdate)
 			systemUpdateRoute.POST("/rollback", middleware.CriticalRateLimit(), controller.RollbackSystemUpdate)
 		}
+		profitRoute := apiRouter.Group("/profit")
+		profitRoute.Use(middleware.RootAuth())
+		{
+			profitRoute.GET("/settings", controller.GetProfitSettings)
+			profitRoute.PUT("/settings", controller.UpdateProfitSettings)
+			profitRoute.GET("/cost-profiles", controller.GetProfitCostProfiles)
+			profitRoute.PUT("/cost-profiles", controller.UpdateProfitCostProfiles)
+			profitRoute.GET("/analytics", controller.GetProfitAnalytics)
+			profitRoute.GET("/events", controller.GetProfitEvents)
+			profitRoute.POST("/route-preview", controller.PreviewProfitRoute)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{

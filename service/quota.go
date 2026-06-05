@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/profit"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -239,6 +240,14 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	profit.AppendObservation(other, profit.ObservationInput{
+		Group:                          relayInfo.UsingGroup,
+		BillablePromptTokens:           usage.InputTokens,
+		BillableCompletionTokens:       usage.OutputTokens,
+		UpstreamActualPromptTokens:     usage.InputTokens,
+		UpstreamActualCompletionTokens: usage.OutputTokens,
+		UserQuota:                      quota,
+	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -360,6 +369,14 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	profit.AppendObservation(other, profit.ObservationInput{
+		Group:                          relayInfo.UsingGroup,
+		BillablePromptTokens:           usage.PromptTokens,
+		BillableCompletionTokens:       usage.CompletionTokens,
+		UpstreamActualPromptTokens:     usage.PromptTokens,
+		UpstreamActualCompletionTokens: usage.CompletionTokens,
+		UserQuota:                      quota,
+	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,
