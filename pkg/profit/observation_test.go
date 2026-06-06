@@ -108,6 +108,39 @@ func TestAppendObservationAddsOutputPolicyDecision(t *testing.T) {
 	require.Equal(t, false, other[KeyOutputPolicyLiveEnforced])
 }
 
+func TestAppendObservationAddsLongContextDecision(t *testing.T) {
+	settings := DefaultSettings()
+	settings.LongContextMode = ModeObserve
+	settingsPayload, err := common.Marshal(settings.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{
+		SettingsOptionKey: string(settingsPayload),
+	})
+	other := map[string]interface{}{}
+
+	AppendObservation(other, ObservationInput{
+		Group:                    "proxy-test",
+		ModelName:                "gpt-test",
+		BillablePromptTokens:     64000,
+		BillableCompletionTokens: 16000,
+		UserQuota:                500000,
+	})
+
+	require.Equal(t, ModeObserve, other[KeyLongContextMode])
+	require.Equal(t, DefaultLongContextPolicyID, other[KeyLongContextPolicyID])
+	require.Equal(t, "32k-128k", other[KeyLongContextTierID])
+	require.Equal(t, 64000, other[KeyLongContextTokens])
+	require.Equal(t, 32001, other[KeyLongContextMinTokens])
+	require.Equal(t, 128000, other[KeyLongContextMaxTokens])
+	require.InDelta(t, 1.25, other[KeyLongContextInputMultiplier], 0.0001)
+	require.InDelta(t, 0.8, other[KeyLongContextInputRevenueUSD], 0.0001)
+	require.InDelta(t, 0.2, other[KeyLongContextSuggestedExtraUSD], 0.0001)
+	require.InDelta(t, 1.2, other[KeyLongContextSuggestedRevenueUSD], 0.0001)
+	require.Equal(t, false, other[KeyLongContextPremiumRequired])
+	require.Equal(t, true, other[KeyLongContextObserveOnly])
+	require.Equal(t, false, other[KeyLongContextLiveEnforced])
+}
+
 func TestAppendObservationAddsLowMarginRiskDecision(t *testing.T) {
 	settings := DefaultSettings()
 	settings.RiskEnforcement = RiskModeAlert
@@ -191,22 +224,24 @@ func TestAppendObservationClampsNegativeValues(t *testing.T) {
 
 func TestStripUserVisibleFields(t *testing.T) {
 	other := map[string]interface{}{
-		"profit_observe_version":            1,
-		"billable_prompt_tokens":            100,
-		"upstream_actual_completion_tokens": 20,
-		"compression_mode":                  "stacked",
-		"compression_bypassed":              false,
-		"compression_bypass_reason":         "no_savings",
-		"compression_rules_version":         "omniroute-style-go-v1",
-		"profit_route_mode":                 "observe",
-		"profit_route_candidates":           []RouteDecisionCandidate{{ChannelID: 1}},
-		"output_policy_mode":                "cap",
-		"output_policy_would_cap":           true,
-		"output_policy_live_enforced":       false,
-		"profit_risk_mode":                  "alert",
-		"profit_risk_alert":                 true,
-		"profit_risk_reasons":               []string{RiskReasonLossMakingRequest},
-		"model_ratio":                       1.5,
+		"profit_observe_version":                   1,
+		"billable_prompt_tokens":                   100,
+		"upstream_actual_completion_tokens":        20,
+		"compression_mode":                         "stacked",
+		"compression_bypassed":                     false,
+		"compression_bypass_reason":                "no_savings",
+		"compression_rules_version":                "omniroute-style-go-v1",
+		"profit_route_mode":                        "observe",
+		"profit_route_candidates":                  []RouteDecisionCandidate{{ChannelID: 1}},
+		"output_policy_mode":                       "cap",
+		"output_policy_would_cap":                  true,
+		"output_policy_live_enforced":              false,
+		"profit_risk_mode":                         "alert",
+		"profit_risk_alert":                        true,
+		"profit_risk_reasons":                      []string{RiskReasonLossMakingRequest},
+		"long_context_mode":                        "observe",
+		"long_context_suggested_extra_revenue_usd": 0.2,
+		"model_ratio":                              1.5,
 	}
 
 	StripUserVisibleFields(other)
@@ -226,5 +261,7 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "profit_risk_mode")
 	require.NotContains(t, other, "profit_risk_alert")
 	require.NotContains(t, other, "profit_risk_reasons")
+	require.NotContains(t, other, "long_context_mode")
+	require.NotContains(t, other, "long_context_suggested_extra_revenue_usd")
 	require.Equal(t, 1.5, other["model_ratio"])
 }

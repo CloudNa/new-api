@@ -30,6 +30,22 @@ const (
 	KeyCompressionRedactedSecrets     = "compression_redacted_secrets"
 	KeyCacheSavedUSD                  = "cache_saved_usd"
 	KeyRetryCostUSD                   = "retry_cost_usd"
+	KeyLongContextMode                = "long_context_mode"
+	KeyLongContextPolicyID            = "long_context_policy_id"
+	KeyLongContextPolicyName          = "long_context_policy_name"
+	KeyLongContextTierID              = "long_context_tier_id"
+	KeyLongContextTierName            = "long_context_tier_name"
+	KeyLongContextTokens              = "long_context_tokens"
+	KeyLongContextMinTokens           = "long_context_min_tokens"
+	KeyLongContextMaxTokens           = "long_context_max_tokens"
+	KeyLongContextInputMultiplier     = "long_context_input_multiplier"
+	KeyLongContextInputRevenueUSD     = "long_context_input_revenue_usd"
+	KeyLongContextSuggestedExtraUSD   = "long_context_suggested_extra_revenue_usd"
+	KeyLongContextSuggestedRevenueUSD = "long_context_suggested_revenue_usd"
+	KeyLongContextPremiumRequired     = "long_context_premium_required"
+	KeyLongContextPremiumGroup        = "long_context_premium_group"
+	KeyLongContextObserveOnly         = "long_context_observe_only"
+	KeyLongContextLiveEnforced        = "long_context_live_enforced"
 	KeyExpectedCostUSD                = "expected_cost_usd"
 	KeyExpectedMarginUSD              = "expected_margin_usd"
 	KeyExpectedMarginPct              = "expected_margin_pct"
@@ -93,6 +109,22 @@ var userHiddenKeys = []string{
 	KeyCompressionRedactedSecrets,
 	KeyCacheSavedUSD,
 	KeyRetryCostUSD,
+	KeyLongContextMode,
+	KeyLongContextPolicyID,
+	KeyLongContextPolicyName,
+	KeyLongContextTierID,
+	KeyLongContextTierName,
+	KeyLongContextTokens,
+	KeyLongContextMinTokens,
+	KeyLongContextMaxTokens,
+	KeyLongContextInputMultiplier,
+	KeyLongContextInputRevenueUSD,
+	KeyLongContextSuggestedExtraUSD,
+	KeyLongContextSuggestedRevenueUSD,
+	KeyLongContextPremiumRequired,
+	KeyLongContextPremiumGroup,
+	KeyLongContextObserveOnly,
+	KeyLongContextLiveEnforced,
 	KeyExpectedCostUSD,
 	KeyExpectedMarginUSD,
 	KeyExpectedMarginPct,
@@ -148,6 +180,7 @@ type ObservationInput struct {
 	LatencyMs                      int
 	RouteDecision                  *RouteDecision
 	OutputPolicyDecision           *OutputPolicyDecision
+	LongContextDecision            *LongContextDecision
 }
 
 func EnabledForGroup(group string) bool {
@@ -191,6 +224,18 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 		LatencyMs:                input.LatencyMs,
 	}, CurrentCostProfiles())
 	riskDecision := BuildRiskDecision(settings, costEstimate)
+	longContextDecision := input.LongContextDecision
+	if longContextDecision == nil {
+		longContextDecision = BuildLongContextDecisionWithSettings(LongContextInput{
+			Group:                    input.Group,
+			ModelName:                input.ModelName,
+			ChannelID:                input.ChannelID,
+			ChannelName:              input.ChannelName,
+			BillablePromptTokens:     input.BillablePromptTokens,
+			BillableCompletionTokens: input.BillableCompletionTokens,
+			EstimatedRevenueUSD:      revenueUSD,
+		}, settings)
+	}
 
 	other[KeyObserveVersion] = ObservationVersion
 	other[KeyCostStatus] = costEstimate.CostStatus
@@ -211,12 +256,45 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	other[KeyCompressionSavedTokens] = positiveInt(input.CompressionSavedTokens)
 	other[KeyCacheSavedUSD] = nil
 	other[KeyRetryCostUSD] = nil
+	appendLongContextDecision(other, longContextDecision)
 	other[KeyExpectedCostUSD] = costEstimate.ExpectedCostUSD
 	other[KeyExpectedMarginUSD] = costEstimate.ExpectedMarginUSD
 	other[KeyExpectedMarginPct] = costEstimate.ExpectedMarginPct
 	appendRouteDecision(other, input.RouteDecision)
 	appendOutputPolicyDecision(other, input.OutputPolicyDecision)
 	appendRiskDecision(other, riskDecision)
+}
+
+func appendLongContextDecision(other map[string]interface{}, decision *LongContextDecision) {
+	if other == nil || decision == nil {
+		return
+	}
+	other[KeyLongContextMode] = decision.Mode
+	if decision.PolicyID != "" {
+		other[KeyLongContextPolicyID] = decision.PolicyID
+	}
+	if decision.PolicyName != "" {
+		other[KeyLongContextPolicyName] = decision.PolicyName
+	}
+	if decision.TierID != "" {
+		other[KeyLongContextTierID] = decision.TierID
+	}
+	if decision.TierName != "" {
+		other[KeyLongContextTierName] = decision.TierName
+	}
+	other[KeyLongContextTokens] = positiveInt(decision.ContextTokens)
+	other[KeyLongContextMinTokens] = positiveInt(decision.MinContextTokens)
+	other[KeyLongContextMaxTokens] = positiveInt(decision.MaxContextTokens)
+	other[KeyLongContextInputMultiplier] = decision.InputMultiplier
+	other[KeyLongContextInputRevenueUSD] = decision.EstimatedInputRevenueUSD
+	other[KeyLongContextSuggestedExtraUSD] = decision.SuggestedExtraRevenueUSD
+	other[KeyLongContextSuggestedRevenueUSD] = decision.SuggestedRevenueUSD
+	other[KeyLongContextPremiumRequired] = decision.PremiumRequired
+	if decision.PremiumGroup != "" {
+		other[KeyLongContextPremiumGroup] = decision.PremiumGroup
+	}
+	other[KeyLongContextObserveOnly] = decision.ObserveOnly
+	other[KeyLongContextLiveEnforced] = decision.LiveEnforced
 }
 
 func StripUserVisibleFields(other map[string]interface{}) {

@@ -21,22 +21,48 @@ const (
 )
 
 type Settings struct {
-	Version          int            `json:"version"`
-	Enabled          bool           `json:"enabled"`
-	ObserveOnly      bool           `json:"observe_only"`
-	ObserveGroups    []string       `json:"observe_groups"`
-	GlobalKillSwitch bool           `json:"global_kill_switch"`
-	CostRoutingMode  string         `json:"cost_routing_mode"`
-	CacheMode        string         `json:"cache_mode"`
-	OutputCapMode    string         `json:"output_cap_mode"`
-	RiskEnforcement  string         `json:"risk_enforcement"`
-	RiskMinGrossUSD  float64        `json:"risk_min_gross_margin_usd,omitempty"`
-	RiskMinGrossPct  float64        `json:"risk_min_gross_margin_pct,omitempty"`
-	RiskMinExpectUSD float64        `json:"risk_min_expected_margin_usd,omitempty"`
-	RiskMinExpectPct float64        `json:"risk_min_expected_margin_pct,omitempty"`
-	SettingsWritable bool           `json:"settings_writable"`
-	CostProfilesUsed bool           `json:"cost_profiles_used"`
-	OutputPolicies   []OutputPolicy `json:"output_policies,omitempty"`
+	Version             int                 `json:"version"`
+	Enabled             bool                `json:"enabled"`
+	ObserveOnly         bool                `json:"observe_only"`
+	ObserveGroups       []string            `json:"observe_groups"`
+	GlobalKillSwitch    bool                `json:"global_kill_switch"`
+	CostRoutingMode     string              `json:"cost_routing_mode"`
+	CacheMode           string              `json:"cache_mode"`
+	LongContextMode     string              `json:"long_context_mode"`
+	OutputCapMode       string              `json:"output_cap_mode"`
+	RiskEnforcement     string              `json:"risk_enforcement"`
+	RiskMinGrossUSD     float64             `json:"risk_min_gross_margin_usd,omitempty"`
+	RiskMinGrossPct     float64             `json:"risk_min_gross_margin_pct,omitempty"`
+	RiskMinExpectUSD    float64             `json:"risk_min_expected_margin_usd,omitempty"`
+	RiskMinExpectPct    float64             `json:"risk_min_expected_margin_pct,omitempty"`
+	SettingsWritable    bool                `json:"settings_writable"`
+	CostProfilesUsed    bool                `json:"cost_profiles_used"`
+	LongContextPolicies []LongContextPolicy `json:"long_context_policies,omitempty"`
+	OutputPolicies      []OutputPolicy      `json:"output_policies,omitempty"`
+}
+
+type LongContextPolicy struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Priority     int               `json:"priority,omitempty"`
+	Group        string            `json:"group,omitempty"`
+	ModelName    string            `json:"model_name,omitempty"`
+	ChannelID    int               `json:"channel_id,omitempty"`
+	ChannelName  string            `json:"channel_name,omitempty"`
+	Mode         string            `json:"mode,omitempty"`
+	PremiumGroup string            `json:"premium_group,omitempty"`
+	Notes        string            `json:"notes,omitempty"`
+	Tiers        []LongContextTier `json:"tiers,omitempty"`
+}
+
+type LongContextTier struct {
+	ID               string  `json:"id"`
+	Name             string  `json:"name,omitempty"`
+	MinContextTokens int     `json:"min_context_tokens,omitempty"`
+	MaxContextTokens int     `json:"max_context_tokens,omitempty"`
+	InputMultiplier  float64 `json:"input_multiplier"`
+	PremiumRequired  bool    `json:"premium_required,omitempty"`
 }
 
 type OutputPolicy struct {
@@ -66,6 +92,7 @@ func DefaultSettings() Settings {
 		GlobalKillSwitch: false,
 		CostRoutingMode:  ModeObserve,
 		CacheMode:        ModeOff,
+		LongContextMode:  ModeOff,
 		OutputCapMode:    ModeOff,
 		RiskEnforcement:  ModeOff,
 		SettingsWritable: true,
@@ -114,6 +141,10 @@ func (s Settings) Normalize() Settings {
 	if !validOffObserveMode(s.CacheMode) {
 		s.CacheMode = defaults.CacheMode
 	}
+	if !validOffObserveMode(s.LongContextMode) {
+		s.LongContextMode = defaults.LongContextMode
+	}
+	s.LongContextPolicies = normalizeLongContextPolicies(s.LongContextPolicies)
 	if !validOutputCapMode(s.OutputCapMode) {
 		s.OutputCapMode = defaults.OutputCapMode
 	}
@@ -134,6 +165,29 @@ func (s Settings) Validate() error {
 	}
 	if s.CacheMode != "" && !validOffObserveMode(s.CacheMode) {
 		return errors.New("invalid cache_mode")
+	}
+	if s.LongContextMode != "" && !validOffObserveMode(s.LongContextMode) {
+		return errors.New("invalid long_context_mode")
+	}
+	for _, policy := range s.LongContextPolicies {
+		mode := strings.TrimSpace(policy.Mode)
+		if mode != "" && !validOffObserveMode(mode) {
+			return errors.New("invalid long context policy mode")
+		}
+		if policy.ChannelID < 0 {
+			return errors.New("long context policy channel_id cannot be negative")
+		}
+		for _, tier := range policy.Tiers {
+			if tier.MinContextTokens < 0 || tier.MaxContextTokens < 0 {
+				return errors.New("long context tier token limits must be non-negative")
+			}
+			if tier.MaxContextTokens > 0 && tier.MaxContextTokens < tier.MinContextTokens {
+				return errors.New("long context tier max_context_tokens cannot be below min_context_tokens")
+			}
+			if tier.InputMultiplier < 0 || math.IsNaN(tier.InputMultiplier) || math.IsInf(tier.InputMultiplier, 0) {
+				return errors.New("long context tier input_multiplier must be non-negative")
+			}
+		}
 	}
 	if s.OutputCapMode != "" && !validOutputCapMode(s.OutputCapMode) {
 		return errors.New("invalid output_cap_mode")
@@ -191,6 +245,60 @@ func cleanStringSlice(items []string) []string {
 		}
 		seen[item] = struct{}{}
 		out = append(out, item)
+	}
+	return out
+}
+
+func normalizeLongContextPolicies(policies []LongContextPolicy) []LongContextPolicy {
+	out := make([]LongContextPolicy, 0, len(policies))
+	for _, policy := range policies {
+		policy.ID = strings.TrimSpace(policy.ID)
+		policy.Name = strings.TrimSpace(policy.Name)
+		policy.Group = strings.TrimSpace(policy.Group)
+		policy.ModelName = strings.TrimSpace(policy.ModelName)
+		policy.ChannelName = strings.TrimSpace(policy.ChannelName)
+		policy.Mode = strings.TrimSpace(policy.Mode)
+		policy.PremiumGroup = strings.TrimSpace(policy.PremiumGroup)
+		policy.Notes = strings.TrimSpace(policy.Notes)
+		if policy.Mode == "" {
+			policy.Mode = ModeObserve
+		}
+		if !validOffObserveMode(policy.Mode) {
+			policy.Mode = ModeObserve
+		}
+		if policy.ChannelID < 0 {
+			policy.ChannelID = 0
+		}
+		policy.Tiers = normalizeLongContextTiers(policy.Tiers)
+		if policy.ID == "" && policy.Group == "" && policy.ModelName == "" && policy.ChannelID == 0 && policy.ChannelName == "" {
+			continue
+		}
+		out = append(out, policy)
+	}
+	return out
+}
+
+func normalizeLongContextTiers(tiers []LongContextTier) []LongContextTier {
+	out := make([]LongContextTier, 0, len(tiers))
+	for _, tier := range tiers {
+		tier.ID = strings.TrimSpace(tier.ID)
+		tier.Name = strings.TrimSpace(tier.Name)
+		if tier.MinContextTokens < 0 {
+			tier.MinContextTokens = 0
+		}
+		if tier.MaxContextTokens < 0 {
+			tier.MaxContextTokens = 0
+		}
+		if tier.MaxContextTokens > 0 && tier.MaxContextTokens < tier.MinContextTokens {
+			tier.MaxContextTokens = 0
+		}
+		if tier.InputMultiplier <= 0 || math.IsNaN(tier.InputMultiplier) || math.IsInf(tier.InputMultiplier, 0) {
+			tier.InputMultiplier = 1
+		}
+		if tier.ID == "" && tier.Name == "" && tier.MinContextTokens == 0 && tier.MaxContextTokens == 0 && tier.InputMultiplier == 1 && !tier.PremiumRequired {
+			continue
+		}
+		out = append(out, tier)
 	}
 	return out
 }

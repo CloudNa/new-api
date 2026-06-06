@@ -420,6 +420,30 @@ export type ProfitOutputCapMode =
   | 'premium_required'
 export type ProfitRiskMode = 'off' | 'alert'
 
+export type ProfitLongContextTier = {
+  id: string
+  name?: string
+  min_context_tokens?: number
+  max_context_tokens?: number
+  input_multiplier: number
+  premium_required?: boolean
+}
+
+export type ProfitLongContextPolicy = {
+  id: string
+  name?: string
+  enabled: boolean
+  priority?: number
+  group?: string
+  model_name?: string
+  channel_id?: number
+  channel_name?: string
+  mode?: ProfitMode
+  premium_group?: string
+  notes?: string
+  tiers?: ProfitLongContextTier[]
+}
+
 export type ProfitOutputPolicy = {
   id: string
   name?: string
@@ -446,6 +470,7 @@ export type ProfitSettings = {
   global_kill_switch: boolean
   cost_routing_mode: ProfitMode
   cache_mode: ProfitMode
+  long_context_mode: ProfitMode
   output_cap_mode: ProfitOutputCapMode
   risk_enforcement: ProfitRiskMode
   risk_min_gross_margin_usd?: number
@@ -454,6 +479,7 @@ export type ProfitSettings = {
   risk_min_expected_margin_pct?: number
   settings_writable: boolean
   cost_profiles_used: boolean
+  long_context_policies?: ProfitLongContextPolicy[]
   output_policies?: ProfitOutputPolicy[]
 }
 
@@ -524,6 +550,10 @@ export type ProfitAnalytics = {
   profit_risk_loss_making_count: number
   profit_risk_low_gross_margin_count: number
   profit_risk_low_expected_margin_count: number
+  long_context_observed_count: number
+  long_context_premium_required_count: number
+  long_context_tokens: number
+  long_context_suggested_extra_revenue_usd: number
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
 }
@@ -602,6 +632,22 @@ export type ProfitEvent = {
   profit_risk_min_expected_margin_pct?: number
   profit_risk_observe_only?: boolean
   profit_risk_live_enforced?: boolean
+  long_context_mode?: ProfitMode
+  long_context_policy_id?: string
+  long_context_policy_name?: string
+  long_context_tier_id?: string
+  long_context_tier_name?: string
+  long_context_tokens?: number
+  long_context_min_tokens?: number
+  long_context_max_tokens?: number
+  long_context_input_multiplier?: number
+  long_context_input_revenue_usd?: number
+  long_context_suggested_extra_revenue_usd?: number
+  long_context_suggested_revenue_usd?: number
+  long_context_premium_required?: boolean
+  long_context_premium_group?: string
+  long_context_observe_only?: boolean
+  long_context_live_enforced?: boolean
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
 }

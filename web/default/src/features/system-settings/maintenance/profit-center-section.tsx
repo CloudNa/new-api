@@ -58,6 +58,7 @@ import {
   type ProfitAnalytics,
   type ProfitCostProfiles,
   type ProfitEventsPage,
+  type ProfitLongContextPolicy,
   type ProfitMode,
   type ProfitOutputCapMode,
   type ProfitOutputPolicy,
@@ -105,6 +106,7 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   global_kill_switch: false,
   cost_routing_mode: 'observe',
   cache_mode: 'off',
+  long_context_mode: 'off',
   output_cap_mode: 'off',
   risk_enforcement: 'off',
   risk_min_gross_margin_usd: 0,
@@ -113,6 +115,7 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   risk_min_expected_margin_pct: 0,
   settings_writable: true,
   cost_profiles_used: true,
+  long_context_policies: [],
   output_policies: [],
 }
 
@@ -180,6 +183,50 @@ const SAMPLE_OUTPUT_POLICIES: ProfitOutputPolicy[] = [
     premium_required: false,
     premium_group: 'premium',
     notes: 'Observe only. No request rewriting is applied in v1.',
+  },
+]
+
+const SAMPLE_LONG_CONTEXT_POLICIES: ProfitLongContextPolicy[] = [
+  {
+    id: 'proxy-test-long-context-premium',
+    name: 'proxy-test long context premium observe',
+    enabled: true,
+    priority: 10,
+    group: 'proxy-test',
+    model_name: '*',
+    mode: 'observe',
+    premium_group: 'premium',
+    notes: 'Observe only. Suggested revenue is not charged until billing expressions are changed.',
+    tiers: [
+      {
+        id: 'base',
+        name: '<=32k',
+        min_context_tokens: 0,
+        max_context_tokens: 32000,
+        input_multiplier: 1,
+      },
+      {
+        id: '32k-128k',
+        name: '32k-128k',
+        min_context_tokens: 32001,
+        max_context_tokens: 128000,
+        input_multiplier: 1.25,
+      },
+      {
+        id: '128k-512k',
+        name: '128k-512k',
+        min_context_tokens: 128001,
+        max_context_tokens: 512000,
+        input_multiplier: 1.75,
+      },
+      {
+        id: '512k-plus',
+        name: '>512k',
+        min_context_tokens: 512001,
+        input_multiplier: 2.5,
+        premium_required: true,
+      },
+    ],
   },
 ]
 
@@ -359,6 +406,18 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
       '低毛利请求',
       formatNumber(analytics?.profit_risk_low_expected_margin_count),
     ],
+    [
+      '长上下文观测',
+      formatNumber(analytics?.long_context_observed_count),
+    ],
+    [
+      '长上下文高级组',
+      formatNumber(analytics?.long_context_premium_required_count),
+    ],
+    [
+      '长上下文建议增收',
+      formatUSD(analytics?.long_context_suggested_extra_revenue_usd),
+    ],
   ]
 
   return (
@@ -392,6 +451,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
             <TableHead>{t('Savings')}</TableHead>
             <TableHead>{t('Route')}</TableHead>
             <TableHead>{t('Output policy')}</TableHead>
+            <TableHead>{t('长上下文')}</TableHead>
             <TableHead>{t('风险')}</TableHead>
             <TableHead>{t('Status')}</TableHead>
           </TableRow>
@@ -400,7 +460,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
           {rows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={11}
+                colSpan={12}
                 className='text-muted-foreground h-20 text-center text-sm'
               >
                 {t('No profit events yet')}
@@ -514,6 +574,36 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                           {event.output_policy_name || event.output_policy_id}
                         </span>
                       ) : null}
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+                <TableCell className='min-w-44'>
+                  {event.long_context_mode ? (
+                    <div className='flex min-w-0 flex-col gap-1'>
+                      <div className='flex flex-wrap items-center gap-1'>
+                        <Badge variant='outline'>
+                          {t(event.long_context_mode)}
+                        </Badge>
+                        {event.long_context_premium_required ? (
+                          <Badge variant='secondary'>{t('Premium')}</Badge>
+                        ) : null}
+                      </div>
+                      <span className='text-muted-foreground text-xs'>
+                        {formatNumber(event.long_context_tokens)} /{' '}
+                        {event.long_context_input_multiplier?.toFixed(2) ??
+                          '1.00'}
+                        x
+                      </span>
+                      <span className='text-muted-foreground max-w-44 truncate text-xs'>
+                        {event.long_context_tier_name ||
+                          event.long_context_tier_id ||
+                          '-'}{' '}
+                        {formatUSD(
+                          event.long_context_suggested_extra_revenue_usd
+                        )}
+                      </span>
                     </div>
                   ) : (
                     '-'
@@ -640,6 +730,9 @@ export function ProfitCenterSection() {
   const [outputPolicyJson, setOutputPolicyJson] = useState(
     formatJson(DEFAULT_SETTINGS.output_policies ?? [])
   )
+  const [longContextPolicyJson, setLongContextPolicyJson] = useState(
+    formatJson(DEFAULT_SETTINGS.long_context_policies ?? [])
+  )
   const [profileJson, setProfileJson] = useState(formatJson(DEFAULT_PROFILES))
   const [analyticsGroup, setAnalyticsGroup] = useState('proxy-test')
   const [analyticsModel, setAnalyticsModel] = useState('')
@@ -690,6 +783,7 @@ export function ProfitCenterSection() {
         setSettings(next)
         setInitialSettings(next)
         setObserveGroups((next.observe_groups ?? ['proxy-test']).join(', '))
+        setLongContextPolicyJson(formatJson(next.long_context_policies ?? []))
         setOutputPolicyJson(formatJson(next.output_policies ?? []))
       } else {
         toast.error(settingsRes.message || t('Failed to load profit settings'))
@@ -720,6 +814,9 @@ export function ProfitCenterSection() {
     setObserveGroups(
       (initialSettings.observe_groups ?? ['proxy-test']).join(', ')
     )
+    setLongContextPolicyJson(
+      formatJson(initialSettings.long_context_policies ?? [])
+    )
     setOutputPolicyJson(formatJson(initialSettings.output_policies ?? []))
   }
 
@@ -727,12 +824,16 @@ export function ProfitCenterSection() {
     setSaving(true)
     try {
       const profiles = safeParseJson<ProfitCostProfiles>(profileJson)
+      const longContextPolicies = safeParseJson<ProfitLongContextPolicy[]>(
+        longContextPolicyJson
+      )
       const outputPolicies =
         safeParseJson<ProfitOutputPolicy[]>(outputPolicyJson)
       const payload: ProfitSettings = {
         ...settings,
         observe_groups: parseCsv(observeGroups),
         observe_only: true,
+        long_context_policies: longContextPolicies,
         output_policies: outputPolicies,
       }
       const [settingsRes, profilesRes] = await Promise.all([
@@ -750,6 +851,9 @@ export function ProfitCenterSection() {
       setSettings(settingsRes.data)
       setInitialSettings(settingsRes.data)
       setObserveGroups(settingsRes.data.observe_groups.join(', '))
+      setLongContextPolicyJson(
+        formatJson(settingsRes.data.long_context_policies ?? [])
+      )
       setOutputPolicyJson(formatJson(settingsRes.data.output_policies ?? []))
       setProfileJson(formatJson(profilesRes.data))
       toast.success(t('Profit settings saved.'))
@@ -773,6 +877,10 @@ export function ProfitCenterSection() {
 
   const loadSampleOutputPolicies = () => {
     setOutputPolicyJson(formatJson(SAMPLE_OUTPUT_POLICIES))
+  }
+
+  const loadSampleLongContextPolicies = () => {
+    setLongContextPolicyJson(formatJson(SAMPLE_LONG_CONTEXT_POLICIES))
   }
 
   const runRoutePreview = async () => {
@@ -870,6 +978,23 @@ export function ProfitCenterSection() {
                 label='Cache mode'
                 onChange={(cache_mode) =>
                   setSettings((current) => ({ ...current, cache_mode }))
+                }
+              />
+            </div>
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label className='text-sm font-medium'>
+              {t('长上下文溢价模式')}
+            </Label>
+            <div className='mt-1.5'>
+              <ModeSelect
+                value={settings.long_context_mode}
+                label='长上下文溢价模式'
+                onChange={(long_context_mode) =>
+                  setSettings((current) => ({
+                    ...current,
+                    long_context_mode,
+                  }))
                 }
               />
             </div>
@@ -1020,6 +1145,43 @@ export function ProfitCenterSection() {
           </SettingsFormGridItem>
         </SettingsFormGrid>
       </SettingsForm>
+
+      <Separator />
+
+      <div className='min-w-0 space-y-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div className='min-w-0'>
+            <h4 className='text-sm font-semibold'>
+              {t('长上下文溢价策略')}
+            </h4>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                '仅记录长上下文阶梯、建议倍率和建议增收；不会改变当前用户扣费。'
+              )}
+            </p>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={loadSampleLongContextPolicies}
+          >
+            <CalculatorIcon data-icon='inline-start' />
+            <span>{t('加载长上下文示例')}</span>
+          </Button>
+        </div>
+        <Label htmlFor='profit-long-context-policies-json' className='sr-only'>
+          {t('长上下文溢价策略')}
+        </Label>
+        <Textarea
+          id='profit-long-context-policies-json'
+          name='profit-long-context-policies-json'
+          rows={11}
+          value={longContextPolicyJson}
+          onChange={(event) => setLongContextPolicyJson(event.target.value)}
+          className='font-mono text-xs'
+        />
+      </div>
 
       <Separator />
 

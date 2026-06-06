@@ -83,27 +83,43 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 			{ChannelID: 501, ChannelName: "gpt-load", Selected: true, MarginRank: 2},
 			{ChannelID: 502, ChannelName: "cheap", WouldPrefer: true, MarginRank: 1},
 		},
-		profit.KeyOutputPolicyMode:             profit.ModeCap,
-		profit.KeyOutputPolicyID:               "cap-gemini",
-		profit.KeyOutputPolicyName:             "Cap Gemini",
-		profit.KeyOutputPolicyCompletionTokens: 2500,
-		profit.KeyOutputPolicyDefaultMaxTokens: 1000,
-		profit.KeyOutputPolicyHardMaxTokens:    2000,
-		profit.KeyOutputPolicyExceededDefault:  true,
-		profit.KeyOutputPolicyExceededHard:     true,
-		profit.KeyOutputPolicyRewriteOverLimit: true,
-		profit.KeyOutputPolicyWouldCap:         true,
-		profit.KeyOutputPolicyObserveOnly:      true,
-		profit.KeyOutputPolicyLiveEnforced:     false,
-		profit.KeyRiskMode:                     profit.RiskModeAlert,
-		profit.KeyRiskAlert:                    true,
-		profit.KeyRiskReasons:                  []string{profit.RiskReasonLossMakingRequest},
-		profit.KeyRiskMinGrossMarginUSD:        0.01,
-		profit.KeyRiskMinExpectedMarginUSD:     0.01,
-		profit.KeyRiskObserveOnly:              true,
-		profit.KeyRiskLiveEnforced:             false,
-		profit.KeyCacheSavedUSD:                nil,
-		profit.KeyRetryCostUSD:                 nil,
+		profit.KeyOutputPolicyMode:               profit.ModeCap,
+		profit.KeyOutputPolicyID:                 "cap-gemini",
+		profit.KeyOutputPolicyName:               "Cap Gemini",
+		profit.KeyOutputPolicyCompletionTokens:   2500,
+		profit.KeyOutputPolicyDefaultMaxTokens:   1000,
+		profit.KeyOutputPolicyHardMaxTokens:      2000,
+		profit.KeyOutputPolicyExceededDefault:    true,
+		profit.KeyOutputPolicyExceededHard:       true,
+		profit.KeyOutputPolicyRewriteOverLimit:   true,
+		profit.KeyOutputPolicyWouldCap:           true,
+		profit.KeyOutputPolicyObserveOnly:        true,
+		profit.KeyOutputPolicyLiveEnforced:       false,
+		profit.KeyRiskMode:                       profit.RiskModeAlert,
+		profit.KeyRiskAlert:                      true,
+		profit.KeyRiskReasons:                    []string{profit.RiskReasonLossMakingRequest},
+		profit.KeyRiskMinGrossMarginUSD:          0.01,
+		profit.KeyRiskMinExpectedMarginUSD:       0.01,
+		profit.KeyRiskObserveOnly:                true,
+		profit.KeyRiskLiveEnforced:               false,
+		profit.KeyLongContextMode:                profit.ModeObserve,
+		profit.KeyLongContextPolicyID:            "proxy-test-long-context-premium",
+		profit.KeyLongContextPolicyName:          "proxy-test long context premium observe",
+		profit.KeyLongContextTierID:              "32k-128k",
+		profit.KeyLongContextTierName:            "32k-128k",
+		profit.KeyLongContextTokens:              64000,
+		profit.KeyLongContextMinTokens:           32001,
+		profit.KeyLongContextMaxTokens:           128000,
+		profit.KeyLongContextInputMultiplier:     1.25,
+		profit.KeyLongContextInputRevenueUSD:     0.8,
+		profit.KeyLongContextSuggestedExtraUSD:   0.2,
+		profit.KeyLongContextSuggestedRevenueUSD: 1.2,
+		profit.KeyLongContextPremiumRequired:     false,
+		profit.KeyLongContextPremiumGroup:        "premium",
+		profit.KeyLongContextObserveOnly:         true,
+		profit.KeyLongContextLiveEnforced:        false,
+		profit.KeyCacheSavedUSD:                  nil,
+		profit.KeyRetryCostUSD:                   nil,
 	})
 	insertProfitTestLog(t, &Log{
 		CreatedAt: 90,
@@ -164,6 +180,22 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.InDelta(t, 0.01, events[0].RiskMinExpectedMarginUSD, 0.0001)
 	require.True(t, events[0].RiskObserveOnly)
 	require.False(t, events[0].RiskLiveEnforced)
+	require.Equal(t, profit.ModeObserve, events[0].LongContextMode)
+	require.Equal(t, "proxy-test-long-context-premium", events[0].LongContextPolicyID)
+	require.Equal(t, "proxy-test long context premium observe", events[0].LongContextPolicyName)
+	require.Equal(t, "32k-128k", events[0].LongContextTierID)
+	require.Equal(t, "32k-128k", events[0].LongContextTierName)
+	require.Equal(t, int64(64000), events[0].LongContextTokens)
+	require.Equal(t, int64(32001), events[0].LongContextMinTokens)
+	require.Equal(t, int64(128000), events[0].LongContextMaxTokens)
+	require.InDelta(t, 1.25, events[0].LongContextInputMultiplier, 0.0001)
+	require.InDelta(t, 0.8, events[0].LongContextInputRevenueUSD, 0.0001)
+	require.InDelta(t, 0.2, events[0].LongContextSuggestedExtraUSD, 0.0001)
+	require.InDelta(t, 1.2, events[0].LongContextSuggestedRevenueUSD, 0.0001)
+	require.False(t, events[0].LongContextPremiumRequired)
+	require.Equal(t, "premium", events[0].LongContextPremiumGroup)
+	require.True(t, events[0].LongContextObserveOnly)
+	require.False(t, events[0].LongContextLiveEnforced)
 }
 
 func TestGetSatisfiedChannelCandidatesForProfitObservationDB(t *testing.T) {
@@ -258,8 +290,12 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 			profit.RiskReasonGrossMarginBelowMinimum,
 			profit.RiskReasonExpectedMarginBelowMinimum,
 		},
-		profit.KeyCacheSavedUSD: nil,
-		profit.KeyRetryCostUSD:  nil,
+		profit.KeyLongContextMode:              profit.ModeObserve,
+		profit.KeyLongContextTokens:            64000,
+		profit.KeyLongContextSuggestedExtraUSD: 0.2,
+		profit.KeyLongContextPremiumRequired:   true,
+		profit.KeyCacheSavedUSD:                nil,
+		profit.KeyRetryCostUSD:                 nil,
 	})
 	insertProfitTestLog(t, &Log{
 		CreatedAt:        110,
@@ -311,6 +347,10 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 	require.Equal(t, int64(1), analytics.RiskLossMakingCount)
 	require.Equal(t, int64(1), analytics.RiskLowGrossMarginCount)
 	require.Equal(t, int64(1), analytics.RiskLowExpectedMarginCount)
+	require.Equal(t, int64(1), analytics.LongContextObservedCount)
+	require.Equal(t, int64(1), analytics.LongContextPremiumRequiredCount)
+	require.Equal(t, int64(64000), analytics.LongContextTokens)
+	require.InDelta(t, 0.2, analytics.LongContextSuggestedExtraUSD, 0.0001)
 	require.Nil(t, analytics.CacheSavedUSD)
 	require.Nil(t, analytics.RetryCostUSD)
 }

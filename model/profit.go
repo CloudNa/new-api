@@ -94,6 +94,22 @@ type ProfitEvent struct {
 	RiskMinExpectedMarginPct       float64                         `json:"profit_risk_min_expected_margin_pct"`
 	RiskObserveOnly                bool                            `json:"profit_risk_observe_only"`
 	RiskLiveEnforced               bool                            `json:"profit_risk_live_enforced"`
+	LongContextMode                string                          `json:"long_context_mode,omitempty"`
+	LongContextPolicyID            string                          `json:"long_context_policy_id,omitempty"`
+	LongContextPolicyName          string                          `json:"long_context_policy_name,omitempty"`
+	LongContextTierID              string                          `json:"long_context_tier_id,omitempty"`
+	LongContextTierName            string                          `json:"long_context_tier_name,omitempty"`
+	LongContextTokens              int64                           `json:"long_context_tokens"`
+	LongContextMinTokens           int64                           `json:"long_context_min_tokens"`
+	LongContextMaxTokens           int64                           `json:"long_context_max_tokens"`
+	LongContextInputMultiplier     float64                         `json:"long_context_input_multiplier"`
+	LongContextInputRevenueUSD     float64                         `json:"long_context_input_revenue_usd"`
+	LongContextSuggestedExtraUSD   float64                         `json:"long_context_suggested_extra_revenue_usd"`
+	LongContextSuggestedRevenueUSD float64                         `json:"long_context_suggested_revenue_usd"`
+	LongContextPremiumRequired     bool                            `json:"long_context_premium_required"`
+	LongContextPremiumGroup        string                          `json:"long_context_premium_group,omitempty"`
+	LongContextObserveOnly         bool                            `json:"long_context_observe_only"`
+	LongContextLiveEnforced        bool                            `json:"long_context_live_enforced"`
 	CacheSavedUSD                  *float64                        `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64                        `json:"retry_cost_usd"`
 }
@@ -129,6 +145,10 @@ type ProfitAnalytics struct {
 	RiskLossMakingCount              int64    `json:"profit_risk_loss_making_count"`
 	RiskLowGrossMarginCount          int64    `json:"profit_risk_low_gross_margin_count"`
 	RiskLowExpectedMarginCount       int64    `json:"profit_risk_low_expected_margin_count"`
+	LongContextObservedCount         int64    `json:"long_context_observed_count"`
+	LongContextPremiumRequiredCount  int64    `json:"long_context_premium_required_count"`
+	LongContextTokens                int64    `json:"long_context_tokens"`
+	LongContextSuggestedExtraUSD     float64  `json:"long_context_suggested_extra_revenue_usd"`
 	CacheSavedUSD                    *float64 `json:"cache_saved_usd"`
 	RetryCostUSD                     *float64 `json:"retry_cost_usd"`
 }
@@ -230,6 +250,14 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 			}
 			if stringSliceContains(event.RiskReasons, profit.RiskReasonExpectedMarginBelowMinimum) {
 				analytics.RiskLowExpectedMarginCount++
+			}
+		}
+		if event.LongContextMode != "" {
+			analytics.LongContextObservedCount++
+			analytics.LongContextTokens += event.LongContextTokens
+			analytics.LongContextSuggestedExtraUSD += event.LongContextSuggestedExtraUSD
+			if event.LongContextPremiumRequired {
+				analytics.LongContextPremiumRequiredCount++
 			}
 		}
 		if event.CostStatus == profit.CostStatusMissingCostProfile {
@@ -396,6 +424,22 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		RiskMinExpectedMarginPct:       floatValue(other, profit.KeyRiskMinExpectedMarginPct),
 		RiskObserveOnly:                boolValue(other, profit.KeyRiskObserveOnly),
 		RiskLiveEnforced:               boolValue(other, profit.KeyRiskLiveEnforced),
+		LongContextMode:                stringValue(other, profit.KeyLongContextMode),
+		LongContextPolicyID:            stringValue(other, profit.KeyLongContextPolicyID),
+		LongContextPolicyName:          stringValue(other, profit.KeyLongContextPolicyName),
+		LongContextTierID:              stringValue(other, profit.KeyLongContextTierID),
+		LongContextTierName:            stringValue(other, profit.KeyLongContextTierName),
+		LongContextTokens:              int64Value(other, profit.KeyLongContextTokens),
+		LongContextMinTokens:           int64Value(other, profit.KeyLongContextMinTokens),
+		LongContextMaxTokens:           int64Value(other, profit.KeyLongContextMaxTokens),
+		LongContextInputMultiplier:     floatValue(other, profit.KeyLongContextInputMultiplier),
+		LongContextInputRevenueUSD:     floatValue(other, profit.KeyLongContextInputRevenueUSD),
+		LongContextSuggestedExtraUSD:   floatValue(other, profit.KeyLongContextSuggestedExtraUSD),
+		LongContextSuggestedRevenueUSD: floatValue(other, profit.KeyLongContextSuggestedRevenueUSD),
+		LongContextPremiumRequired:     boolValue(other, profit.KeyLongContextPremiumRequired),
+		LongContextPremiumGroup:        stringValue(other, profit.KeyLongContextPremiumGroup),
+		LongContextObserveOnly:         boolValue(other, profit.KeyLongContextObserveOnly),
+		LongContextLiveEnforced:        boolValue(other, profit.KeyLongContextLiveEnforced),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
 	}

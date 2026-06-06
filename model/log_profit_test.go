@@ -28,3 +28,22 @@ func TestFormatUserLogsStripsProfitFields(t *testing.T) {
 	require.NotContains(t, other, "profit_risk_alert")
 	require.Equal(t, 1.5, other["model_ratio"])
 }
+
+func TestFormatUserLogsStripsLongContextProfitFields(t *testing.T) {
+	logs := []*Log{
+		{
+			Other: `{"profit_observe_version":1,"long_context_mode":"observe","long_context_tokens":64000,"long_context_suggested_extra_revenue_usd":0.2,"long_context_premium_required":true,"model_ratio":1.5}`,
+		},
+	}
+
+	formatUserLogs(logs, 0)
+
+	other, err := common.StrToMap(logs[0].Other)
+	require.NoError(t, err)
+	require.NotContains(t, other, "profit_observe_version")
+	require.NotContains(t, other, "long_context_mode")
+	require.NotContains(t, other, "long_context_tokens")
+	require.NotContains(t, other, "long_context_suggested_extra_revenue_usd")
+	require.NotContains(t, other, "long_context_premium_required")
+	require.Equal(t, 1.5, other["model_ratio"])
+}
