@@ -667,8 +667,15 @@ export function ProfitCenterSection() {
             </div>
           </SettingsFormGridItem>
           <SettingsFormGridItem span='full'>
-            <Label className='text-sm font-medium'>{t('Observe groups')}</Label>
+            <Label
+              htmlFor='profit-observe-groups'
+              className='text-sm font-medium'
+            >
+              {t('Observe groups')}
+            </Label>
             <Input
+              id='profit-observe-groups'
+              name='profit-observe-groups'
               className='mt-1.5'
               value={observeGroups}
               onChange={(event) => setObserveGroups(event.target.value)}
@@ -700,7 +707,12 @@ export function ProfitCenterSection() {
             <span>{t('Load sample')}</span>
           </Button>
         </div>
+        <Label htmlFor='profit-cost-profiles-json' className='sr-only'>
+          {t('Cost profiles')}
+        </Label>
         <Textarea
+          id='profit-cost-profiles-json'
+          name='profit-cost-profiles-json'
           rows={13}
           value={profileJson}
           onChange={(event) => setProfileJson(event.target.value)}
@@ -725,16 +737,24 @@ export function ProfitCenterSection() {
           </div>
           <div className='flex min-w-0 flex-wrap items-end gap-2'>
             <div className='min-w-36 space-y-1'>
-              <Label className='text-xs'>{t('Group')}</Label>
+              <Label htmlFor='profit-analytics-group' className='text-xs'>
+                {t('Group')}
+              </Label>
               <Input
+                id='profit-analytics-group'
+                name='profit-analytics-group'
                 value={analyticsGroup}
                 onChange={(event) => setAnalyticsGroup(event.target.value)}
                 placeholder='proxy-test'
               />
             </div>
             <div className='min-w-44 space-y-1'>
-              <Label className='text-xs'>{t('Model')}</Label>
+              <Label htmlFor='profit-analytics-model' className='text-xs'>
+                {t('Model')}
+              </Label>
               <Input
+                id='profit-analytics-model'
+                name='profit-analytics-model'
                 value={analyticsModel}
                 onChange={(event) => setAnalyticsModel(event.target.value)}
                 placeholder='gemini'
@@ -770,7 +790,12 @@ export function ProfitCenterSection() {
             <span>{t('Preview route')}</span>
           </Button>
         </div>
+        <Label htmlFor='profit-route-preview-json' className='sr-only'>
+          {t('Route preview')}
+        </Label>
         <Textarea
+          id='profit-route-preview-json'
+          name='profit-route-preview-json'
           rows={10}
           value={previewJson}
           onChange={(event) => setPreviewJson(event.target.value)}
