@@ -2,6 +2,7 @@ package profit
 
 import (
 	"errors"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -29,6 +30,10 @@ type Settings struct {
 	CacheMode        string         `json:"cache_mode"`
 	OutputCapMode    string         `json:"output_cap_mode"`
 	RiskEnforcement  string         `json:"risk_enforcement"`
+	RiskMinGrossUSD  float64        `json:"risk_min_gross_margin_usd,omitempty"`
+	RiskMinGrossPct  float64        `json:"risk_min_gross_margin_pct,omitempty"`
+	RiskMinExpectUSD float64        `json:"risk_min_expected_margin_usd,omitempty"`
+	RiskMinExpectPct float64        `json:"risk_min_expected_margin_pct,omitempty"`
 	SettingsWritable bool           `json:"settings_writable"`
 	CostProfilesUsed bool           `json:"cost_profiles_used"`
 	OutputPolicies   []OutputPolicy `json:"output_policies,omitempty"`
@@ -116,6 +121,10 @@ func (s Settings) Normalize() Settings {
 	if s.RiskEnforcement != ModeOff && s.RiskEnforcement != RiskModeAlert {
 		s.RiskEnforcement = defaults.RiskEnforcement
 	}
+	s.RiskMinGrossUSD = normalizeNonNegativeFloat(s.RiskMinGrossUSD)
+	s.RiskMinGrossPct = normalizeNonNegativeFloat(s.RiskMinGrossPct)
+	s.RiskMinExpectUSD = normalizeNonNegativeFloat(s.RiskMinExpectUSD)
+	s.RiskMinExpectPct = normalizeNonNegativeFloat(s.RiskMinExpectPct)
 	return s
 }
 
@@ -141,6 +150,16 @@ func (s Settings) Validate() error {
 	if s.RiskEnforcement != "" && s.RiskEnforcement != ModeOff && s.RiskEnforcement != RiskModeAlert {
 		return errors.New("invalid risk_enforcement")
 	}
+	for name, value := range map[string]float64{
+		"risk_min_gross_margin_usd":    s.RiskMinGrossUSD,
+		"risk_min_gross_margin_pct":    s.RiskMinGrossPct,
+		"risk_min_expected_margin_usd": s.RiskMinExpectUSD,
+		"risk_min_expected_margin_pct": s.RiskMinExpectPct,
+	} {
+		if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			return errors.New(name + " must be non-negative")
+		}
+	}
 	return nil
 }
 
@@ -150,6 +169,13 @@ func validOffObserveMode(mode string) bool {
 
 func validOutputCapMode(mode string) bool {
 	return mode == ModeOff || mode == ModeObserve || mode == ModeCap || mode == ModePremiumRequired
+}
+
+func normalizeNonNegativeFloat(value float64) float64 {
+	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return value
 }
 
 func cleanStringSlice(items []string) []string {

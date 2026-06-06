@@ -3,6 +3,8 @@ package profit
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -106,6 +108,54 @@ func TestAppendObservationAddsOutputPolicyDecision(t *testing.T) {
 	require.Equal(t, false, other[KeyOutputPolicyLiveEnforced])
 }
 
+func TestAppendObservationAddsLowMarginRiskDecision(t *testing.T) {
+	settings := DefaultSettings()
+	settings.RiskEnforcement = RiskModeAlert
+	settings.RiskMinGrossUSD = 0
+	settings.RiskMinExpectUSD = 0
+	settingsPayload, err := common.Marshal(settings.Normalize())
+	require.NoError(t, err)
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                  "loss-profile",
+			Name:                "Loss profile",
+			Enabled:             true,
+			ChannelID:           7,
+			ModelName:           "loss-model",
+			InputUSDPerMillion:  1000,
+			OutputUSDPerMillion: 1000,
+		},
+	}}
+	profilesPayload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{
+		SettingsOptionKey:     string(settingsPayload),
+		CostProfilesOptionKey: string(profilesPayload),
+	})
+	other := map[string]interface{}{}
+
+	AppendObservation(other, ObservationInput{
+		Group:                          "proxy-test",
+		ChannelID:                      7,
+		ModelName:                      "loss-model",
+		BillablePromptTokens:           1000,
+		BillableCompletionTokens:       1000,
+		UpstreamActualPromptTokens:     1000,
+		UpstreamActualCompletionTokens: 1000,
+		UserQuota:                      1,
+	})
+
+	require.Equal(t, RiskModeAlert, other[KeyRiskMode])
+	require.Equal(t, true, other[KeyRiskAlert])
+	require.Contains(t, other[KeyRiskReasons], RiskReasonGrossMarginBelowMinimum)
+	require.Contains(t, other[KeyRiskReasons], RiskReasonExpectedMarginBelowMinimum)
+	require.Contains(t, other[KeyRiskReasons], RiskReasonLossMakingRequest)
+	require.Equal(t, float64(0), other[KeyRiskMinGrossMarginUSD])
+	require.Equal(t, float64(0), other[KeyRiskMinExpectedMarginUSD])
+	require.Equal(t, true, other[KeyRiskObserveOnly])
+	require.Equal(t, false, other[KeyRiskLiveEnforced])
+}
+
 func TestAppendObservationSkipsNonProxyTestGroup(t *testing.T) {
 	other := map[string]interface{}{}
 
@@ -153,6 +203,9 @@ func TestStripUserVisibleFields(t *testing.T) {
 		"output_policy_mode":                "cap",
 		"output_policy_would_cap":           true,
 		"output_policy_live_enforced":       false,
+		"profit_risk_mode":                  "alert",
+		"profit_risk_alert":                 true,
+		"profit_risk_reasons":               []string{RiskReasonLossMakingRequest},
 		"model_ratio":                       1.5,
 	}
 
@@ -170,5 +223,8 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "output_policy_mode")
 	require.NotContains(t, other, "output_policy_would_cap")
 	require.NotContains(t, other, "output_policy_live_enforced")
+	require.NotContains(t, other, "profit_risk_mode")
+	require.NotContains(t, other, "profit_risk_alert")
+	require.NotContains(t, other, "profit_risk_reasons")
 	require.Equal(t, 1.5, other["model_ratio"])
 }

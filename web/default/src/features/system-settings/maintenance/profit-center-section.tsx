@@ -107,6 +107,10 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   cache_mode: 'off',
   output_cap_mode: 'off',
   risk_enforcement: 'off',
+  risk_min_gross_margin_usd: 0,
+  risk_min_gross_margin_pct: 0,
+  risk_min_expected_margin_usd: 0,
+  risk_min_expected_margin_pct: 0,
   settings_writable: true,
   cost_profiles_used: true,
   output_policies: [],
@@ -207,6 +211,11 @@ function formatPercent(value: number | null | undefined): string {
 
 function safeParseJson<T>(value: string): T {
   return JSON.parse(value) as T
+}
+
+function parseNumberInput(value: string): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function ModeSelect(props: {
@@ -344,6 +353,12 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
       'Premium output required',
       formatNumber(analytics?.output_policy_premium_required_count),
     ],
+    ['风险告警', formatNumber(analytics?.profit_risk_alert_count)],
+    ['亏损请求', formatNumber(analytics?.profit_risk_loss_making_count)],
+    [
+      '低毛利请求',
+      formatNumber(analytics?.profit_risk_low_expected_margin_count),
+    ],
   ]
 
   return (
@@ -377,6 +392,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
             <TableHead>{t('Savings')}</TableHead>
             <TableHead>{t('Route')}</TableHead>
             <TableHead>{t('Output policy')}</TableHead>
+            <TableHead>{t('风险')}</TableHead>
             <TableHead>{t('Status')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -384,7 +400,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
           {rows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={10}
+                colSpan={11}
                 className='text-muted-foreground h-20 text-center text-sm'
               >
                 {t('No profit events yet')}
@@ -496,6 +512,31 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                       {event.output_policy_name || event.output_policy_id ? (
                         <span className='text-muted-foreground max-w-44 truncate text-xs'>
                           {event.output_policy_name || event.output_policy_id}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+                <TableCell className='min-w-44'>
+                  {event.profit_risk_mode ? (
+                    <div className='flex min-w-0 flex-col gap-1'>
+                      <div className='flex flex-wrap items-center gap-1'>
+                        <Badge
+                          variant={
+                            event.profit_risk_alert ? 'destructive' : 'outline'
+                          }
+                        >
+                          {t(event.profit_risk_mode)}
+                        </Badge>
+                        {event.profit_risk_alert ? (
+                          <Badge variant='secondary'>{t('告警')}</Badge>
+                        ) : null}
+                      </div>
+                      {event.profit_risk_reasons?.length ? (
+                        <span className='text-muted-foreground max-w-44 truncate text-xs'>
+                          {event.profit_risk_reasons.join(', ')}
                         </span>
                       ) : null}
                     </div>
@@ -860,6 +901,106 @@ export function ProfitCenterSection() {
                 }
               />
             </div>
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label
+              htmlFor='profit-risk-min-gross-usd'
+              className='text-sm font-medium'
+            >
+              {t('最低毛利 USD')}
+            </Label>
+            <Input
+              id='profit-risk-min-gross-usd'
+              name='profit-risk-min-gross-usd'
+              type='number'
+              min='0'
+              step='0.000001'
+              className='mt-1.5'
+              value={settings.risk_min_gross_margin_usd ?? 0}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  risk_min_gross_margin_usd: parseNumberInput(
+                    event.target.value
+                  ),
+                }))
+              }
+            />
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label
+              htmlFor='profit-risk-min-gross-pct'
+              className='text-sm font-medium'
+            >
+              {t('最低毛利率 %')}
+            </Label>
+            <Input
+              id='profit-risk-min-gross-pct'
+              name='profit-risk-min-gross-pct'
+              type='number'
+              min='0'
+              step='0.01'
+              className='mt-1.5'
+              value={settings.risk_min_gross_margin_pct ?? 0}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  risk_min_gross_margin_pct: parseNumberInput(
+                    event.target.value
+                  ),
+                }))
+              }
+            />
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label
+              htmlFor='profit-risk-min-expected-usd'
+              className='text-sm font-medium'
+            >
+              {t('最低预期毛利 USD')}
+            </Label>
+            <Input
+              id='profit-risk-min-expected-usd'
+              name='profit-risk-min-expected-usd'
+              type='number'
+              min='0'
+              step='0.000001'
+              className='mt-1.5'
+              value={settings.risk_min_expected_margin_usd ?? 0}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  risk_min_expected_margin_usd: parseNumberInput(
+                    event.target.value
+                  ),
+                }))
+              }
+            />
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label
+              htmlFor='profit-risk-min-expected-pct'
+              className='text-sm font-medium'
+            >
+              {t('最低预期毛利率 %')}
+            </Label>
+            <Input
+              id='profit-risk-min-expected-pct'
+              name='profit-risk-min-expected-pct'
+              type='number'
+              min='0'
+              step='0.01'
+              className='mt-1.5'
+              value={settings.risk_min_expected_margin_pct ?? 0}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  risk_min_expected_margin_pct: parseNumberInput(
+                    event.target.value
+                  ),
+                }))
+              }
+            />
           </SettingsFormGridItem>
           <SettingsFormGridItem span='full'>
             <Label

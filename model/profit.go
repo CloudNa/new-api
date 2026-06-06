@@ -85,6 +85,15 @@ type ProfitEvent struct {
 	OutputPolicyPremiumGroup       string                          `json:"output_policy_premium_group,omitempty"`
 	OutputPolicyObserveOnly        bool                            `json:"output_policy_observe_only"`
 	OutputPolicyLiveEnforced       bool                            `json:"output_policy_live_enforced"`
+	RiskMode                       string                          `json:"profit_risk_mode,omitempty"`
+	RiskAlert                      bool                            `json:"profit_risk_alert"`
+	RiskReasons                    []string                        `json:"profit_risk_reasons,omitempty"`
+	RiskMinGrossMarginUSD          float64                         `json:"profit_risk_min_gross_margin_usd"`
+	RiskMinGrossMarginPct          float64                         `json:"profit_risk_min_gross_margin_pct"`
+	RiskMinExpectedMarginUSD       float64                         `json:"profit_risk_min_expected_margin_usd"`
+	RiskMinExpectedMarginPct       float64                         `json:"profit_risk_min_expected_margin_pct"`
+	RiskObserveOnly                bool                            `json:"profit_risk_observe_only"`
+	RiskLiveEnforced               bool                            `json:"profit_risk_live_enforced"`
 	CacheSavedUSD                  *float64                        `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64                        `json:"retry_cost_usd"`
 }
@@ -115,6 +124,11 @@ type ProfitAnalytics struct {
 	OutputPolicyWouldCapCount        int64    `json:"output_policy_would_cap_count"`
 	OutputPolicyPremiumRequiredCount int64    `json:"output_policy_premium_required_count"`
 	OutputPolicyCompletionTokens     int64    `json:"output_policy_completion_tokens"`
+	RiskObservedCount                int64    `json:"profit_risk_observed_count"`
+	RiskAlertCount                   int64    `json:"profit_risk_alert_count"`
+	RiskLossMakingCount              int64    `json:"profit_risk_loss_making_count"`
+	RiskLowGrossMarginCount          int64    `json:"profit_risk_low_gross_margin_count"`
+	RiskLowExpectedMarginCount       int64    `json:"profit_risk_low_expected_margin_count"`
 	CacheSavedUSD                    *float64 `json:"cache_saved_usd"`
 	RetryCostUSD                     *float64 `json:"retry_cost_usd"`
 }
@@ -201,6 +215,21 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 			}
 			if event.OutputPolicyPremiumRequired {
 				analytics.OutputPolicyPremiumRequiredCount++
+			}
+		}
+		if event.RiskMode != "" {
+			analytics.RiskObservedCount++
+			if event.RiskAlert {
+				analytics.RiskAlertCount++
+			}
+			if stringSliceContains(event.RiskReasons, profit.RiskReasonLossMakingRequest) {
+				analytics.RiskLossMakingCount++
+			}
+			if stringSliceContains(event.RiskReasons, profit.RiskReasonGrossMarginBelowMinimum) {
+				analytics.RiskLowGrossMarginCount++
+			}
+			if stringSliceContains(event.RiskReasons, profit.RiskReasonExpectedMarginBelowMinimum) {
+				analytics.RiskLowExpectedMarginCount++
 			}
 		}
 		if event.CostStatus == profit.CostStatusMissingCostProfile {
@@ -358,6 +387,15 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		OutputPolicyPremiumGroup:       stringValue(other, profit.KeyOutputPolicyPremiumGroup),
 		OutputPolicyObserveOnly:        boolValue(other, profit.KeyOutputPolicyObserveOnly),
 		OutputPolicyLiveEnforced:       boolValue(other, profit.KeyOutputPolicyLiveEnforced),
+		RiskMode:                       stringValue(other, profit.KeyRiskMode),
+		RiskAlert:                      boolValue(other, profit.KeyRiskAlert),
+		RiskReasons:                    stringSliceValue(other, profit.KeyRiskReasons),
+		RiskMinGrossMarginUSD:          floatValue(other, profit.KeyRiskMinGrossMarginUSD),
+		RiskMinGrossMarginPct:          floatValue(other, profit.KeyRiskMinGrossMarginPct),
+		RiskMinExpectedMarginUSD:       floatValue(other, profit.KeyRiskMinExpectedMarginUSD),
+		RiskMinExpectedMarginPct:       floatValue(other, profit.KeyRiskMinExpectedMarginPct),
+		RiskObserveOnly:                boolValue(other, profit.KeyRiskObserveOnly),
+		RiskLiveEnforced:               boolValue(other, profit.KeyRiskLiveEnforced),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
 	}
@@ -447,6 +485,15 @@ func stringSliceValue(data map[string]interface{}, key string) []string {
 	default:
 		return nil
 	}
+}
+
+func stringSliceContains(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 func routeCandidatesValue(data map[string]interface{}, key string) []profit.RouteDecisionCandidate {

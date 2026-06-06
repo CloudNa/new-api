@@ -57,6 +57,15 @@ const (
 	KeyOutputPolicyPremiumGroup       = "output_policy_premium_group"
 	KeyOutputPolicyObserveOnly        = "output_policy_observe_only"
 	KeyOutputPolicyLiveEnforced       = "output_policy_live_enforced"
+	KeyRiskMode                       = "profit_risk_mode"
+	KeyRiskAlert                      = "profit_risk_alert"
+	KeyRiskReasons                    = "profit_risk_reasons"
+	KeyRiskMinGrossMarginUSD          = "profit_risk_min_gross_margin_usd"
+	KeyRiskMinGrossMarginPct          = "profit_risk_min_gross_margin_pct"
+	KeyRiskMinExpectedMarginUSD       = "profit_risk_min_expected_margin_usd"
+	KeyRiskMinExpectedMarginPct       = "profit_risk_min_expected_margin_pct"
+	KeyRiskObserveOnly                = "profit_risk_observe_only"
+	KeyRiskLiveEnforced               = "profit_risk_live_enforced"
 	CostStatusMissingCostProfile      = "missing_cost_profile"
 )
 
@@ -111,6 +120,15 @@ var userHiddenKeys = []string{
 	KeyOutputPolicyPremiumGroup,
 	KeyOutputPolicyObserveOnly,
 	KeyOutputPolicyLiveEnforced,
+	KeyRiskMode,
+	KeyRiskAlert,
+	KeyRiskReasons,
+	KeyRiskMinGrossMarginUSD,
+	KeyRiskMinGrossMarginPct,
+	KeyRiskMinExpectedMarginUSD,
+	KeyRiskMinExpectedMarginPct,
+	KeyRiskObserveOnly,
+	KeyRiskLiveEnforced,
 }
 
 type ObservationInput struct {
@@ -151,7 +169,8 @@ func settingsEnabledForGroup(settings Settings, group string) bool {
 }
 
 func AppendObservation(other map[string]interface{}, input ObservationInput) {
-	if other == nil || !EnabledForGroup(input.Group) {
+	settings := CurrentSettings()
+	if other == nil || !settingsEnabledForGroup(settings, input.Group) {
 		return
 	}
 
@@ -171,6 +190,7 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 		RevenueUSD:               revenueUSD,
 		LatencyMs:                input.LatencyMs,
 	}, CurrentCostProfiles())
+	riskDecision := BuildRiskDecision(settings, costEstimate)
 
 	other[KeyObserveVersion] = ObservationVersion
 	other[KeyCostStatus] = costEstimate.CostStatus
@@ -196,6 +216,7 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	other[KeyExpectedMarginPct] = costEstimate.ExpectedMarginPct
 	appendRouteDecision(other, input.RouteDecision)
 	appendOutputPolicyDecision(other, input.OutputPolicyDecision)
+	appendRiskDecision(other, riskDecision)
 }
 
 func StripUserVisibleFields(other map[string]interface{}) {
@@ -268,6 +289,23 @@ func appendOutputPolicyDecision(other map[string]interface{}, decision *OutputPo
 	}
 	other[KeyOutputPolicyObserveOnly] = decision.ObserveOnly
 	other[KeyOutputPolicyLiveEnforced] = decision.LiveEnforced
+}
+
+func appendRiskDecision(other map[string]interface{}, decision *RiskDecision) {
+	if other == nil || decision == nil {
+		return
+	}
+	other[KeyRiskMode] = decision.Mode
+	other[KeyRiskAlert] = decision.Alert
+	if len(decision.Reasons) > 0 {
+		other[KeyRiskReasons] = decision.Reasons
+	}
+	other[KeyRiskMinGrossMarginUSD] = decision.MinGrossMarginUSD
+	other[KeyRiskMinGrossMarginPct] = decision.MinGrossMarginPct
+	other[KeyRiskMinExpectedMarginUSD] = decision.MinExpectedMarginUSD
+	other[KeyRiskMinExpectedMarginPct] = decision.MinExpectedMarginPct
+	other[KeyRiskObserveOnly] = decision.ObserveOnly
+	other[KeyRiskLiveEnforced] = decision.LiveEnforced
 }
 
 func quotaToUSD(quota int) float64 {

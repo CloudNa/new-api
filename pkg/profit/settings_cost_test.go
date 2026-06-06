@@ -63,6 +63,18 @@ func TestProfitSettingsNormalizeOutputPolicies(t *testing.T) {
 	require.Equal(t, 0, normalized.OutputPolicies[0].HardMaxTokens)
 }
 
+func TestProfitSettingsValidateRiskThresholds(t *testing.T) {
+	settings := DefaultSettings()
+	settings.RiskEnforcement = RiskModeAlert
+	settings.RiskMinGrossUSD = -1
+
+	require.Error(t, settings.Validate())
+
+	settings.RiskMinGrossUSD = 0
+	settings.RiskMinExpectPct = 10
+	require.NoError(t, settings.Validate())
+}
+
 func TestEstimateCostUsesMatchingProfile(t *testing.T) {
 	doc := CostProfilesDocument{Items: []CostProfile{
 		{

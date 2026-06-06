@@ -448,6 +448,10 @@ export type ProfitSettings = {
   cache_mode: ProfitMode
   output_cap_mode: ProfitOutputCapMode
   risk_enforcement: ProfitRiskMode
+  risk_min_gross_margin_usd?: number
+  risk_min_gross_margin_pct?: number
+  risk_min_expected_margin_usd?: number
+  risk_min_expected_margin_pct?: number
   settings_writable: boolean
   cost_profiles_used: boolean
   output_policies?: ProfitOutputPolicy[]
@@ -515,6 +519,11 @@ export type ProfitAnalytics = {
   output_policy_would_cap_count: number
   output_policy_premium_required_count: number
   output_policy_completion_tokens: number
+  profit_risk_observed_count: number
+  profit_risk_alert_count: number
+  profit_risk_loss_making_count: number
+  profit_risk_low_gross_margin_count: number
+  profit_risk_low_expected_margin_count: number
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
 }
@@ -584,6 +593,15 @@ export type ProfitEvent = {
   output_policy_premium_group?: string
   output_policy_observe_only?: boolean
   output_policy_live_enforced?: boolean
+  profit_risk_mode?: ProfitRiskMode
+  profit_risk_alert?: boolean
+  profit_risk_reasons?: string[]
+  profit_risk_min_gross_margin_usd?: number
+  profit_risk_min_gross_margin_pct?: number
+  profit_risk_min_expected_margin_usd?: number
+  profit_risk_min_expected_margin_pct?: number
+  profit_risk_observe_only?: boolean
+  profit_risk_live_enforced?: boolean
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
 }

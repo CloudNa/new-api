@@ -95,6 +95,13 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyOutputPolicyWouldCap:         true,
 		profit.KeyOutputPolicyObserveOnly:      true,
 		profit.KeyOutputPolicyLiveEnforced:     false,
+		profit.KeyRiskMode:                     profit.RiskModeAlert,
+		profit.KeyRiskAlert:                    true,
+		profit.KeyRiskReasons:                  []string{profit.RiskReasonLossMakingRequest},
+		profit.KeyRiskMinGrossMarginUSD:        0.01,
+		profit.KeyRiskMinExpectedMarginUSD:     0.01,
+		profit.KeyRiskObserveOnly:              true,
+		profit.KeyRiskLiveEnforced:             false,
 		profit.KeyCacheSavedUSD:                nil,
 		profit.KeyRetryCostUSD:                 nil,
 	})
@@ -150,6 +157,13 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.True(t, events[0].OutputPolicyWouldCap)
 	require.True(t, events[0].OutputPolicyObserveOnly)
 	require.False(t, events[0].OutputPolicyLiveEnforced)
+	require.Equal(t, profit.RiskModeAlert, events[0].RiskMode)
+	require.True(t, events[0].RiskAlert)
+	require.Equal(t, []string{profit.RiskReasonLossMakingRequest}, events[0].RiskReasons)
+	require.InDelta(t, 0.01, events[0].RiskMinGrossMarginUSD, 0.0001)
+	require.InDelta(t, 0.01, events[0].RiskMinExpectedMarginUSD, 0.0001)
+	require.True(t, events[0].RiskObserveOnly)
+	require.False(t, events[0].RiskLiveEnforced)
 }
 
 func TestGetSatisfiedChannelCandidatesForProfitObservationDB(t *testing.T) {
@@ -237,8 +251,15 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 		profit.KeyOutputPolicyExceededHard:       true,
 		profit.KeyOutputPolicyWouldCap:           true,
 		profit.KeyOutputPolicyPremiumRequired:    true,
-		profit.KeyCacheSavedUSD:                  nil,
-		profit.KeyRetryCostUSD:                   nil,
+		profit.KeyRiskMode:                       profit.RiskModeAlert,
+		profit.KeyRiskAlert:                      true,
+		profit.KeyRiskReasons: []string{
+			profit.RiskReasonLossMakingRequest,
+			profit.RiskReasonGrossMarginBelowMinimum,
+			profit.RiskReasonExpectedMarginBelowMinimum,
+		},
+		profit.KeyCacheSavedUSD: nil,
+		profit.KeyRetryCostUSD:  nil,
 	})
 	insertProfitTestLog(t, &Log{
 		CreatedAt:        110,
@@ -285,6 +306,11 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 	require.Equal(t, int64(1), analytics.OutputPolicyExceededHardCount)
 	require.Equal(t, int64(1), analytics.OutputPolicyWouldCapCount)
 	require.Equal(t, int64(1), analytics.OutputPolicyPremiumRequiredCount)
+	require.Equal(t, int64(1), analytics.RiskObservedCount)
+	require.Equal(t, int64(1), analytics.RiskAlertCount)
+	require.Equal(t, int64(1), analytics.RiskLossMakingCount)
+	require.Equal(t, int64(1), analytics.RiskLowGrossMarginCount)
+	require.Equal(t, int64(1), analytics.RiskLowExpectedMarginCount)
 	require.Nil(t, analytics.CacheSavedUSD)
 	require.Nil(t, analytics.RetryCostUSD)
 }
