@@ -34,6 +34,42 @@ func TestAppendObservationAddsProxyTestMetrics(t *testing.T) {
 	require.Nil(t, other["retry_cost_usd"])
 }
 
+func TestAppendObservationAddsRouteDecision(t *testing.T) {
+	bestMargin := 0.42
+	other := map[string]interface{}{}
+
+	AppendObservation(other, ObservationInput{
+		Group:     "proxy-test",
+		UserQuota: 500000,
+		RouteDecision: &RouteDecision{
+			Mode:                  ModeObserve,
+			CandidateCount:        2,
+			SelectedChannelID:     1,
+			SelectedMarginRank:    2,
+			BestChannelID:         2,
+			BestChannelName:       "cheap",
+			BestCostProfileID:     "cheap-profile",
+			BestExpectedMarginUSD: &bestMargin,
+			WouldPreferDifferent:  true,
+			Candidates: []RouteDecisionCandidate{
+				{ChannelID: 1, ChannelName: "selected", Selected: true, MarginRank: 2},
+				{ChannelID: 2, ChannelName: "cheap", WouldPrefer: true, MarginRank: 1},
+			},
+		},
+	})
+
+	require.Equal(t, ModeObserve, other[KeyRouteMode])
+	require.Equal(t, 2, other[KeyRouteCandidateCount])
+	require.Equal(t, 1, other[KeyRouteSelectedChannelID])
+	require.Equal(t, 2, other[KeyRouteSelectedMarginRank])
+	require.Equal(t, 2, other[KeyRouteBestChannelID])
+	require.Equal(t, "cheap", other[KeyRouteBestChannelName])
+	require.Equal(t, "cheap-profile", other[KeyRouteBestCostProfileID])
+	require.Equal(t, &bestMargin, other[KeyRouteBestExpectedMarginUSD])
+	require.Equal(t, true, other[KeyRouteWouldPreferDifferent])
+	require.Len(t, other[KeyRouteCandidates], 2)
+}
+
 func TestAppendObservationSkipsNonProxyTestGroup(t *testing.T) {
 	other := map[string]interface{}{}
 
@@ -76,6 +112,8 @@ func TestStripUserVisibleFields(t *testing.T) {
 		"compression_bypassed":              false,
 		"compression_bypass_reason":         "no_savings",
 		"compression_rules_version":         "omniroute-style-go-v1",
+		"profit_route_mode":                 "observe",
+		"profit_route_candidates":           []RouteDecisionCandidate{{ChannelID: 1}},
 		"model_ratio":                       1.5,
 	}
 
@@ -88,5 +126,7 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "compression_bypassed")
 	require.NotContains(t, other, "compression_bypass_reason")
 	require.NotContains(t, other, "compression_rules_version")
+	require.NotContains(t, other, "profit_route_mode")
+	require.NotContains(t, other, "profit_route_candidates")
 	require.Equal(t, 1.5, other["model_ratio"])
 }

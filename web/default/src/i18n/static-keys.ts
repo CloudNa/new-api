@@ -251,6 +251,8 @@ export const STATIC_I18N_KEYS = [
   'Compression saved tokens',
   'Compression',
   'Savings',
+  'Margin rank',
+  'Best channel',
   'Missing cost profiles',
   'Cost routing mode',
   'Cache mode',

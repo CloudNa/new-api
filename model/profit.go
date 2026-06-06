@@ -21,48 +21,58 @@ type ProfitLogFilter struct {
 }
 
 type ProfitEvent struct {
-	Id                             int      `json:"id"`
-	CreatedAt                      int64    `json:"created_at"`
-	UserId                         int      `json:"user_id"`
-	Username                       string   `json:"username"`
-	TokenName                      string   `json:"token_name"`
-	ModelName                      string   `json:"model_name"`
-	ChannelId                      int      `json:"channel"`
-	ChannelName                    string   `json:"channel_name"`
-	Group                          string   `json:"group"`
-	RequestId                      string   `json:"request_id,omitempty"`
-	UpstreamRequestId              string   `json:"upstream_request_id,omitempty"`
-	PromptTokens                   int      `json:"prompt_tokens"`
-	CompletionTokens               int      `json:"completion_tokens"`
-	Quota                          int      `json:"quota"`
-	UseTime                        int      `json:"use_time"`
-	IsStream                       bool     `json:"is_stream"`
-	CostStatus                     string   `json:"profit_cost_status"`
-	CostKnown                      bool     `json:"cost_known"`
-	CostProfileID                  string   `json:"cost_profile_id,omitempty"`
-	CostProfileName                string   `json:"cost_profile_name,omitempty"`
-	BillablePromptTokens           int64    `json:"billable_prompt_tokens"`
-	BillableCompletionTokens       int64    `json:"billable_completion_tokens"`
-	UpstreamActualPromptTokens     int64    `json:"upstream_actual_prompt_tokens"`
-	UpstreamActualCompletionTokens int64    `json:"upstream_actual_completion_tokens"`
-	EstimatedRevenueUSD            float64  `json:"estimated_revenue_usd"`
-	EstimatedUpstreamCostUSD       *float64 `json:"estimated_upstream_cost_usd"`
-	GrossMarginUSD                 *float64 `json:"gross_margin_usd"`
-	GrossMarginPct                 *float64 `json:"gross_margin_pct"`
-	ExpectedCostUSD                *float64 `json:"expected_cost_usd"`
-	ExpectedMarginUSD              *float64 `json:"expected_margin_usd"`
-	ExpectedMarginPct              *float64 `json:"expected_margin_pct"`
-	CompressionSavedTokens         int64    `json:"compression_saved_tokens"`
-	CompressionMode                string   `json:"compression_mode,omitempty"`
-	CompressionSavingsPercent      *float64 `json:"compression_savings_percent,omitempty"`
-	CompressionBypassed            bool     `json:"compression_bypassed"`
-	CompressionBypassReason        string   `json:"compression_bypass_reason,omitempty"`
-	CompressionRulesVersion        string   `json:"compression_rules_version,omitempty"`
-	CompressionRulesApplied        []string `json:"compression_rules_applied,omitempty"`
-	CompressionPreservedBlocks     int64    `json:"compression_preserved_blocks"`
-	CompressionRedactedSecrets     int64    `json:"compression_redacted_secrets"`
-	CacheSavedUSD                  *float64 `json:"cache_saved_usd"`
-	RetryCostUSD                   *float64 `json:"retry_cost_usd"`
+	Id                             int                             `json:"id"`
+	CreatedAt                      int64                           `json:"created_at"`
+	UserId                         int                             `json:"user_id"`
+	Username                       string                          `json:"username"`
+	TokenName                      string                          `json:"token_name"`
+	ModelName                      string                          `json:"model_name"`
+	ChannelId                      int                             `json:"channel"`
+	ChannelName                    string                          `json:"channel_name"`
+	Group                          string                          `json:"group"`
+	RequestId                      string                          `json:"request_id,omitempty"`
+	UpstreamRequestId              string                          `json:"upstream_request_id,omitempty"`
+	PromptTokens                   int                             `json:"prompt_tokens"`
+	CompletionTokens               int                             `json:"completion_tokens"`
+	Quota                          int                             `json:"quota"`
+	UseTime                        int                             `json:"use_time"`
+	IsStream                       bool                            `json:"is_stream"`
+	CostStatus                     string                          `json:"profit_cost_status"`
+	CostKnown                      bool                            `json:"cost_known"`
+	CostProfileID                  string                          `json:"cost_profile_id,omitempty"`
+	CostProfileName                string                          `json:"cost_profile_name,omitempty"`
+	BillablePromptTokens           int64                           `json:"billable_prompt_tokens"`
+	BillableCompletionTokens       int64                           `json:"billable_completion_tokens"`
+	UpstreamActualPromptTokens     int64                           `json:"upstream_actual_prompt_tokens"`
+	UpstreamActualCompletionTokens int64                           `json:"upstream_actual_completion_tokens"`
+	EstimatedRevenueUSD            float64                         `json:"estimated_revenue_usd"`
+	EstimatedUpstreamCostUSD       *float64                        `json:"estimated_upstream_cost_usd"`
+	GrossMarginUSD                 *float64                        `json:"gross_margin_usd"`
+	GrossMarginPct                 *float64                        `json:"gross_margin_pct"`
+	ExpectedCostUSD                *float64                        `json:"expected_cost_usd"`
+	ExpectedMarginUSD              *float64                        `json:"expected_margin_usd"`
+	ExpectedMarginPct              *float64                        `json:"expected_margin_pct"`
+	CompressionSavedTokens         int64                           `json:"compression_saved_tokens"`
+	CompressionMode                string                          `json:"compression_mode,omitempty"`
+	CompressionSavingsPercent      *float64                        `json:"compression_savings_percent,omitempty"`
+	CompressionBypassed            bool                            `json:"compression_bypassed"`
+	CompressionBypassReason        string                          `json:"compression_bypass_reason,omitempty"`
+	CompressionRulesVersion        string                          `json:"compression_rules_version,omitempty"`
+	CompressionRulesApplied        []string                        `json:"compression_rules_applied,omitempty"`
+	CompressionPreservedBlocks     int64                           `json:"compression_preserved_blocks"`
+	CompressionRedactedSecrets     int64                           `json:"compression_redacted_secrets"`
+	RouteMode                      string                          `json:"profit_route_mode,omitempty"`
+	RouteCandidateCount            int64                           `json:"profit_route_candidate_count"`
+	RouteSelectedChannelID         int                             `json:"profit_route_selected_channel_id"`
+	RouteSelectedMarginRank        int64                           `json:"profit_route_selected_margin_rank"`
+	RouteBestChannelID             int                             `json:"profit_route_best_channel_id"`
+	RouteBestChannelName           string                          `json:"profit_route_best_channel_name,omitempty"`
+	RouteBestCostProfileID         string                          `json:"profit_route_best_cost_profile_id,omitempty"`
+	RouteBestExpectedMarginUSD     *float64                        `json:"profit_route_best_expected_margin_usd,omitempty"`
+	RouteWouldPreferDifferent      bool                            `json:"profit_route_would_prefer_different"`
+	RouteCandidates                []profit.RouteDecisionCandidate `json:"profit_route_candidates,omitempty"`
+	CacheSavedUSD                  *float64                        `json:"cache_saved_usd"`
+	RetryCostUSD                   *float64                        `json:"retry_cost_usd"`
 }
 
 type ProfitAnalytics struct {
@@ -288,6 +298,16 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		CompressionRulesApplied:        stringSliceValue(other, profit.KeyCompressionRulesApplied),
 		CompressionPreservedBlocks:     int64Value(other, profit.KeyCompressionPreservedBlocks),
 		CompressionRedactedSecrets:     int64Value(other, profit.KeyCompressionRedactedSecrets),
+		RouteMode:                      stringValue(other, profit.KeyRouteMode),
+		RouteCandidateCount:            int64Value(other, profit.KeyRouteCandidateCount),
+		RouteSelectedChannelID:         int(int64Value(other, profit.KeyRouteSelectedChannelID)),
+		RouteSelectedMarginRank:        int64Value(other, profit.KeyRouteSelectedMarginRank),
+		RouteBestChannelID:             int(int64Value(other, profit.KeyRouteBestChannelID)),
+		RouteBestChannelName:           stringValue(other, profit.KeyRouteBestChannelName),
+		RouteBestCostProfileID:         stringValue(other, profit.KeyRouteBestCostProfileID),
+		RouteBestExpectedMarginUSD:     optionalFloat(other, profit.KeyRouteBestExpectedMarginUSD),
+		RouteWouldPreferDifferent:      boolValue(other, profit.KeyRouteWouldPreferDifferent),
+		RouteCandidates:                routeCandidatesValue(other, profit.KeyRouteCandidates),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
 	}
@@ -377,6 +397,25 @@ func stringSliceValue(data map[string]interface{}, key string) []string {
 	default:
 		return nil
 	}
+}
+
+func routeCandidatesValue(data map[string]interface{}, key string) []profit.RouteDecisionCandidate {
+	value, ok := data[key]
+	if !ok || value == nil {
+		return nil
+	}
+	if candidates, ok := value.([]profit.RouteDecisionCandidate); ok {
+		return candidates
+	}
+	payload, err := common.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var candidates []profit.RouteDecisionCandidate
+	if err = common.Unmarshal(payload, &candidates); err != nil {
+		return nil
+	}
+	return candidates
 }
 
 func optionalFloat(data map[string]interface{}, key string) *float64 {

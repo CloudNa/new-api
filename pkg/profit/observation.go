@@ -33,6 +33,16 @@ const (
 	KeyExpectedCostUSD                = "expected_cost_usd"
 	KeyExpectedMarginUSD              = "expected_margin_usd"
 	KeyExpectedMarginPct              = "expected_margin_pct"
+	KeyRouteMode                      = "profit_route_mode"
+	KeyRouteCandidateCount            = "profit_route_candidate_count"
+	KeyRouteSelectedChannelID         = "profit_route_selected_channel_id"
+	KeyRouteSelectedMarginRank        = "profit_route_selected_margin_rank"
+	KeyRouteBestChannelID             = "profit_route_best_channel_id"
+	KeyRouteBestChannelName           = "profit_route_best_channel_name"
+	KeyRouteBestCostProfileID         = "profit_route_best_cost_profile_id"
+	KeyRouteBestExpectedMarginUSD     = "profit_route_best_expected_margin_usd"
+	KeyRouteWouldPreferDifferent      = "profit_route_would_prefer_different"
+	KeyRouteCandidates                = "profit_route_candidates"
 	CostStatusMissingCostProfile      = "missing_cost_profile"
 )
 
@@ -63,6 +73,16 @@ var userHiddenKeys = []string{
 	KeyExpectedCostUSD,
 	KeyExpectedMarginUSD,
 	KeyExpectedMarginPct,
+	KeyRouteMode,
+	KeyRouteCandidateCount,
+	KeyRouteSelectedChannelID,
+	KeyRouteSelectedMarginRank,
+	KeyRouteBestChannelID,
+	KeyRouteBestChannelName,
+	KeyRouteBestCostProfileID,
+	KeyRouteBestExpectedMarginUSD,
+	KeyRouteWouldPreferDifferent,
+	KeyRouteCandidates,
 }
 
 type ObservationInput struct {
@@ -80,6 +100,7 @@ type ObservationInput struct {
 	UserQuota                      int
 	CompressionSavedTokens         int
 	LatencyMs                      int
+	RouteDecision                  *RouteDecision
 }
 
 func EnabledForGroup(group string) bool {
@@ -139,6 +160,7 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	other[KeyExpectedCostUSD] = costEstimate.ExpectedCostUSD
 	other[KeyExpectedMarginUSD] = costEstimate.ExpectedMarginUSD
 	other[KeyExpectedMarginPct] = costEstimate.ExpectedMarginPct
+	appendRouteDecision(other, input.RouteDecision)
 }
 
 func StripUserVisibleFields(other map[string]interface{}) {
@@ -163,6 +185,28 @@ func positiveInt(value int) int {
 		return 0
 	}
 	return value
+}
+
+func appendRouteDecision(other map[string]interface{}, decision *RouteDecision) {
+	if other == nil || decision == nil {
+		return
+	}
+	other[KeyRouteMode] = decision.Mode
+	other[KeyRouteCandidateCount] = positiveInt(decision.CandidateCount)
+	other[KeyRouteSelectedChannelID] = positiveInt(decision.SelectedChannelID)
+	other[KeyRouteSelectedMarginRank] = decision.SelectedMarginRank
+	other[KeyRouteBestChannelID] = positiveInt(decision.BestChannelID)
+	if decision.BestChannelName != "" {
+		other[KeyRouteBestChannelName] = decision.BestChannelName
+	}
+	if decision.BestCostProfileID != "" {
+		other[KeyRouteBestCostProfileID] = decision.BestCostProfileID
+	}
+	other[KeyRouteBestExpectedMarginUSD] = decision.BestExpectedMarginUSD
+	other[KeyRouteWouldPreferDifferent] = decision.WouldPreferDifferent
+	if len(decision.Candidates) > 0 {
+		other[KeyRouteCandidates] = decision.Candidates
+	}
 }
 
 func quotaToUSD(quota int) float64 {

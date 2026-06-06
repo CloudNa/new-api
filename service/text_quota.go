@@ -467,6 +467,21 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		upstreamCompletionTokens = originUsage.CompletionTokens
 	}
 	compressionSavedTokens := injectPromptCompressionOther(other, relayInfo)
+	routeDecision := buildProfitRouteDecision(ctx, profitRouteDecisionInput{
+		Group:                          relayInfo.UsingGroup,
+		Provider:                       ctx.GetString("channel_name"),
+		SelectedChannelID:              relayInfo.ChannelId,
+		SelectedChannelName:            ctx.GetString("channel_name"),
+		ModelName:                      summary.ModelName,
+		BillablePromptTokens:           summary.PromptTokens,
+		BillableCompletionTokens:       summary.CompletionTokens,
+		UpstreamActualPromptTokens:     upstreamPromptTokens,
+		UpstreamActualCompletionTokens: upstreamCompletionTokens,
+		CacheReadTokens:                summary.CacheTokens,
+		CacheWriteTokens:               cacheWriteTokens,
+		UserQuota:                      summary.Quota,
+		LatencyMs:                      int(summary.UseTimeSeconds * 1000),
+	})
 	profit.AppendObservation(other, profit.ObservationInput{
 		Group:                          relayInfo.UsingGroup,
 		Provider:                       ctx.GetString("channel_name"),
@@ -482,6 +497,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		UserQuota:                      summary.Quota,
 		CompressionSavedTokens:         compressionSavedTokens,
 		LatencyMs:                      int(summary.UseTimeSeconds * 1000),
+		RouteDecision:                  routeDecision,
 	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

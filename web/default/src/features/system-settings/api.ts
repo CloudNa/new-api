@@ -530,8 +530,35 @@ export type ProfitEvent = {
   compression_rules_applied?: string[]
   compression_preserved_blocks?: number
   compression_redacted_secrets?: number
+  profit_route_mode?: string
+  profit_route_candidate_count?: number
+  profit_route_selected_channel_id?: number
+  profit_route_selected_margin_rank?: number
+  profit_route_best_channel_id?: number
+  profit_route_best_channel_name?: string
+  profit_route_best_cost_profile_id?: string
+  profit_route_best_expected_margin_usd?: number | null
+  profit_route_would_prefer_different?: boolean
+  profit_route_candidates?: ProfitRouteDecisionCandidate[]
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
+}
+
+export type ProfitRouteDecisionCandidate = {
+  channel_id: number
+  channel_name?: string
+  cost_known: boolean
+  profit_cost_status: string
+  cost_profile_id?: string
+  cost_profile_name?: string
+  expected_cost_usd?: number | null
+  expected_margin_usd?: number | null
+  expected_margin_pct?: number | null
+  selected: boolean
+  would_prefer: boolean
+  margin_rank: number
+  priority?: number
+  weight?: number
 }
 
 export type ProfitEventsPage = {

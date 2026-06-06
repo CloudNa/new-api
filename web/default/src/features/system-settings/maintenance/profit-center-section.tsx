@@ -297,6 +297,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
             <TableHead>{t('Margin')}</TableHead>
             <TableHead>{t('Compression')}</TableHead>
             <TableHead>{t('Savings')}</TableHead>
+            <TableHead>{t('Route')}</TableHead>
             <TableHead>{t('Status')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -304,7 +305,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
           {rows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={8}
+                colSpan={9}
                 className='text-muted-foreground h-20 text-center text-sm'
               >
                 {t('No profit events yet')}
@@ -358,6 +359,37 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                       {formatPercent(event.compression_savings_percent)}
                     </span>
                   </div>
+                </TableCell>
+                <TableCell className='min-w-44'>
+                  {event.profit_route_mode ? (
+                    <div className='flex min-w-0 flex-col gap-1'>
+                      <div className='flex flex-wrap items-center gap-1'>
+                        <Badge variant='outline'>
+                          {t(event.profit_route_mode)}
+                        </Badge>
+                        {event.profit_route_would_prefer_different ? (
+                          <Badge variant='secondary'>
+                            {t('Would prefer')}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <span className='text-muted-foreground text-xs'>
+                        {t('Margin rank')}:{' '}
+                        {event.profit_route_selected_margin_rank || '-'} /{' '}
+                        {event.profit_route_candidate_count || 0}
+                      </span>
+                      {event.profit_route_best_channel_name ||
+                      event.profit_route_best_channel_id ? (
+                        <span className='text-muted-foreground max-w-44 truncate text-xs'>
+                          {t('Best channel')}:{' '}
+                          {event.profit_route_best_channel_name ||
+                            event.profit_route_best_channel_id}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    '-'
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge variant={event.cost_known ? 'default' : 'secondary'}>

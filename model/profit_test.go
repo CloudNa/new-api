@@ -13,9 +13,11 @@ func resetProfitTestData(t *testing.T) {
 	t.Helper()
 	require.NoError(t, DB.Exec("DELETE FROM logs").Error)
 	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
+	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
 	t.Cleanup(func() {
 		DB.Exec("DELETE FROM logs")
 		DB.Exec("DELETE FROM channels")
+		DB.Exec("DELETE FROM abilities")
 	})
 }
 
@@ -68,8 +70,21 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyCompressionRulesApplied:        []string{"rtk:truncate", "caveman:pleasantries"},
 		profit.KeyCompressionPreservedBlocks:     2,
 		profit.KeyCompressionRedactedSecrets:     1,
-		profit.KeyCacheSavedUSD:                  nil,
-		profit.KeyRetryCostUSD:                   nil,
+		profit.KeyRouteMode:                      profit.ModeObserve,
+		profit.KeyRouteCandidateCount:            2,
+		profit.KeyRouteSelectedChannelID:         501,
+		profit.KeyRouteSelectedMarginRank:        2,
+		profit.KeyRouteBestChannelID:             502,
+		profit.KeyRouteBestChannelName:           "cheap",
+		profit.KeyRouteBestCostProfileID:         "cheap-profile",
+		profit.KeyRouteBestExpectedMarginUSD:     0.88,
+		profit.KeyRouteWouldPreferDifferent:      true,
+		profit.KeyRouteCandidates: []profit.RouteDecisionCandidate{
+			{ChannelID: 501, ChannelName: "gpt-load", Selected: true, MarginRank: 2},
+			{ChannelID: 502, ChannelName: "cheap", WouldPrefer: true, MarginRank: 1},
+		},
+		profit.KeyCacheSavedUSD: nil,
+		profit.KeyRetryCostUSD:  nil,
 	})
 	insertProfitTestLog(t, &Log{
 		CreatedAt: 90,
@@ -99,6 +114,72 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.Equal(t, []string{"rtk:truncate", "caveman:pleasantries"}, events[0].CompressionRulesApplied)
 	require.Equal(t, int64(2), events[0].CompressionPreservedBlocks)
 	require.Equal(t, int64(1), events[0].CompressionRedactedSecrets)
+	require.Equal(t, profit.ModeObserve, events[0].RouteMode)
+	require.Equal(t, int64(2), events[0].RouteCandidateCount)
+	require.Equal(t, 501, events[0].RouteSelectedChannelID)
+	require.Equal(t, int64(2), events[0].RouteSelectedMarginRank)
+	require.Equal(t, 502, events[0].RouteBestChannelID)
+	require.Equal(t, "cheap", events[0].RouteBestChannelName)
+	require.Equal(t, "cheap-profile", events[0].RouteBestCostProfileID)
+	require.NotNil(t, events[0].RouteBestExpectedMarginUSD)
+	require.InDelta(t, 0.88, *events[0].RouteBestExpectedMarginUSD, 0.0001)
+	require.True(t, events[0].RouteWouldPreferDifferent)
+	require.Len(t, events[0].RouteCandidates, 2)
+	require.True(t, events[0].RouteCandidates[0].Selected)
+}
+
+func TestGetSatisfiedChannelCandidatesForProfitObservationDB(t *testing.T) {
+	resetProfitTestData(t)
+	originalMemoryCache := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCache
+	})
+
+	lowPriority := int64(1)
+	highPriority := int64(10)
+	lowWeight := uint(10)
+	highWeight := uint(20)
+	require.NoError(t, DB.Create(&[]Channel{
+		{
+			Id:     601,
+			Name:   "low",
+			Key:    "test-key-low",
+			Status: common.ChannelStatusEnabled,
+			Weight: &lowWeight,
+		},
+		{
+			Id:           602,
+			Name:         "high",
+			Key:          "test-key-high",
+			Status:       common.ChannelStatusEnabled,
+			Weight:       &highWeight,
+			ResponseTime: 150,
+		},
+		{
+			Id:     603,
+			Name:   "disabled",
+			Key:    "test-key-disabled",
+			Status: common.ChannelStatusManuallyDisabled,
+			Weight: &highWeight,
+		},
+	}).Error)
+	require.NoError(t, DB.Create(&[]Ability{
+		{Group: profit.DefaultObserveGroup, Model: "gemini-test", ChannelId: 601, Enabled: true, Priority: &lowPriority, Weight: lowWeight},
+		{Group: profit.DefaultObserveGroup, Model: "gemini-test", ChannelId: 602, Enabled: true, Priority: &highPriority, Weight: highWeight},
+		{Group: profit.DefaultObserveGroup, Model: "gemini-test", ChannelId: 603, Enabled: true, Priority: &highPriority, Weight: highWeight},
+	}).Error)
+
+	candidates, err := GetSatisfiedChannelCandidatesForProfitObservation(profit.DefaultObserveGroup, "gemini-test", 8)
+
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	require.Equal(t, 602, candidates[0].ChannelID)
+	require.Equal(t, "high", candidates[0].ChannelName)
+	require.Equal(t, int64(10), candidates[0].Priority)
+	require.Equal(t, 20, candidates[0].Weight)
+	require.Equal(t, 150, candidates[0].ResponseTime)
+	require.Equal(t, 601, candidates[1].ChannelID)
 }
 
 func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {

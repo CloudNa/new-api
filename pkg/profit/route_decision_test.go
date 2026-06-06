@@ -1,0 +1,85 @@
+package profit
+
+import (
+	"testing"
+
+	"github.com/QuantumNous/new-api/common"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestBuildRouteDecisionRanksExpectedMargin(t *testing.T) {
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                  "expensive",
+			Name:                "Expensive channel",
+			Enabled:             true,
+			ChannelID:           1,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  10,
+			OutputUSDPerMillion: 10,
+		},
+		{
+			ID:                  "cheap",
+			Name:                "Cheap channel",
+			Enabled:             true,
+			ChannelID:           2,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  1,
+			OutputUSDPerMillion: 1,
+		},
+	}}
+	payload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{CostProfilesOptionKey: string(payload)})
+
+	decision := BuildRouteDecision(RouteDecisionInput{
+		Group:                          DefaultObserveGroup,
+		SelectedChannelID:              1,
+		SelectedChannelName:            "expensive",
+		ModelName:                      "model-a",
+		BillablePromptTokens:           100000,
+		BillableCompletionTokens:       100000,
+		UpstreamActualPromptTokens:     100000,
+		UpstreamActualCompletionTokens: 100000,
+		UserQuota:                      500000,
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100},
+			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100},
+		},
+	})
+
+	require.NotNil(t, decision)
+	require.Equal(t, ModeObserve, decision.Mode)
+	require.Equal(t, 2, decision.CandidateCount)
+	require.Equal(t, 1, decision.SelectedChannelID)
+	require.Equal(t, 2, decision.SelectedMarginRank)
+	require.Equal(t, 2, decision.BestChannelID)
+	require.Equal(t, "cheap", decision.BestCostProfileID)
+	require.True(t, decision.WouldPreferDifferent)
+	require.Len(t, decision.Candidates, 2)
+	require.True(t, decision.Candidates[0].Selected)
+	require.Equal(t, 2, decision.Candidates[0].MarginRank)
+	require.False(t, decision.Candidates[0].WouldPrefer)
+	require.Equal(t, 1, decision.Candidates[1].MarginRank)
+	require.True(t, decision.Candidates[1].WouldPrefer)
+	require.NotNil(t, decision.BestExpectedMarginUSD)
+	require.InDelta(t, 0.8, *decision.BestExpectedMarginUSD, 0.0001)
+}
+
+func TestBuildRouteDecisionSkipsWhenCostRoutingOff(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModeOff
+	payload, err := common.Marshal(settings.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{SettingsOptionKey: string(payload)})
+
+	decision := BuildRouteDecision(RouteDecisionInput{
+		Group:             DefaultObserveGroup,
+		SelectedChannelID: 1,
+		ModelName:         "model-a",
+		Candidates:        []RouteCandidateInput{{ChannelID: 1}},
+	})
+
+	require.Nil(t, decision)
+}
