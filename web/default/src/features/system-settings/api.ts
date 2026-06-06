@@ -123,7 +123,9 @@ export async function startSystemUpdate(
   }
 }
 
-export async function rollbackSystemUpdate(request: SystemUpdateRollbackRequest) {
+export async function rollbackSystemUpdate(
+  request: SystemUpdateRollbackRequest
+) {
   const res = await api.post('/api/system_update/rollback', request)
   return res.data as {
     success: boolean
@@ -190,6 +192,75 @@ export async function testRtkCompression(text: string) {
     success: boolean
     message?: string
     data?: CompressionPreviewResponse
+  }
+}
+
+export async function getProfitSettings() {
+  const res = await api.get('/api/profit/settings')
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: ProfitSettings
+  }
+}
+
+export async function updateProfitSettings(settings: ProfitSettings) {
+  const res = await api.put('/api/profit/settings', settings)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: ProfitSettings
+  }
+}
+
+export async function getProfitCostProfiles() {
+  const res = await api.get('/api/profit/cost-profiles')
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: ProfitCostProfiles
+  }
+}
+
+export async function updateProfitCostProfiles(profiles: ProfitCostProfiles) {
+  const res = await api.put('/api/profit/cost-profiles', profiles)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: ProfitCostProfiles
+  }
+}
+
+export async function getProfitAnalytics(params?: ProfitAnalyticsParams) {
+  const res = await api.get('/api/profit/analytics', {
+    params,
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: ProfitAnalytics
+  }
+}
+
+export async function getProfitEvents(params?: ProfitAnalyticsParams) {
+  const res = await api.get('/api/profit/events', {
+    params,
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: ProfitEventsPage
+  }
+}
+
+export async function previewProfitRoute(request: ProfitRoutePreviewRequest) {
+  const res = await api.post('/api/profit/route-preview', request)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: ProfitRoutePreviewResponse
   }
 }
 
@@ -339,4 +410,188 @@ export type RtkFiltersResponse = {
     category: string
   }>
   attribution: string
+}
+
+export type ProfitMode = 'off' | 'observe'
+export type ProfitRiskMode = 'off' | 'alert'
+
+export type ProfitSettings = {
+  version: number
+  enabled: boolean
+  observe_only: boolean
+  observe_groups: string[]
+  global_kill_switch: boolean
+  cost_routing_mode: ProfitMode
+  cache_mode: ProfitMode
+  output_cap_mode: ProfitMode
+  risk_enforcement: ProfitRiskMode
+  settings_writable: boolean
+  cost_profiles_used: boolean
+}
+
+export type ProfitCostProfile = {
+  id: string
+  name: string
+  enabled: boolean
+  priority: number
+  provider: string
+  channel_id: number
+  channel_name: string
+  model_name: string
+  input_usd_per_million: number
+  output_usd_per_million: number
+  cache_read_usd_per_million: number
+  cache_write_usd_per_million: number
+  fixed_request_usd: number
+  failure_penalty_usd: number
+  latency_penalty_usd_per_second: number
+  risk_penalty_usd: number
+  notes: string
+}
+
+export type ProfitCostProfiles = {
+  version: number
+  items: ProfitCostProfile[]
+}
+
+export type ProfitAnalyticsParams = {
+  group?: string
+  model_name?: string
+  username?: string
+  channel?: number
+  start_timestamp?: number
+  end_timestamp?: number
+  p?: number
+  page_size?: number
+}
+
+export type ProfitAnalytics = {
+  request_count: number
+  scanned_events: number
+  total_matching_logs: number
+  is_partial: boolean
+  scan_limit: number
+  cost_known_count: number
+  missing_cost_profile_count: number
+  billable_prompt_tokens: number
+  billable_completion_tokens: number
+  upstream_actual_prompt_tokens: number
+  upstream_actual_completion_tokens: number
+  estimated_revenue_usd: number
+  estimated_upstream_cost_usd?: number | null
+  gross_margin_usd?: number | null
+  gross_margin_pct?: number | null
+  expected_cost_usd?: number | null
+  expected_margin_usd?: number | null
+  expected_margin_pct?: number | null
+  compression_saved_tokens: number
+  cache_saved_usd?: number | null
+  retry_cost_usd?: number | null
+}
+
+export type ProfitEvent = {
+  id: number
+  created_at: number
+  user_id: number
+  username: string
+  token_name: string
+  model_name: string
+  channel: number
+  channel_name: string
+  group: string
+  request_id?: string
+  upstream_request_id?: string
+  prompt_tokens: number
+  completion_tokens: number
+  quota: number
+  use_time: number
+  is_stream: boolean
+  profit_cost_status: string
+  cost_known: boolean
+  cost_profile_id?: string
+  cost_profile_name?: string
+  billable_prompt_tokens: number
+  billable_completion_tokens: number
+  upstream_actual_prompt_tokens: number
+  upstream_actual_completion_tokens: number
+  estimated_revenue_usd: number
+  estimated_upstream_cost_usd?: number | null
+  gross_margin_usd?: number | null
+  gross_margin_pct?: number | null
+  expected_cost_usd?: number | null
+  expected_margin_usd?: number | null
+  expected_margin_pct?: number | null
+  compression_saved_tokens: number
+  cache_saved_usd?: number | null
+  retry_cost_usd?: number | null
+}
+
+export type ProfitEventsPage = {
+  total: number
+  items: ProfitEvent[]
+  page?: number
+  page_size?: number
+}
+
+export type ProfitRoutePreviewCostInput = {
+  group?: string
+  provider?: string
+  channel_id?: number
+  channel_name?: string
+  model_name?: string
+  billable_prompt_tokens?: number
+  billable_completion_tokens?: number
+  upstream_actual_prompt_tokens?: number
+  upstream_actual_completion_tokens?: number
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  estimated_revenue_usd?: number
+  latency_ms?: number
+  failure_rate?: number
+}
+
+export type ProfitRoutePreviewRequest = {
+  group?: string
+  model_name?: string
+  provider?: string
+  channel_id?: number
+  channel_name?: string
+  prompt_tokens?: number
+  output_tokens?: number
+  estimated_revenue_usd?: number
+  candidates?: ProfitRoutePreviewCostInput[]
+}
+
+export type ProfitRoutePreviewEstimate = {
+  cost_known: boolean
+  profit_cost_status: string
+  cost_profile_id?: string
+  cost_profile_name?: string
+  estimated_revenue_usd: number
+  estimated_upstream_cost_usd?: number | null
+  token_cost_usd?: number | null
+  fixed_request_usd: number
+  failure_penalty_usd: number
+  latency_penalty_usd: number
+  risk_penalty_usd: number
+  expected_cost_usd?: number | null
+  gross_margin_usd?: number | null
+  gross_margin_pct?: number | null
+  expected_margin_usd?: number | null
+  expected_margin_pct?: number | null
+}
+
+export type ProfitRoutePreviewCandidate = {
+  input: ProfitRoutePreviewCostInput
+  estimate: ProfitRoutePreviewEstimate
+  would_prefer: boolean
+}
+
+export type ProfitRoutePreviewResponse = {
+  observe_only: boolean
+  live_routing_used: boolean
+  routing_mode: ProfitMode
+  selected_index: number
+  message: string
+  candidates: ProfitRoutePreviewCandidate[]
 }

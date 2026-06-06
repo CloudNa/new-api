@@ -242,11 +242,16 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	}
 	profit.AppendObservation(other, profit.ObservationInput{
 		Group:                          relayInfo.UsingGroup,
+		Provider:                       ctx.GetString("channel_name"),
+		ChannelID:                      relayInfo.ChannelId,
+		ChannelName:                    ctx.GetString("channel_name"),
+		ModelName:                      modelName,
 		BillablePromptTokens:           usage.InputTokens,
 		BillableCompletionTokens:       usage.OutputTokens,
 		UpstreamActualPromptTokens:     usage.InputTokens,
 		UpstreamActualCompletionTokens: usage.OutputTokens,
 		UserQuota:                      quota,
+		LatencyMs:                      int(useTimeSeconds * 1000),
 	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
@@ -371,11 +376,16 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 	profit.AppendObservation(other, profit.ObservationInput{
 		Group:                          relayInfo.UsingGroup,
+		Provider:                       ctx.GetString("channel_name"),
+		ChannelID:                      relayInfo.ChannelId,
+		ChannelName:                    ctx.GetString("channel_name"),
+		ModelName:                      relayInfo.OriginModelName,
 		BillablePromptTokens:           usage.PromptTokens,
 		BillableCompletionTokens:       usage.CompletionTokens,
 		UpstreamActualPromptTokens:     usage.PromptTokens,
 		UpstreamActualCompletionTokens: usage.CompletionTokens,
 		UserQuota:                      quota,
+		LatencyMs:                      int(useTimeSeconds * 1000),
 	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

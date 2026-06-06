@@ -469,12 +469,19 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	compressionSavedTokens := injectPromptCompressionOther(other, relayInfo)
 	profit.AppendObservation(other, profit.ObservationInput{
 		Group:                          relayInfo.UsingGroup,
+		Provider:                       ctx.GetString("channel_name"),
+		ChannelID:                      relayInfo.ChannelId,
+		ChannelName:                    ctx.GetString("channel_name"),
+		ModelName:                      summary.ModelName,
 		BillablePromptTokens:           summary.PromptTokens,
 		BillableCompletionTokens:       summary.CompletionTokens,
 		UpstreamActualPromptTokens:     upstreamPromptTokens,
 		UpstreamActualCompletionTokens: upstreamCompletionTokens,
+		CacheReadTokens:                summary.CacheTokens,
+		CacheWriteTokens:               cacheWriteTokens,
 		UserQuota:                      summary.Quota,
 		CompressionSavedTokens:         compressionSavedTokens,
+		LatencyMs:                      int(summary.UseTimeSeconds * 1000),
 	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

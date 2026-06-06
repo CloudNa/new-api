@@ -9,6 +9,8 @@ const (
 
 	KeyObserveVersion                 = "profit_observe_version"
 	KeyCostStatus                     = "profit_cost_status"
+	KeyCostProfileID                  = "profit_cost_profile_id"
+	KeyCostProfileName                = "profit_cost_profile_name"
 	KeyBillablePromptTokens           = "billable_prompt_tokens"
 	KeyBillableCompletionTokens       = "billable_completion_tokens"
 	KeyUpstreamActualPromptTokens     = "upstream_actual_prompt_tokens"
@@ -28,12 +30,17 @@ const (
 	KeyCompressionRedactedSecrets     = "compression_redacted_secrets"
 	KeyCacheSavedUSD                  = "cache_saved_usd"
 	KeyRetryCostUSD                   = "retry_cost_usd"
+	KeyExpectedCostUSD                = "expected_cost_usd"
+	KeyExpectedMarginUSD              = "expected_margin_usd"
+	KeyExpectedMarginPct              = "expected_margin_pct"
 	CostStatusMissingCostProfile      = "missing_cost_profile"
 )
 
 var userHiddenKeys = []string{
 	KeyObserveVersion,
 	KeyCostStatus,
+	KeyCostProfileID,
+	KeyCostProfileName,
 	KeyBillablePromptTokens,
 	KeyBillableCompletionTokens,
 	KeyUpstreamActualPromptTokens,
@@ -53,20 +60,39 @@ var userHiddenKeys = []string{
 	KeyCompressionRedactedSecrets,
 	KeyCacheSavedUSD,
 	KeyRetryCostUSD,
+	KeyExpectedCostUSD,
+	KeyExpectedMarginUSD,
+	KeyExpectedMarginPct,
 }
 
 type ObservationInput struct {
 	Group                          string
+	Provider                       string
+	ChannelID                      int
+	ChannelName                    string
+	ModelName                      string
 	BillablePromptTokens           int
 	BillableCompletionTokens       int
 	UpstreamActualPromptTokens     int
 	UpstreamActualCompletionTokens int
+	CacheReadTokens                int
+	CacheWriteTokens               int
 	UserQuota                      int
 	CompressionSavedTokens         int
+	LatencyMs                      int
 }
 
 func EnabledForGroup(group string) bool {
-	return group == DefaultObserveGroup
+	settings := CurrentSettings()
+	if !settings.Enabled || settings.GlobalKillSwitch || group != DefaultObserveGroup {
+		return false
+	}
+	for _, enabledGroup := range settings.ObserveGroups {
+		if enabledGroup == group {
+			return true
+		}
+	}
+	return false
 }
 
 func AppendObservation(other map[string]interface{}, input ObservationInput) {
@@ -74,19 +100,45 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 		return
 	}
 
+	revenueUSD := quotaToUSD(input.UserQuota)
+	costEstimate := EstimateCost(CostInput{
+		Group:                    input.Group,
+		Provider:                 input.Provider,
+		ChannelID:                input.ChannelID,
+		ChannelName:              input.ChannelName,
+		ModelName:                input.ModelName,
+		BillablePromptTokens:     input.BillablePromptTokens,
+		BillableCompletionTokens: input.BillableCompletionTokens,
+		UpstreamPromptTokens:     input.UpstreamActualPromptTokens,
+		UpstreamCompletionTokens: input.UpstreamActualCompletionTokens,
+		CacheReadTokens:          input.CacheReadTokens,
+		CacheWriteTokens:         input.CacheWriteTokens,
+		RevenueUSD:               revenueUSD,
+		LatencyMs:                input.LatencyMs,
+	}, CurrentCostProfiles())
+
 	other[KeyObserveVersion] = ObservationVersion
-	other[KeyCostStatus] = CostStatusMissingCostProfile
+	other[KeyCostStatus] = costEstimate.CostStatus
+	if costEstimate.CostProfileID != "" {
+		other[KeyCostProfileID] = costEstimate.CostProfileID
+	}
+	if costEstimate.CostProfileName != "" {
+		other[KeyCostProfileName] = costEstimate.CostProfileName
+	}
 	other[KeyBillablePromptTokens] = positiveInt(input.BillablePromptTokens)
 	other[KeyBillableCompletionTokens] = positiveInt(input.BillableCompletionTokens)
 	other[KeyUpstreamActualPromptTokens] = positiveInt(input.UpstreamActualPromptTokens)
 	other[KeyUpstreamActualCompletionTokens] = positiveInt(input.UpstreamActualCompletionTokens)
-	other[KeyEstimatedRevenueUSD] = quotaToUSD(input.UserQuota)
-	other[KeyEstimatedUpstreamCostUSD] = nil
-	other[KeyGrossMarginUSD] = nil
-	other[KeyGrossMarginPct] = nil
+	other[KeyEstimatedRevenueUSD] = revenueUSD
+	other[KeyEstimatedUpstreamCostUSD] = costEstimate.EstimatedUpstreamCostUSD
+	other[KeyGrossMarginUSD] = costEstimate.GrossMarginUSD
+	other[KeyGrossMarginPct] = costEstimate.GrossMarginPct
 	other[KeyCompressionSavedTokens] = positiveInt(input.CompressionSavedTokens)
 	other[KeyCacheSavedUSD] = nil
 	other[KeyRetryCostUSD] = nil
+	other[KeyExpectedCostUSD] = costEstimate.ExpectedCostUSD
+	other[KeyExpectedMarginUSD] = costEstimate.ExpectedMarginUSD
+	other[KeyExpectedMarginPct] = costEstimate.ExpectedMarginPct
 }
 
 func StripUserVisibleFields(other map[string]interface{}) {

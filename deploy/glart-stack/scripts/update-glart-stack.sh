@@ -188,12 +188,18 @@ git_update_and_tests() {
   grep -q "GetSystemUpdateStatus" "$ROOT_DIR/controller/system_update.go" || fail
   grep -q 'apiRouter.Group("/profit")' "$ROOT_DIR/router/api-router.go" || fail
   grep -q "GetProfitAnalytics" "$ROOT_DIR/controller/profit.go" || fail
+  grep -q "UpdateProfitCostProfiles" "$ROOT_DIR/controller/profit.go" || fail
+  grep -q "PreviewProfitRoute" "$ROOT_DIR/controller/profit.go" || fail
+  grep -q "CostProfilesOptionKey" "$ROOT_DIR/pkg/profit/settings.go" || fail
+  grep -q "PreviewRoute" "$ROOT_DIR/pkg/profit/cost.go" || fail
   grep -q 'apiRouter.Group("/settings/compression")' "$ROOT_DIR/router/api-router.go" || fail
   grep -q "PreviewCompression" "$ROOT_DIR/controller/compression.go" || fail
   require_file "$ROOT_DIR/pkg/promptcompress/compressor.go"
   grep -q "ApplyPromptCompressionForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
   grep -q "PromptCompressionStats" "$ROOT_DIR/relay/common/relay_info.go" || fail
   grep -q "compression_rules_version" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "ProfitCenterSection" "$ROOT_DIR/web/default/src/features/system-settings/operations/section-registry.tsx" || fail
+  require_file "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx"
   grep -q "PromptCompressionSection" "$ROOT_DIR/web/default/src/features/system-settings/operations/section-registry.tsx" || fail
   require_file "$ROOT_DIR/web/default/src/features/system-settings/maintenance/prompt-compression-section.tsx"
 

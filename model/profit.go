@@ -39,6 +39,8 @@ type ProfitEvent struct {
 	IsStream                       bool     `json:"is_stream"`
 	CostStatus                     string   `json:"profit_cost_status"`
 	CostKnown                      bool     `json:"cost_known"`
+	CostProfileID                  string   `json:"cost_profile_id,omitempty"`
+	CostProfileName                string   `json:"cost_profile_name,omitempty"`
 	BillablePromptTokens           int64    `json:"billable_prompt_tokens"`
 	BillableCompletionTokens       int64    `json:"billable_completion_tokens"`
 	UpstreamActualPromptTokens     int64    `json:"upstream_actual_prompt_tokens"`
@@ -47,6 +49,9 @@ type ProfitEvent struct {
 	EstimatedUpstreamCostUSD       *float64 `json:"estimated_upstream_cost_usd"`
 	GrossMarginUSD                 *float64 `json:"gross_margin_usd"`
 	GrossMarginPct                 *float64 `json:"gross_margin_pct"`
+	ExpectedCostUSD                *float64 `json:"expected_cost_usd"`
+	ExpectedMarginUSD              *float64 `json:"expected_margin_usd"`
+	ExpectedMarginPct              *float64 `json:"expected_margin_pct"`
 	CompressionSavedTokens         int64    `json:"compression_saved_tokens"`
 	CacheSavedUSD                  *float64 `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64 `json:"retry_cost_usd"`
@@ -68,6 +73,9 @@ type ProfitAnalytics struct {
 	EstimatedUpstreamCostUSD       *float64 `json:"estimated_upstream_cost_usd"`
 	GrossMarginUSD                 *float64 `json:"gross_margin_usd"`
 	GrossMarginPct                 *float64 `json:"gross_margin_pct"`
+	ExpectedCostUSD                *float64 `json:"expected_cost_usd"`
+	ExpectedMarginUSD              *float64 `json:"expected_margin_usd"`
+	ExpectedMarginPct              *float64 `json:"expected_margin_pct"`
 	CompressionSavedTokens         int64    `json:"compression_saved_tokens"`
 	CacheSavedUSD                  *float64 `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64 `json:"retry_cost_usd"`
@@ -120,8 +128,12 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 	var upstreamCostSum float64
 	var grossMarginSum float64
 	var grossMarginRevenueBase float64
+	var expectedCostSum float64
+	var expectedMarginSum float64
+	var expectedMarginRevenueBase float64
 	var cacheSavedSum float64
 	var retryCostSum float64
+	var hasExpectedCost bool
 	var hasCacheSaved bool
 	var hasRetryCost bool
 
@@ -150,6 +162,16 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 				grossMarginSum += event.EstimatedRevenueUSD - *event.EstimatedUpstreamCostUSD
 			}
 		}
+		if event.ExpectedCostUSD != nil {
+			hasExpectedCost = true
+			expectedCostSum += *event.ExpectedCostUSD
+			expectedMarginRevenueBase += event.EstimatedRevenueUSD
+			if event.ExpectedMarginUSD != nil {
+				expectedMarginSum += *event.ExpectedMarginUSD
+			} else {
+				expectedMarginSum += event.EstimatedRevenueUSD - *event.ExpectedCostUSD
+			}
+		}
 		if event.CacheSavedUSD != nil {
 			hasCacheSaved = true
 			cacheSavedSum += *event.CacheSavedUSD
@@ -165,6 +187,13 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 		analytics.GrossMarginUSD = floatPtr(grossMarginSum)
 		if grossMarginRevenueBase > 0 {
 			analytics.GrossMarginPct = floatPtr(grossMarginSum / grossMarginRevenueBase * 100)
+		}
+	}
+	if hasExpectedCost {
+		analytics.ExpectedCostUSD = floatPtr(expectedCostSum)
+		analytics.ExpectedMarginUSD = floatPtr(expectedMarginSum)
+		if expectedMarginRevenueBase > 0 {
+			analytics.ExpectedMarginPct = floatPtr(expectedMarginSum / expectedMarginRevenueBase * 100)
 		}
 	}
 	if hasCacheSaved {
@@ -229,6 +258,8 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		IsStream:                       log.IsStream,
 		CostStatus:                     stringValue(other, profit.KeyCostStatus),
 		CostKnown:                      upstreamCost != nil,
+		CostProfileID:                  stringValue(other, profit.KeyCostProfileID),
+		CostProfileName:                stringValue(other, profit.KeyCostProfileName),
 		BillablePromptTokens:           int64Value(other, profit.KeyBillablePromptTokens),
 		BillableCompletionTokens:       int64Value(other, profit.KeyBillableCompletionTokens),
 		UpstreamActualPromptTokens:     int64Value(other, profit.KeyUpstreamActualPromptTokens),
@@ -237,6 +268,9 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		EstimatedUpstreamCostUSD:       upstreamCost,
 		GrossMarginUSD:                 optionalFloat(other, profit.KeyGrossMarginUSD),
 		GrossMarginPct:                 optionalFloat(other, profit.KeyGrossMarginPct),
+		ExpectedCostUSD:                optionalFloat(other, profit.KeyExpectedCostUSD),
+		ExpectedMarginUSD:              optionalFloat(other, profit.KeyExpectedMarginUSD),
+		ExpectedMarginPct:              optionalFloat(other, profit.KeyExpectedMarginPct),
 		CompressionSavedTokens:         int64Value(other, profit.KeyCompressionSavedTokens),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
