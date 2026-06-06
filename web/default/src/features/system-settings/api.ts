@@ -522,6 +522,14 @@ export type ProfitEvent = {
   expected_margin_usd?: number | null
   expected_margin_pct?: number | null
   compression_saved_tokens: number
+  compression_mode?: string
+  compression_savings_percent?: number | null
+  compression_bypassed?: boolean
+  compression_bypass_reason?: string
+  compression_rules_version?: string
+  compression_rules_applied?: string[]
+  compression_preserved_blocks?: number
+  compression_redacted_secrets?: number
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
 }

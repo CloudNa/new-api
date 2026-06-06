@@ -53,6 +53,14 @@ type ProfitEvent struct {
 	ExpectedMarginUSD              *float64 `json:"expected_margin_usd"`
 	ExpectedMarginPct              *float64 `json:"expected_margin_pct"`
 	CompressionSavedTokens         int64    `json:"compression_saved_tokens"`
+	CompressionMode                string   `json:"compression_mode,omitempty"`
+	CompressionSavingsPercent      *float64 `json:"compression_savings_percent,omitempty"`
+	CompressionBypassed            bool     `json:"compression_bypassed"`
+	CompressionBypassReason        string   `json:"compression_bypass_reason,omitempty"`
+	CompressionRulesVersion        string   `json:"compression_rules_version,omitempty"`
+	CompressionRulesApplied        []string `json:"compression_rules_applied,omitempty"`
+	CompressionPreservedBlocks     int64    `json:"compression_preserved_blocks"`
+	CompressionRedactedSecrets     int64    `json:"compression_redacted_secrets"`
 	CacheSavedUSD                  *float64 `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64 `json:"retry_cost_usd"`
 }
@@ -272,6 +280,14 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		ExpectedMarginUSD:              optionalFloat(other, profit.KeyExpectedMarginUSD),
 		ExpectedMarginPct:              optionalFloat(other, profit.KeyExpectedMarginPct),
 		CompressionSavedTokens:         int64Value(other, profit.KeyCompressionSavedTokens),
+		CompressionMode:                stringValue(other, profit.KeyCompressionMode),
+		CompressionSavingsPercent:      optionalFloat(other, profit.KeyCompressionSavingsPercent),
+		CompressionBypassed:            boolValue(other, profit.KeyCompressionBypassed),
+		CompressionBypassReason:        stringValue(other, profit.KeyCompressionBypassReason),
+		CompressionRulesVersion:        stringValue(other, profit.KeyCompressionRulesVersion),
+		CompressionRulesApplied:        stringSliceValue(other, profit.KeyCompressionRulesApplied),
+		CompressionPreservedBlocks:     int64Value(other, profit.KeyCompressionPreservedBlocks),
+		CompressionRedactedSecrets:     int64Value(other, profit.KeyCompressionRedactedSecrets),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
 	}
@@ -324,6 +340,43 @@ func stringValue(data map[string]interface{}, key string) string {
 
 func int64Value(data map[string]interface{}, key string) int64 {
 	return int64(floatValue(data, key))
+}
+
+func boolValue(data map[string]interface{}, key string) bool {
+	value, ok := data[key]
+	if !ok || value == nil {
+		return false
+	}
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		parsed, err := strconv.ParseBool(v)
+		return err == nil && parsed
+	default:
+		return false
+	}
+}
+
+func stringSliceValue(data map[string]interface{}, key string) []string {
+	value, ok := data[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch items := value.(type) {
+	case []string:
+		return items
+	case []interface{}:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func optionalFloat(data map[string]interface{}, key string) *float64 {

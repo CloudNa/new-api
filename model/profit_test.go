@@ -61,6 +61,13 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyGrossMarginUSD:                 nil,
 		profit.KeyGrossMarginPct:                 nil,
 		profit.KeyCompressionSavedTokens:         10,
+		profit.KeyCompressionMode:                "stacked",
+		profit.KeyCompressionSavingsPercent:      11.5,
+		profit.KeyCompressionBypassed:            false,
+		profit.KeyCompressionRulesVersion:        "omniroute-style-go-v1",
+		profit.KeyCompressionRulesApplied:        []string{"rtk:truncate", "caveman:pleasantries"},
+		profit.KeyCompressionPreservedBlocks:     2,
+		profit.KeyCompressionRedactedSecrets:     1,
 		profit.KeyCacheSavedUSD:                  nil,
 		profit.KeyRetryCostUSD:                   nil,
 	})
@@ -84,6 +91,14 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.Equal(t, int64(90), events[0].UpstreamActualPromptTokens)
 	require.Nil(t, events[0].EstimatedUpstreamCostUSD)
 	require.False(t, events[0].CostKnown)
+	require.Equal(t, "stacked", events[0].CompressionMode)
+	require.NotNil(t, events[0].CompressionSavingsPercent)
+	require.InDelta(t, 11.5, *events[0].CompressionSavingsPercent, 0.0001)
+	require.False(t, events[0].CompressionBypassed)
+	require.Equal(t, "omniroute-style-go-v1", events[0].CompressionRulesVersion)
+	require.Equal(t, []string{"rtk:truncate", "caveman:pleasantries"}, events[0].CompressionRulesApplied)
+	require.Equal(t, int64(2), events[0].CompressionPreservedBlocks)
+	require.Equal(t, int64(1), events[0].CompressionRedactedSecrets)
 }
 
 func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {

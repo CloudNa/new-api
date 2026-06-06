@@ -295,6 +295,8 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
             <TableHead>{t('Revenue')}</TableHead>
             <TableHead>{t('Upstream cost')}</TableHead>
             <TableHead>{t('Margin')}</TableHead>
+            <TableHead>{t('Compression')}</TableHead>
+            <TableHead>{t('Savings')}</TableHead>
             <TableHead>{t('Status')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -302,7 +304,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
           {rows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={6}
+                colSpan={8}
                 className='text-muted-foreground h-20 text-center text-sm'
               >
                 {t('No profit events yet')}
@@ -326,6 +328,36 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                   <span className='text-muted-foreground'>
                     {formatPercent(event.gross_margin_pct)}
                   </span>
+                </TableCell>
+                <TableCell className='min-w-36'>
+                  {event.compression_mode ? (
+                    <div className='flex flex-col gap-1'>
+                      <Badge
+                        variant={
+                          event.compression_bypassed ? 'secondary' : 'outline'
+                        }
+                        className='w-fit'
+                      >
+                        {t(event.compression_mode)}
+                      </Badge>
+                      {event.compression_bypassed &&
+                      event.compression_bypass_reason ? (
+                        <span className='text-muted-foreground max-w-40 truncate text-xs'>
+                          {t('Bypassed')}: {event.compression_bypass_reason}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+                <TableCell className='min-w-28'>
+                  <div className='flex flex-col'>
+                    <span>{formatNumber(event.compression_saved_tokens)}</span>
+                    <span className='text-muted-foreground text-xs'>
+                      {formatPercent(event.compression_savings_percent)}
+                    </span>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant={event.cost_known ? 'default' : 'secondary'}>
