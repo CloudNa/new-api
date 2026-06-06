@@ -249,6 +249,8 @@ export const STATIC_I18N_KEYS = [
   'Gross margin percent',
   'Expected margin',
   'Compression saved tokens',
+  'Compression',
+  'Savings',
   'Missing cost profiles',
   'Cost routing mode',
   'Cache mode',
