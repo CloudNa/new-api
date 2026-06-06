@@ -182,6 +182,7 @@ function safeParseJson<T>(value: string): T {
 
 function ModeSelect(props: {
   value: ProfitMode
+  label: string
   onChange: (value: ProfitMode) => void
 }) {
   const { t } = useTranslation()
@@ -196,7 +197,7 @@ function ModeSelect(props: {
         value !== null && props.onChange(value as ProfitMode)
       }
     >
-      <SelectTrigger className='w-full'>
+      <SelectTrigger className='w-full' aria-label={t(props.label)}>
         <SelectValue placeholder={t('Select mode')} />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false}>
@@ -214,6 +215,7 @@ function ModeSelect(props: {
 
 function RiskSelect(props: {
   value: ProfitRiskMode
+  label: string
   onChange: (value: ProfitRiskMode) => void
 }) {
   const { t } = useTranslation()
@@ -228,7 +230,7 @@ function RiskSelect(props: {
         value !== null && props.onChange(value as ProfitRiskMode)
       }
     >
-      <SelectTrigger className='w-full'>
+      <SelectTrigger className='w-full' aria-label={t(props.label)}>
         <SelectValue placeholder={t('Select risk mode')} />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false}>
@@ -623,6 +625,7 @@ export function ProfitCenterSection() {
             <div className='mt-1.5'>
               <ModeSelect
                 value={settings.cost_routing_mode}
+                label='Cost routing mode'
                 onChange={(cost_routing_mode) =>
                   setSettings((current) => ({ ...current, cost_routing_mode }))
                 }
@@ -634,6 +637,7 @@ export function ProfitCenterSection() {
             <div className='mt-1.5'>
               <ModeSelect
                 value={settings.cache_mode}
+                label='Cache mode'
                 onChange={(cache_mode) =>
                   setSettings((current) => ({ ...current, cache_mode }))
                 }
@@ -647,6 +651,7 @@ export function ProfitCenterSection() {
             <div className='mt-1.5'>
               <ModeSelect
                 value={settings.output_cap_mode}
+                label='Output cap mode'
                 onChange={(output_cap_mode) =>
                   setSettings((current) => ({ ...current, output_cap_mode }))
                 }
@@ -660,6 +665,7 @@ export function ProfitCenterSection() {
             <div className='mt-1.5'>
               <RiskSelect
                 value={settings.risk_enforcement}
+                label='Risk enforcement'
                 onChange={(risk_enforcement) =>
                   setSettings((current) => ({ ...current, risk_enforcement }))
                 }
