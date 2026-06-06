@@ -71,32 +71,52 @@ type ProfitEvent struct {
 	RouteBestExpectedMarginUSD     *float64                        `json:"profit_route_best_expected_margin_usd,omitempty"`
 	RouteWouldPreferDifferent      bool                            `json:"profit_route_would_prefer_different"`
 	RouteCandidates                []profit.RouteDecisionCandidate `json:"profit_route_candidates,omitempty"`
+	OutputPolicyMode               string                          `json:"output_policy_mode,omitempty"`
+	OutputPolicyID                 string                          `json:"output_policy_id,omitempty"`
+	OutputPolicyName               string                          `json:"output_policy_name,omitempty"`
+	OutputPolicyCompletionTokens   int64                           `json:"output_policy_completion_tokens"`
+	OutputPolicyDefaultMaxTokens   int64                           `json:"output_policy_default_max_tokens"`
+	OutputPolicyHardMaxTokens      int64                           `json:"output_policy_hard_max_tokens"`
+	OutputPolicyExceededDefault    bool                            `json:"output_policy_exceeded_default"`
+	OutputPolicyExceededHard       bool                            `json:"output_policy_exceeded_hard"`
+	OutputPolicyRewriteOverLimit   bool                            `json:"output_policy_rewrite_over_limit"`
+	OutputPolicyWouldCap           bool                            `json:"output_policy_would_cap"`
+	OutputPolicyPremiumRequired    bool                            `json:"output_policy_premium_required"`
+	OutputPolicyPremiumGroup       string                          `json:"output_policy_premium_group,omitempty"`
+	OutputPolicyObserveOnly        bool                            `json:"output_policy_observe_only"`
+	OutputPolicyLiveEnforced       bool                            `json:"output_policy_live_enforced"`
 	CacheSavedUSD                  *float64                        `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64                        `json:"retry_cost_usd"`
 }
 
 type ProfitAnalytics struct {
-	RequestCount                   int64    `json:"request_count"`
-	ScannedEvents                  int64    `json:"scanned_events"`
-	TotalMatchingLogs              int64    `json:"total_matching_logs"`
-	IsPartial                      bool     `json:"is_partial"`
-	ScanLimit                      int      `json:"scan_limit"`
-	CostKnownCount                 int64    `json:"cost_known_count"`
-	MissingCostProfileCount        int64    `json:"missing_cost_profile_count"`
-	BillablePromptTokens           int64    `json:"billable_prompt_tokens"`
-	BillableCompletionTokens       int64    `json:"billable_completion_tokens"`
-	UpstreamActualPromptTokens     int64    `json:"upstream_actual_prompt_tokens"`
-	UpstreamActualCompletionTokens int64    `json:"upstream_actual_completion_tokens"`
-	EstimatedRevenueUSD            float64  `json:"estimated_revenue_usd"`
-	EstimatedUpstreamCostUSD       *float64 `json:"estimated_upstream_cost_usd"`
-	GrossMarginUSD                 *float64 `json:"gross_margin_usd"`
-	GrossMarginPct                 *float64 `json:"gross_margin_pct"`
-	ExpectedCostUSD                *float64 `json:"expected_cost_usd"`
-	ExpectedMarginUSD              *float64 `json:"expected_margin_usd"`
-	ExpectedMarginPct              *float64 `json:"expected_margin_pct"`
-	CompressionSavedTokens         int64    `json:"compression_saved_tokens"`
-	CacheSavedUSD                  *float64 `json:"cache_saved_usd"`
-	RetryCostUSD                   *float64 `json:"retry_cost_usd"`
+	RequestCount                     int64    `json:"request_count"`
+	ScannedEvents                    int64    `json:"scanned_events"`
+	TotalMatchingLogs                int64    `json:"total_matching_logs"`
+	IsPartial                        bool     `json:"is_partial"`
+	ScanLimit                        int      `json:"scan_limit"`
+	CostKnownCount                   int64    `json:"cost_known_count"`
+	MissingCostProfileCount          int64    `json:"missing_cost_profile_count"`
+	BillablePromptTokens             int64    `json:"billable_prompt_tokens"`
+	BillableCompletionTokens         int64    `json:"billable_completion_tokens"`
+	UpstreamActualPromptTokens       int64    `json:"upstream_actual_prompt_tokens"`
+	UpstreamActualCompletionTokens   int64    `json:"upstream_actual_completion_tokens"`
+	EstimatedRevenueUSD              float64  `json:"estimated_revenue_usd"`
+	EstimatedUpstreamCostUSD         *float64 `json:"estimated_upstream_cost_usd"`
+	GrossMarginUSD                   *float64 `json:"gross_margin_usd"`
+	GrossMarginPct                   *float64 `json:"gross_margin_pct"`
+	ExpectedCostUSD                  *float64 `json:"expected_cost_usd"`
+	ExpectedMarginUSD                *float64 `json:"expected_margin_usd"`
+	ExpectedMarginPct                *float64 `json:"expected_margin_pct"`
+	CompressionSavedTokens           int64    `json:"compression_saved_tokens"`
+	OutputPolicyObservedCount        int64    `json:"output_policy_observed_count"`
+	OutputPolicyExceededDefaultCount int64    `json:"output_policy_exceeded_default_count"`
+	OutputPolicyExceededHardCount    int64    `json:"output_policy_exceeded_hard_count"`
+	OutputPolicyWouldCapCount        int64    `json:"output_policy_would_cap_count"`
+	OutputPolicyPremiumRequiredCount int64    `json:"output_policy_premium_required_count"`
+	OutputPolicyCompletionTokens     int64    `json:"output_policy_completion_tokens"`
+	CacheSavedUSD                    *float64 `json:"cache_saved_usd"`
+	RetryCostUSD                     *float64 `json:"retry_cost_usd"`
 }
 
 func GetProfitEvents(filter ProfitLogFilter, startIdx int, num int) (events []*ProfitEvent, total int64, err error) {
@@ -167,6 +187,22 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 		analytics.UpstreamActualCompletionTokens += event.UpstreamActualCompletionTokens
 		analytics.EstimatedRevenueUSD += event.EstimatedRevenueUSD
 		analytics.CompressionSavedTokens += event.CompressionSavedTokens
+		if event.OutputPolicyMode != "" {
+			analytics.OutputPolicyObservedCount++
+			analytics.OutputPolicyCompletionTokens += event.OutputPolicyCompletionTokens
+			if event.OutputPolicyExceededDefault {
+				analytics.OutputPolicyExceededDefaultCount++
+			}
+			if event.OutputPolicyExceededHard {
+				analytics.OutputPolicyExceededHardCount++
+			}
+			if event.OutputPolicyWouldCap {
+				analytics.OutputPolicyWouldCapCount++
+			}
+			if event.OutputPolicyPremiumRequired {
+				analytics.OutputPolicyPremiumRequiredCount++
+			}
+		}
 		if event.CostStatus == profit.CostStatusMissingCostProfile {
 			analytics.MissingCostProfileCount++
 		}
@@ -308,6 +344,20 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		RouteBestExpectedMarginUSD:     optionalFloat(other, profit.KeyRouteBestExpectedMarginUSD),
 		RouteWouldPreferDifferent:      boolValue(other, profit.KeyRouteWouldPreferDifferent),
 		RouteCandidates:                routeCandidatesValue(other, profit.KeyRouteCandidates),
+		OutputPolicyMode:               stringValue(other, profit.KeyOutputPolicyMode),
+		OutputPolicyID:                 stringValue(other, profit.KeyOutputPolicyID),
+		OutputPolicyName:               stringValue(other, profit.KeyOutputPolicyName),
+		OutputPolicyCompletionTokens:   int64Value(other, profit.KeyOutputPolicyCompletionTokens),
+		OutputPolicyDefaultMaxTokens:   int64Value(other, profit.KeyOutputPolicyDefaultMaxTokens),
+		OutputPolicyHardMaxTokens:      int64Value(other, profit.KeyOutputPolicyHardMaxTokens),
+		OutputPolicyExceededDefault:    boolValue(other, profit.KeyOutputPolicyExceededDefault),
+		OutputPolicyExceededHard:       boolValue(other, profit.KeyOutputPolicyExceededHard),
+		OutputPolicyRewriteOverLimit:   boolValue(other, profit.KeyOutputPolicyRewriteOverLimit),
+		OutputPolicyWouldCap:           boolValue(other, profit.KeyOutputPolicyWouldCap),
+		OutputPolicyPremiumRequired:    boolValue(other, profit.KeyOutputPolicyPremiumRequired),
+		OutputPolicyPremiumGroup:       stringValue(other, profit.KeyOutputPolicyPremiumGroup),
+		OutputPolicyObserveOnly:        boolValue(other, profit.KeyOutputPolicyObserveOnly),
+		OutputPolicyLiveEnforced:       boolValue(other, profit.KeyOutputPolicyLiveEnforced),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
 	}

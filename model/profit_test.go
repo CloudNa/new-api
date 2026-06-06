@@ -83,8 +83,20 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 			{ChannelID: 501, ChannelName: "gpt-load", Selected: true, MarginRank: 2},
 			{ChannelID: 502, ChannelName: "cheap", WouldPrefer: true, MarginRank: 1},
 		},
-		profit.KeyCacheSavedUSD: nil,
-		profit.KeyRetryCostUSD:  nil,
+		profit.KeyOutputPolicyMode:             profit.ModeCap,
+		profit.KeyOutputPolicyID:               "cap-gemini",
+		profit.KeyOutputPolicyName:             "Cap Gemini",
+		profit.KeyOutputPolicyCompletionTokens: 2500,
+		profit.KeyOutputPolicyDefaultMaxTokens: 1000,
+		profit.KeyOutputPolicyHardMaxTokens:    2000,
+		profit.KeyOutputPolicyExceededDefault:  true,
+		profit.KeyOutputPolicyExceededHard:     true,
+		profit.KeyOutputPolicyRewriteOverLimit: true,
+		profit.KeyOutputPolicyWouldCap:         true,
+		profit.KeyOutputPolicyObserveOnly:      true,
+		profit.KeyOutputPolicyLiveEnforced:     false,
+		profit.KeyCacheSavedUSD:                nil,
+		profit.KeyRetryCostUSD:                 nil,
 	})
 	insertProfitTestLog(t, &Log{
 		CreatedAt: 90,
@@ -126,6 +138,18 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.True(t, events[0].RouteWouldPreferDifferent)
 	require.Len(t, events[0].RouteCandidates, 2)
 	require.True(t, events[0].RouteCandidates[0].Selected)
+	require.Equal(t, profit.ModeCap, events[0].OutputPolicyMode)
+	require.Equal(t, "cap-gemini", events[0].OutputPolicyID)
+	require.Equal(t, "Cap Gemini", events[0].OutputPolicyName)
+	require.Equal(t, int64(2500), events[0].OutputPolicyCompletionTokens)
+	require.Equal(t, int64(1000), events[0].OutputPolicyDefaultMaxTokens)
+	require.Equal(t, int64(2000), events[0].OutputPolicyHardMaxTokens)
+	require.True(t, events[0].OutputPolicyExceededDefault)
+	require.True(t, events[0].OutputPolicyExceededHard)
+	require.True(t, events[0].OutputPolicyRewriteOverLimit)
+	require.True(t, events[0].OutputPolicyWouldCap)
+	require.True(t, events[0].OutputPolicyObserveOnly)
+	require.False(t, events[0].OutputPolicyLiveEnforced)
 }
 
 func TestGetSatisfiedChannelCandidatesForProfitObservationDB(t *testing.T) {
@@ -205,6 +229,14 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 		profit.KeyGrossMarginUSD:                 nil,
 		profit.KeyGrossMarginPct:                 nil,
 		profit.KeyCompressionSavedTokens:         10,
+		profit.KeyOutputPolicyMode:               profit.ModeCap,
+		profit.KeyOutputPolicyCompletionTokens:   2500,
+		profit.KeyOutputPolicyDefaultMaxTokens:   1000,
+		profit.KeyOutputPolicyHardMaxTokens:      2000,
+		profit.KeyOutputPolicyExceededDefault:    true,
+		profit.KeyOutputPolicyExceededHard:       true,
+		profit.KeyOutputPolicyWouldCap:           true,
+		profit.KeyOutputPolicyPremiumRequired:    true,
 		profit.KeyCacheSavedUSD:                  nil,
 		profit.KeyRetryCostUSD:                   nil,
 	})
@@ -247,6 +279,12 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 	require.NotNil(t, analytics.GrossMarginPct)
 	require.InDelta(t, 60.0, *analytics.GrossMarginPct, 0.0001)
 	require.Equal(t, int64(15), analytics.CompressionSavedTokens)
+	require.Equal(t, int64(1), analytics.OutputPolicyObservedCount)
+	require.Equal(t, int64(2500), analytics.OutputPolicyCompletionTokens)
+	require.Equal(t, int64(1), analytics.OutputPolicyExceededDefaultCount)
+	require.Equal(t, int64(1), analytics.OutputPolicyExceededHardCount)
+	require.Equal(t, int64(1), analytics.OutputPolicyWouldCapCount)
+	require.Equal(t, int64(1), analytics.OutputPolicyPremiumRequiredCount)
 	require.Nil(t, analytics.CacheSavedUSD)
 	require.Nil(t, analytics.RetryCostUSD)
 }

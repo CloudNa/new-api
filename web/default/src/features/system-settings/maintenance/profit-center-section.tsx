@@ -59,6 +59,8 @@ import {
   type ProfitCostProfiles,
   type ProfitEventsPage,
   type ProfitMode,
+  type ProfitOutputCapMode,
+  type ProfitOutputPolicy,
   type ProfitRiskMode,
   type ProfitRoutePreviewRequest,
   type ProfitRoutePreviewResponse,
@@ -82,6 +84,14 @@ const MODE_OPTIONS: Array<{ value: ProfitMode; label: string }> = [
   { value: 'observe', label: 'Observe' },
 ]
 
+const OUTPUT_CAP_OPTIONS: Array<{ value: ProfitOutputCapMode; label: string }> =
+  [
+    { value: 'off', label: 'Off' },
+    { value: 'observe', label: 'Observe' },
+    { value: 'cap', label: 'Cap' },
+    { value: 'premium_required', label: 'Premium required' },
+  ]
+
 const RISK_OPTIONS: Array<{ value: ProfitRiskMode; label: string }> = [
   { value: 'off', label: 'Off' },
   { value: 'alert', label: 'Alert' },
@@ -99,6 +109,7 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   risk_enforcement: 'off',
   settings_writable: true,
   cost_profiles_used: true,
+  output_policies: [],
 }
 
 const DEFAULT_PROFILES: ProfitCostProfiles = {
@@ -149,6 +160,24 @@ const SAMPLE_PREVIEW: ProfitRoutePreviewRequest = {
     },
   ],
 }
+
+const SAMPLE_OUTPUT_POLICIES: ProfitOutputPolicy[] = [
+  {
+    id: 'proxy-test-long-output',
+    name: 'proxy-test long output observe',
+    enabled: true,
+    priority: 10,
+    group: 'proxy-test',
+    model_name: '*',
+    mode: 'observe',
+    default_max_tokens: 4096,
+    hard_max_tokens: 8192,
+    rewrite_over_limit: false,
+    premium_required: false,
+    premium_group: 'premium',
+    notes: 'Observe only. No request rewriting is applied in v1.',
+  },
+]
 
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2)
@@ -246,6 +275,39 @@ function RiskSelect(props: {
   )
 }
 
+function OutputCapModeSelect(props: {
+  value: ProfitOutputCapMode
+  label: string
+  onChange: (value: ProfitOutputCapMode) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Select
+      items={OUTPUT_CAP_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.label),
+      }))}
+      value={props.value}
+      onValueChange={(value) =>
+        value !== null && props.onChange(value as ProfitOutputCapMode)
+      }
+    >
+      <SelectTrigger className='w-full' aria-label={t(props.label)}>
+        <SelectValue placeholder={t('Select output mode')} />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        <SelectGroup>
+          {OUTPUT_CAP_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {t(option.label)}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+}
+
 function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
   const { t } = useTranslation()
   const stats = [
@@ -265,6 +327,22 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     [
       'Missing cost profiles',
       formatNumber(analytics?.missing_cost_profile_count),
+    ],
+    [
+      'Output policy observed',
+      formatNumber(analytics?.output_policy_observed_count),
+    ],
+    [
+      'Output would cap',
+      formatNumber(analytics?.output_policy_would_cap_count),
+    ],
+    [
+      'Output over hard limit',
+      formatNumber(analytics?.output_policy_exceeded_hard_count),
+    ],
+    [
+      'Premium output required',
+      formatNumber(analytics?.output_policy_premium_required_count),
     ],
   ]
 
@@ -298,6 +376,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
             <TableHead>{t('Compression')}</TableHead>
             <TableHead>{t('Savings')}</TableHead>
             <TableHead>{t('Route')}</TableHead>
+            <TableHead>{t('Output policy')}</TableHead>
             <TableHead>{t('Status')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -305,7 +384,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
           {rows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={9}
+                colSpan={10}
                 className='text-muted-foreground h-20 text-center text-sm'
               >
                 {t('No profit events yet')}
@@ -384,6 +463,39 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                           {t('Best channel')}:{' '}
                           {event.profit_route_best_channel_name ||
                             event.profit_route_best_channel_id}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+                <TableCell className='min-w-44'>
+                  {event.output_policy_mode ? (
+                    <div className='flex min-w-0 flex-col gap-1'>
+                      <div className='flex flex-wrap items-center gap-1'>
+                        <Badge variant='outline'>
+                          {t(event.output_policy_mode)}
+                        </Badge>
+                        {event.output_policy_would_cap ? (
+                          <Badge variant='secondary'>
+                            {t('Would cap')}
+                          </Badge>
+                        ) : null}
+                        {event.output_policy_premium_required ? (
+                          <Badge variant='secondary'>
+                            {t('Premium')}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <span className='text-muted-foreground text-xs'>
+                        {formatNumber(event.output_policy_completion_tokens)} /{' '}
+                        {formatNumber(event.output_policy_default_max_tokens)} /{' '}
+                        {formatNumber(event.output_policy_hard_max_tokens)}
+                      </span>
+                      {event.output_policy_name || event.output_policy_id ? (
+                        <span className='text-muted-foreground max-w-44 truncate text-xs'>
+                          {event.output_policy_name || event.output_policy_id}
                         </span>
                       ) : null}
                     </div>
@@ -484,6 +596,9 @@ export function ProfitCenterSection() {
   const [initialSettings, setInitialSettings] =
     useState<ProfitSettings>(DEFAULT_SETTINGS)
   const [observeGroups, setObserveGroups] = useState('proxy-test')
+  const [outputPolicyJson, setOutputPolicyJson] = useState(
+    formatJson(DEFAULT_SETTINGS.output_policies ?? [])
+  )
   const [profileJson, setProfileJson] = useState(formatJson(DEFAULT_PROFILES))
   const [analyticsGroup, setAnalyticsGroup] = useState('proxy-test')
   const [analyticsModel, setAnalyticsModel] = useState('')
@@ -534,6 +649,7 @@ export function ProfitCenterSection() {
         setSettings(next)
         setInitialSettings(next)
         setObserveGroups((next.observe_groups ?? ['proxy-test']).join(', '))
+        setOutputPolicyJson(formatJson(next.output_policies ?? []))
       } else {
         toast.error(settingsRes.message || t('Failed to load profit settings'))
       }
@@ -563,16 +679,20 @@ export function ProfitCenterSection() {
     setObserveGroups(
       (initialSettings.observe_groups ?? ['proxy-test']).join(', ')
     )
+    setOutputPolicyJson(formatJson(initialSettings.output_policies ?? []))
   }
 
   const handleSave = async () => {
     setSaving(true)
     try {
       const profiles = safeParseJson<ProfitCostProfiles>(profileJson)
+      const outputPolicies =
+        safeParseJson<ProfitOutputPolicy[]>(outputPolicyJson)
       const payload: ProfitSettings = {
         ...settings,
         observe_groups: parseCsv(observeGroups),
         observe_only: true,
+        output_policies: outputPolicies,
       }
       const [settingsRes, profilesRes] = await Promise.all([
         updateProfitSettings(payload),
@@ -589,6 +709,7 @@ export function ProfitCenterSection() {
       setSettings(settingsRes.data)
       setInitialSettings(settingsRes.data)
       setObserveGroups(settingsRes.data.observe_groups.join(', '))
+      setOutputPolicyJson(formatJson(settingsRes.data.output_policies ?? []))
       setProfileJson(formatJson(profilesRes.data))
       toast.success(t('Profit settings saved.'))
       await loadAnalytics()
@@ -607,6 +728,10 @@ export function ProfitCenterSection() {
 
   const loadSampleProfile = () => {
     setProfileJson(formatJson(SAMPLE_PROFILE))
+  }
+
+  const loadSampleOutputPolicies = () => {
+    setOutputPolicyJson(formatJson(SAMPLE_OUTPUT_POLICIES))
   }
 
   const runRoutePreview = async () => {
@@ -713,7 +838,7 @@ export function ProfitCenterSection() {
               {t('Output cap mode')}
             </Label>
             <div className='mt-1.5'>
-              <ModeSelect
+              <OutputCapModeSelect
                 value={settings.output_cap_mode}
                 label='Output cap mode'
                 onChange={(output_cap_mode) =>
@@ -754,6 +879,41 @@ export function ProfitCenterSection() {
           </SettingsFormGridItem>
         </SettingsFormGrid>
       </SettingsForm>
+
+      <Separator />
+
+      <div className='min-w-0 space-y-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div className='min-w-0'>
+            <h4 className='text-sm font-semibold'>{t('Output policies')}</h4>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Output limits are observed for proxy-test first. Cap and premium modes only record would-have-happened decisions in v1.'
+              )}
+            </p>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={loadSampleOutputPolicies}
+          >
+            <CalculatorIcon data-icon='inline-start' />
+            <span>{t('Load output sample')}</span>
+          </Button>
+        </div>
+        <Label htmlFor='profit-output-policies-json' className='sr-only'>
+          {t('Output policies')}
+        </Label>
+        <Textarea
+          id='profit-output-policies-json'
+          name='profit-output-policies-json'
+          rows={8}
+          value={outputPolicyJson}
+          onChange={(event) => setOutputPolicyJson(event.target.value)}
+          className='font-mono text-xs'
+        />
+      </div>
 
       <Separator />
 

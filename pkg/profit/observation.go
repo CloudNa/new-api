@@ -43,6 +43,20 @@ const (
 	KeyRouteBestExpectedMarginUSD     = "profit_route_best_expected_margin_usd"
 	KeyRouteWouldPreferDifferent      = "profit_route_would_prefer_different"
 	KeyRouteCandidates                = "profit_route_candidates"
+	KeyOutputPolicyMode               = "output_policy_mode"
+	KeyOutputPolicyID                 = "output_policy_id"
+	KeyOutputPolicyName               = "output_policy_name"
+	KeyOutputPolicyCompletionTokens   = "output_policy_completion_tokens"
+	KeyOutputPolicyDefaultMaxTokens   = "output_policy_default_max_tokens"
+	KeyOutputPolicyHardMaxTokens      = "output_policy_hard_max_tokens"
+	KeyOutputPolicyExceededDefault    = "output_policy_exceeded_default"
+	KeyOutputPolicyExceededHard       = "output_policy_exceeded_hard"
+	KeyOutputPolicyRewriteOverLimit   = "output_policy_rewrite_over_limit"
+	KeyOutputPolicyWouldCap           = "output_policy_would_cap"
+	KeyOutputPolicyPremiumRequired    = "output_policy_premium_required"
+	KeyOutputPolicyPremiumGroup       = "output_policy_premium_group"
+	KeyOutputPolicyObserveOnly        = "output_policy_observe_only"
+	KeyOutputPolicyLiveEnforced       = "output_policy_live_enforced"
 	CostStatusMissingCostProfile      = "missing_cost_profile"
 )
 
@@ -83,6 +97,20 @@ var userHiddenKeys = []string{
 	KeyRouteBestExpectedMarginUSD,
 	KeyRouteWouldPreferDifferent,
 	KeyRouteCandidates,
+	KeyOutputPolicyMode,
+	KeyOutputPolicyID,
+	KeyOutputPolicyName,
+	KeyOutputPolicyCompletionTokens,
+	KeyOutputPolicyDefaultMaxTokens,
+	KeyOutputPolicyHardMaxTokens,
+	KeyOutputPolicyExceededDefault,
+	KeyOutputPolicyExceededHard,
+	KeyOutputPolicyRewriteOverLimit,
+	KeyOutputPolicyWouldCap,
+	KeyOutputPolicyPremiumRequired,
+	KeyOutputPolicyPremiumGroup,
+	KeyOutputPolicyObserveOnly,
+	KeyOutputPolicyLiveEnforced,
 }
 
 type ObservationInput struct {
@@ -101,10 +129,16 @@ type ObservationInput struct {
 	CompressionSavedTokens         int
 	LatencyMs                      int
 	RouteDecision                  *RouteDecision
+	OutputPolicyDecision           *OutputPolicyDecision
 }
 
 func EnabledForGroup(group string) bool {
 	settings := CurrentSettings()
+	return settingsEnabledForGroup(settings, group)
+}
+
+func settingsEnabledForGroup(settings Settings, group string) bool {
+	settings = settings.Normalize()
 	if !settings.Enabled || settings.GlobalKillSwitch || group != DefaultObserveGroup {
 		return false
 	}
@@ -161,6 +195,7 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	other[KeyExpectedMarginUSD] = costEstimate.ExpectedMarginUSD
 	other[KeyExpectedMarginPct] = costEstimate.ExpectedMarginPct
 	appendRouteDecision(other, input.RouteDecision)
+	appendOutputPolicyDecision(other, input.OutputPolicyDecision)
 }
 
 func StripUserVisibleFields(other map[string]interface{}) {
@@ -207,6 +242,32 @@ func appendRouteDecision(other map[string]interface{}, decision *RouteDecision) 
 	if len(decision.Candidates) > 0 {
 		other[KeyRouteCandidates] = decision.Candidates
 	}
+}
+
+func appendOutputPolicyDecision(other map[string]interface{}, decision *OutputPolicyDecision) {
+	if other == nil || decision == nil {
+		return
+	}
+	other[KeyOutputPolicyMode] = decision.Mode
+	if decision.PolicyID != "" {
+		other[KeyOutputPolicyID] = decision.PolicyID
+	}
+	if decision.PolicyName != "" {
+		other[KeyOutputPolicyName] = decision.PolicyName
+	}
+	other[KeyOutputPolicyCompletionTokens] = positiveInt(decision.CompletionTokens)
+	other[KeyOutputPolicyDefaultMaxTokens] = positiveInt(decision.DefaultMaxTokens)
+	other[KeyOutputPolicyHardMaxTokens] = positiveInt(decision.HardMaxTokens)
+	other[KeyOutputPolicyExceededDefault] = decision.ExceededDefault
+	other[KeyOutputPolicyExceededHard] = decision.ExceededHard
+	other[KeyOutputPolicyRewriteOverLimit] = decision.RewriteOverLimit
+	other[KeyOutputPolicyWouldCap] = decision.WouldCap
+	other[KeyOutputPolicyPremiumRequired] = decision.PremiumRequired
+	if decision.PremiumGroup != "" {
+		other[KeyOutputPolicyPremiumGroup] = decision.PremiumGroup
+	}
+	other[KeyOutputPolicyObserveOnly] = decision.ObserveOnly
+	other[KeyOutputPolicyLiveEnforced] = decision.LiveEnforced
 }
 
 func quotaToUSD(quota int) float64 {

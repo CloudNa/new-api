@@ -31,6 +31,38 @@ func TestProfitSettingsDefaultsObserveProxyTest(t *testing.T) {
 	require.False(t, EnabledForGroup("default"))
 }
 
+func TestProfitSettingsNormalizeOutputPolicies(t *testing.T) {
+	settings := DefaultSettings()
+	settings.OutputCapMode = ModeCap
+	settings.OutputPolicies = []OutputPolicy{
+		{
+			ID:               "bad-mode",
+			Enabled:          true,
+			Group:            " proxy-test ",
+			ModelName:        " gemini* ",
+			Mode:             "bad",
+			DefaultMaxTokens: -1,
+			HardMaxTokens:    -2,
+		},
+		{
+			Enabled:   true,
+			Group:     " ",
+			ModelName: " ",
+		},
+	}
+
+	normalized := settings.Normalize()
+
+	require.Equal(t, ModeCap, normalized.OutputCapMode)
+	require.Len(t, normalized.OutputPolicies, 1)
+	require.Equal(t, "bad-mode", normalized.OutputPolicies[0].ID)
+	require.Equal(t, DefaultObserveGroup, normalized.OutputPolicies[0].Group)
+	require.Equal(t, "gemini*", normalized.OutputPolicies[0].ModelName)
+	require.Equal(t, ModeObserve, normalized.OutputPolicies[0].Mode)
+	require.Equal(t, 0, normalized.OutputPolicies[0].DefaultMaxTokens)
+	require.Equal(t, 0, normalized.OutputPolicies[0].HardMaxTokens)
+}
+
 func TestEstimateCostUsesMatchingProfile(t *testing.T) {
 	doc := CostProfilesDocument{Items: []CostProfile{
 		{

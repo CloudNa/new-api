@@ -413,7 +413,30 @@ export type RtkFiltersResponse = {
 }
 
 export type ProfitMode = 'off' | 'observe'
+export type ProfitOutputCapMode =
+  | 'off'
+  | 'observe'
+  | 'cap'
+  | 'premium_required'
 export type ProfitRiskMode = 'off' | 'alert'
+
+export type ProfitOutputPolicy = {
+  id: string
+  name?: string
+  enabled: boolean
+  priority?: number
+  group?: string
+  model_name?: string
+  channel_id?: number
+  channel_name?: string
+  mode?: ProfitOutputCapMode
+  default_max_tokens?: number
+  hard_max_tokens?: number
+  rewrite_over_limit?: boolean
+  premium_required?: boolean
+  premium_group?: string
+  notes?: string
+}
 
 export type ProfitSettings = {
   version: number
@@ -423,10 +446,11 @@ export type ProfitSettings = {
   global_kill_switch: boolean
   cost_routing_mode: ProfitMode
   cache_mode: ProfitMode
-  output_cap_mode: ProfitMode
+  output_cap_mode: ProfitOutputCapMode
   risk_enforcement: ProfitRiskMode
   settings_writable: boolean
   cost_profiles_used: boolean
+  output_policies?: ProfitOutputPolicy[]
 }
 
 export type ProfitCostProfile = {
@@ -485,6 +509,12 @@ export type ProfitAnalytics = {
   expected_margin_usd?: number | null
   expected_margin_pct?: number | null
   compression_saved_tokens: number
+  output_policy_observed_count: number
+  output_policy_exceeded_default_count: number
+  output_policy_exceeded_hard_count: number
+  output_policy_would_cap_count: number
+  output_policy_premium_required_count: number
+  output_policy_completion_tokens: number
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
 }
@@ -540,6 +570,20 @@ export type ProfitEvent = {
   profit_route_best_expected_margin_usd?: number | null
   profit_route_would_prefer_different?: boolean
   profit_route_candidates?: ProfitRouteDecisionCandidate[]
+  output_policy_mode?: ProfitOutputCapMode
+  output_policy_id?: string
+  output_policy_name?: string
+  output_policy_completion_tokens?: number
+  output_policy_default_max_tokens?: number
+  output_policy_hard_max_tokens?: number
+  output_policy_exceeded_default?: boolean
+  output_policy_exceeded_hard?: boolean
+  output_policy_rewrite_over_limit?: boolean
+  output_policy_would_cap?: boolean
+  output_policy_premium_required?: boolean
+  output_policy_premium_group?: string
+  output_policy_observe_only?: boolean
+  output_policy_live_enforced?: boolean
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
 }

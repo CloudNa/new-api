@@ -70,6 +70,42 @@ func TestAppendObservationAddsRouteDecision(t *testing.T) {
 	require.Len(t, other[KeyRouteCandidates], 2)
 }
 
+func TestAppendObservationAddsOutputPolicyDecision(t *testing.T) {
+	other := map[string]interface{}{}
+
+	AppendObservation(other, ObservationInput{
+		Group:     "proxy-test",
+		UserQuota: 500000,
+		OutputPolicyDecision: &OutputPolicyDecision{
+			Mode:             ModeCap,
+			PolicyID:         "cap-gemini",
+			PolicyName:       "Cap Gemini",
+			CompletionTokens: 2500,
+			DefaultMaxTokens: 1000,
+			HardMaxTokens:    2000,
+			ExceededDefault:  true,
+			ExceededHard:     true,
+			RewriteOverLimit: true,
+			WouldCap:         true,
+			ObserveOnly:      true,
+			LiveEnforced:     false,
+		},
+	})
+
+	require.Equal(t, ModeCap, other[KeyOutputPolicyMode])
+	require.Equal(t, "cap-gemini", other[KeyOutputPolicyID])
+	require.Equal(t, "Cap Gemini", other[KeyOutputPolicyName])
+	require.Equal(t, 2500, other[KeyOutputPolicyCompletionTokens])
+	require.Equal(t, 1000, other[KeyOutputPolicyDefaultMaxTokens])
+	require.Equal(t, 2000, other[KeyOutputPolicyHardMaxTokens])
+	require.Equal(t, true, other[KeyOutputPolicyExceededDefault])
+	require.Equal(t, true, other[KeyOutputPolicyExceededHard])
+	require.Equal(t, true, other[KeyOutputPolicyRewriteOverLimit])
+	require.Equal(t, true, other[KeyOutputPolicyWouldCap])
+	require.Equal(t, true, other[KeyOutputPolicyObserveOnly])
+	require.Equal(t, false, other[KeyOutputPolicyLiveEnforced])
+}
+
 func TestAppendObservationSkipsNonProxyTestGroup(t *testing.T) {
 	other := map[string]interface{}{}
 
@@ -114,6 +150,9 @@ func TestStripUserVisibleFields(t *testing.T) {
 		"compression_rules_version":         "omniroute-style-go-v1",
 		"profit_route_mode":                 "observe",
 		"profit_route_candidates":           []RouteDecisionCandidate{{ChannelID: 1}},
+		"output_policy_mode":                "cap",
+		"output_policy_would_cap":           true,
+		"output_policy_live_enforced":       false,
 		"model_ratio":                       1.5,
 	}
 
@@ -128,5 +167,8 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "compression_rules_version")
 	require.NotContains(t, other, "profit_route_mode")
 	require.NotContains(t, other, "profit_route_candidates")
+	require.NotContains(t, other, "output_policy_mode")
+	require.NotContains(t, other, "output_policy_would_cap")
+	require.NotContains(t, other, "output_policy_live_enforced")
 	require.Equal(t, 1.5, other["model_ratio"])
 }
