@@ -447,6 +447,30 @@ func TestOmniRouteRTKCodeBlocksOnlyParity(t *testing.T) {
 	require.Contains(t, result.Stats.RulesApplied, "rtk:code-strip")
 }
 
+func TestOmniRouteRTKCodeStripKeepsUnknownFenceLanguageParity(t *testing.T) {
+	input := strings.Join([]string{
+		"before",
+		"```",
+		"alpha" + strings.Repeat(" ", 80),
+		"",
+		"",
+		"beta" + strings.Repeat(" ", 80),
+		"",
+		"```",
+		"after",
+	}, "\n")
+
+	result := CompressRTKText(input, Config{
+		Mode:              ModeRTK,
+		ApplyToCodeBlocks: true,
+	}, RtkTextOptions{CodeBlocksOnly: true})
+
+	require.True(t, result.Compressed, "%+v text=%q", result.Stats, result.Text)
+	require.Contains(t, result.Text, "before\n```unknown\nalpha\nbeta\n```\nafter")
+	require.Contains(t, result.Stats.TechniquesUsed, "rtk-code-strip")
+	require.Contains(t, result.Stats.RulesApplied, "rtk:code-strip")
+}
+
 func TestOmniRouteRTKCodeBlocksOnlyWideFenceParity(t *testing.T) {
 	lines := []string{"before", "```go title=main.go"}
 	for i := 0; i < 80; i++ {

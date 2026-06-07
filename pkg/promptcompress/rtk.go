@@ -415,9 +415,6 @@ func applyRTKCodeStrip(text string, config Config) (string, []string, []string) 
 		if fenceLanguage == "" {
 			fenceLanguage = stripped.language
 		}
-		if fenceLanguage == "unknown" {
-			fenceLanguage = ""
-		}
 		return "```" + fenceLanguage + "\n" + stripped.text + "\n```"
 	})
 	if strippedBlocks == 0 {
