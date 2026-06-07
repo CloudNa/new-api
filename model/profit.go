@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/profit"
+	"github.com/QuantumNous/new-api/pkg/promptcompress"
 
 	"gorm.io/gorm"
 )
@@ -21,97 +22,103 @@ type ProfitLogFilter struct {
 }
 
 type ProfitEvent struct {
-	Id                             int                             `json:"id"`
-	CreatedAt                      int64                           `json:"created_at"`
-	UserId                         int                             `json:"user_id"`
-	Username                       string                          `json:"username"`
-	TokenName                      string                          `json:"token_name"`
-	ModelName                      string                          `json:"model_name"`
-	ChannelId                      int                             `json:"channel"`
-	ChannelName                    string                          `json:"channel_name"`
-	Group                          string                          `json:"group"`
-	RequestId                      string                          `json:"request_id,omitempty"`
-	UpstreamRequestId              string                          `json:"upstream_request_id,omitempty"`
-	PromptTokens                   int                             `json:"prompt_tokens"`
-	CompletionTokens               int                             `json:"completion_tokens"`
-	Quota                          int                             `json:"quota"`
-	UseTime                        int                             `json:"use_time"`
-	IsStream                       bool                            `json:"is_stream"`
-	CostStatus                     string                          `json:"profit_cost_status"`
-	CostKnown                      bool                            `json:"cost_known"`
-	CostProfileID                  string                          `json:"cost_profile_id,omitempty"`
-	CostProfileName                string                          `json:"cost_profile_name,omitempty"`
-	BillablePromptTokens           int64                           `json:"billable_prompt_tokens"`
-	BillableCompletionTokens       int64                           `json:"billable_completion_tokens"`
-	UpstreamActualPromptTokens     int64                           `json:"upstream_actual_prompt_tokens"`
-	UpstreamActualCompletionTokens int64                           `json:"upstream_actual_completion_tokens"`
-	EstimatedRevenueUSD            float64                         `json:"estimated_revenue_usd"`
-	EstimatedUpstreamCostUSD       *float64                        `json:"estimated_upstream_cost_usd"`
-	GrossMarginUSD                 *float64                        `json:"gross_margin_usd"`
-	GrossMarginPct                 *float64                        `json:"gross_margin_pct"`
-	ExpectedCostUSD                *float64                        `json:"expected_cost_usd"`
-	ExpectedMarginUSD              *float64                        `json:"expected_margin_usd"`
-	ExpectedMarginPct              *float64                        `json:"expected_margin_pct"`
-	CompressionSavedTokens         int64                           `json:"compression_saved_tokens"`
-	CompressionMode                string                          `json:"compression_mode,omitempty"`
-	CompressionSavingsPercent      *float64                        `json:"compression_savings_percent,omitempty"`
-	CompressionBypassed            bool                            `json:"compression_bypassed"`
-	CompressionBypassReason        string                          `json:"compression_bypass_reason,omitempty"`
-	CompressionRulesVersion        string                          `json:"compression_rules_version,omitempty"`
-	CompressionRulesApplied        []string                        `json:"compression_rules_applied,omitempty"`
-	CompressionPreservedBlocks     int64                           `json:"compression_preserved_blocks"`
-	CompressionRedactedSecrets     int64                           `json:"compression_redacted_secrets"`
-	RouteMode                      string                          `json:"profit_route_mode,omitempty"`
-	RouteCandidateCount            int64                           `json:"profit_route_candidate_count"`
-	RouteSelectedChannelID         int                             `json:"profit_route_selected_channel_id"`
-	RouteSelectedMarginRank        int64                           `json:"profit_route_selected_margin_rank"`
-	RouteBestChannelID             int                             `json:"profit_route_best_channel_id"`
-	RouteBestChannelName           string                          `json:"profit_route_best_channel_name,omitempty"`
-	RouteBestCostProfileID         string                          `json:"profit_route_best_cost_profile_id,omitempty"`
-	RouteBestExpectedMarginUSD     *float64                        `json:"profit_route_best_expected_margin_usd,omitempty"`
-	RouteWouldPreferDifferent      bool                            `json:"profit_route_would_prefer_different"`
-	RouteCandidates                []profit.RouteDecisionCandidate `json:"profit_route_candidates,omitempty"`
-	OutputPolicyMode               string                          `json:"output_policy_mode,omitempty"`
-	OutputPolicyID                 string                          `json:"output_policy_id,omitempty"`
-	OutputPolicyName               string                          `json:"output_policy_name,omitempty"`
-	OutputPolicyCompletionTokens   int64                           `json:"output_policy_completion_tokens"`
-	OutputPolicyDefaultMaxTokens   int64                           `json:"output_policy_default_max_tokens"`
-	OutputPolicyHardMaxTokens      int64                           `json:"output_policy_hard_max_tokens"`
-	OutputPolicyExceededDefault    bool                            `json:"output_policy_exceeded_default"`
-	OutputPolicyExceededHard       bool                            `json:"output_policy_exceeded_hard"`
-	OutputPolicyRewriteOverLimit   bool                            `json:"output_policy_rewrite_over_limit"`
-	OutputPolicyWouldCap           bool                            `json:"output_policy_would_cap"`
-	OutputPolicyPremiumRequired    bool                            `json:"output_policy_premium_required"`
-	OutputPolicyPremiumGroup       string                          `json:"output_policy_premium_group,omitempty"`
-	OutputPolicyObserveOnly        bool                            `json:"output_policy_observe_only"`
-	OutputPolicyLiveEnforced       bool                            `json:"output_policy_live_enforced"`
-	RiskMode                       string                          `json:"profit_risk_mode,omitempty"`
-	RiskAlert                      bool                            `json:"profit_risk_alert"`
-	RiskReasons                    []string                        `json:"profit_risk_reasons,omitempty"`
-	RiskMinGrossMarginUSD          float64                         `json:"profit_risk_min_gross_margin_usd"`
-	RiskMinGrossMarginPct          float64                         `json:"profit_risk_min_gross_margin_pct"`
-	RiskMinExpectedMarginUSD       float64                         `json:"profit_risk_min_expected_margin_usd"`
-	RiskMinExpectedMarginPct       float64                         `json:"profit_risk_min_expected_margin_pct"`
-	RiskObserveOnly                bool                            `json:"profit_risk_observe_only"`
-	RiskLiveEnforced               bool                            `json:"profit_risk_live_enforced"`
-	LongContextMode                string                          `json:"long_context_mode,omitempty"`
-	LongContextPolicyID            string                          `json:"long_context_policy_id,omitempty"`
-	LongContextPolicyName          string                          `json:"long_context_policy_name,omitempty"`
-	LongContextTierID              string                          `json:"long_context_tier_id,omitempty"`
-	LongContextTierName            string                          `json:"long_context_tier_name,omitempty"`
-	LongContextTokens              int64                           `json:"long_context_tokens"`
-	LongContextMinTokens           int64                           `json:"long_context_min_tokens"`
-	LongContextMaxTokens           int64                           `json:"long_context_max_tokens"`
-	LongContextInputMultiplier     float64                         `json:"long_context_input_multiplier"`
-	LongContextInputRevenueUSD     float64                         `json:"long_context_input_revenue_usd"`
-	LongContextSuggestedExtraUSD   float64                         `json:"long_context_suggested_extra_revenue_usd"`
-	LongContextSuggestedRevenueUSD float64                         `json:"long_context_suggested_revenue_usd"`
-	LongContextPremiumRequired     bool                            `json:"long_context_premium_required"`
-	LongContextPremiumGroup        string                          `json:"long_context_premium_group,omitempty"`
-	LongContextObserveOnly         bool                            `json:"long_context_observe_only"`
-	LongContextLiveEnforced        bool                            `json:"long_context_live_enforced"`
-	CacheSavedUSD                  *float64                        `json:"cache_saved_usd"`
-	RetryCostUSD                   *float64                        `json:"retry_cost_usd"`
+	Id                             int                                  `json:"id"`
+	CreatedAt                      int64                                `json:"created_at"`
+	UserId                         int                                  `json:"user_id"`
+	Username                       string                               `json:"username"`
+	TokenName                      string                               `json:"token_name"`
+	ModelName                      string                               `json:"model_name"`
+	ChannelId                      int                                  `json:"channel"`
+	ChannelName                    string                               `json:"channel_name"`
+	Group                          string                               `json:"group"`
+	RequestId                      string                               `json:"request_id,omitempty"`
+	UpstreamRequestId              string                               `json:"upstream_request_id,omitempty"`
+	PromptTokens                   int                                  `json:"prompt_tokens"`
+	CompletionTokens               int                                  `json:"completion_tokens"`
+	Quota                          int                                  `json:"quota"`
+	UseTime                        int                                  `json:"use_time"`
+	IsStream                       bool                                 `json:"is_stream"`
+	CostStatus                     string                               `json:"profit_cost_status"`
+	CostKnown                      bool                                 `json:"cost_known"`
+	CostProfileID                  string                               `json:"cost_profile_id,omitempty"`
+	CostProfileName                string                               `json:"cost_profile_name,omitempty"`
+	BillablePromptTokens           int64                                `json:"billable_prompt_tokens"`
+	BillableCompletionTokens       int64                                `json:"billable_completion_tokens"`
+	UpstreamActualPromptTokens     int64                                `json:"upstream_actual_prompt_tokens"`
+	UpstreamActualCompletionTokens int64                                `json:"upstream_actual_completion_tokens"`
+	EstimatedRevenueUSD            float64                              `json:"estimated_revenue_usd"`
+	EstimatedUpstreamCostUSD       *float64                             `json:"estimated_upstream_cost_usd"`
+	GrossMarginUSD                 *float64                             `json:"gross_margin_usd"`
+	GrossMarginPct                 *float64                             `json:"gross_margin_pct"`
+	ExpectedCostUSD                *float64                             `json:"expected_cost_usd"`
+	ExpectedMarginUSD              *float64                             `json:"expected_margin_usd"`
+	ExpectedMarginPct              *float64                             `json:"expected_margin_pct"`
+	CompressionSavedTokens         int64                                `json:"compression_saved_tokens"`
+	CompressionMode                string                               `json:"compression_mode,omitempty"`
+	CompressionEngine              string                               `json:"compression_engine,omitempty"`
+	CompressionTimestamp           int64                                `json:"compression_timestamp,omitempty"`
+	CompressionFallbackApplied     bool                                 `json:"compression_fallback_applied"`
+	CompressionSavingsPercent      *float64                             `json:"compression_savings_percent,omitempty"`
+	CompressionBypassed            bool                                 `json:"compression_bypassed"`
+	CompressionBypassReason        string                               `json:"compression_bypass_reason,omitempty"`
+	CompressionRulesVersion        string                               `json:"compression_rules_version,omitempty"`
+	CompressionRulesApplied        []string                             `json:"compression_rules_applied,omitempty"`
+	CompressionPreservedBlocks     int64                                `json:"compression_preserved_blocks"`
+	CompressionRedactedSecrets     int64                                `json:"compression_redacted_secrets"`
+	CompressionValidationWarnings  []string                             `json:"compression_validation_warnings,omitempty"`
+	CompressionValidationErrors    []string                             `json:"compression_validation_errors,omitempty"`
+	CompressionEngineBreakdown     []promptcompress.EngineBreakdownItem `json:"compression_engine_breakdown,omitempty"`
+	RouteMode                      string                               `json:"profit_route_mode,omitempty"`
+	RouteCandidateCount            int64                                `json:"profit_route_candidate_count"`
+	RouteSelectedChannelID         int                                  `json:"profit_route_selected_channel_id"`
+	RouteSelectedMarginRank        int64                                `json:"profit_route_selected_margin_rank"`
+	RouteBestChannelID             int                                  `json:"profit_route_best_channel_id"`
+	RouteBestChannelName           string                               `json:"profit_route_best_channel_name,omitempty"`
+	RouteBestCostProfileID         string                               `json:"profit_route_best_cost_profile_id,omitempty"`
+	RouteBestExpectedMarginUSD     *float64                             `json:"profit_route_best_expected_margin_usd,omitempty"`
+	RouteWouldPreferDifferent      bool                                 `json:"profit_route_would_prefer_different"`
+	RouteCandidates                []profit.RouteDecisionCandidate      `json:"profit_route_candidates,omitempty"`
+	OutputPolicyMode               string                               `json:"output_policy_mode,omitempty"`
+	OutputPolicyID                 string                               `json:"output_policy_id,omitempty"`
+	OutputPolicyName               string                               `json:"output_policy_name,omitempty"`
+	OutputPolicyCompletionTokens   int64                                `json:"output_policy_completion_tokens"`
+	OutputPolicyDefaultMaxTokens   int64                                `json:"output_policy_default_max_tokens"`
+	OutputPolicyHardMaxTokens      int64                                `json:"output_policy_hard_max_tokens"`
+	OutputPolicyExceededDefault    bool                                 `json:"output_policy_exceeded_default"`
+	OutputPolicyExceededHard       bool                                 `json:"output_policy_exceeded_hard"`
+	OutputPolicyRewriteOverLimit   bool                                 `json:"output_policy_rewrite_over_limit"`
+	OutputPolicyWouldCap           bool                                 `json:"output_policy_would_cap"`
+	OutputPolicyPremiumRequired    bool                                 `json:"output_policy_premium_required"`
+	OutputPolicyPremiumGroup       string                               `json:"output_policy_premium_group,omitempty"`
+	OutputPolicyObserveOnly        bool                                 `json:"output_policy_observe_only"`
+	OutputPolicyLiveEnforced       bool                                 `json:"output_policy_live_enforced"`
+	RiskMode                       string                               `json:"profit_risk_mode,omitempty"`
+	RiskAlert                      bool                                 `json:"profit_risk_alert"`
+	RiskReasons                    []string                             `json:"profit_risk_reasons,omitempty"`
+	RiskMinGrossMarginUSD          float64                              `json:"profit_risk_min_gross_margin_usd"`
+	RiskMinGrossMarginPct          float64                              `json:"profit_risk_min_gross_margin_pct"`
+	RiskMinExpectedMarginUSD       float64                              `json:"profit_risk_min_expected_margin_usd"`
+	RiskMinExpectedMarginPct       float64                              `json:"profit_risk_min_expected_margin_pct"`
+	RiskObserveOnly                bool                                 `json:"profit_risk_observe_only"`
+	RiskLiveEnforced               bool                                 `json:"profit_risk_live_enforced"`
+	LongContextMode                string                               `json:"long_context_mode,omitempty"`
+	LongContextPolicyID            string                               `json:"long_context_policy_id,omitempty"`
+	LongContextPolicyName          string                               `json:"long_context_policy_name,omitempty"`
+	LongContextTierID              string                               `json:"long_context_tier_id,omitempty"`
+	LongContextTierName            string                               `json:"long_context_tier_name,omitempty"`
+	LongContextTokens              int64                                `json:"long_context_tokens"`
+	LongContextMinTokens           int64                                `json:"long_context_min_tokens"`
+	LongContextMaxTokens           int64                                `json:"long_context_max_tokens"`
+	LongContextInputMultiplier     float64                              `json:"long_context_input_multiplier"`
+	LongContextInputRevenueUSD     float64                              `json:"long_context_input_revenue_usd"`
+	LongContextSuggestedExtraUSD   float64                              `json:"long_context_suggested_extra_revenue_usd"`
+	LongContextSuggestedRevenueUSD float64                              `json:"long_context_suggested_revenue_usd"`
+	LongContextPremiumRequired     bool                                 `json:"long_context_premium_required"`
+	LongContextPremiumGroup        string                               `json:"long_context_premium_group,omitempty"`
+	LongContextObserveOnly         bool                                 `json:"long_context_observe_only"`
+	LongContextLiveEnforced        bool                                 `json:"long_context_live_enforced"`
+	CacheSavedUSD                  *float64                             `json:"cache_saved_usd"`
+	RetryCostUSD                   *float64                             `json:"retry_cost_usd"`
 }
 
 type ProfitAnalytics struct {
@@ -384,6 +391,9 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		ExpectedMarginPct:              optionalFloat(other, profit.KeyExpectedMarginPct),
 		CompressionSavedTokens:         int64Value(other, profit.KeyCompressionSavedTokens),
 		CompressionMode:                stringValue(other, profit.KeyCompressionMode),
+		CompressionEngine:              stringValue(other, profit.KeyCompressionEngine),
+		CompressionTimestamp:           int64Value(other, profit.KeyCompressionTimestamp),
+		CompressionFallbackApplied:     boolValue(other, profit.KeyCompressionFallbackApplied),
 		CompressionSavingsPercent:      optionalFloat(other, profit.KeyCompressionSavingsPercent),
 		CompressionBypassed:            boolValue(other, profit.KeyCompressionBypassed),
 		CompressionBypassReason:        stringValue(other, profit.KeyCompressionBypassReason),
@@ -391,6 +401,9 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		CompressionRulesApplied:        stringSliceValue(other, profit.KeyCompressionRulesApplied),
 		CompressionPreservedBlocks:     int64Value(other, profit.KeyCompressionPreservedBlocks),
 		CompressionRedactedSecrets:     int64Value(other, profit.KeyCompressionRedactedSecrets),
+		CompressionValidationWarnings:  stringSliceValue(other, profit.KeyCompressionValidationWarnings),
+		CompressionValidationErrors:    stringSliceValue(other, profit.KeyCompressionValidationErrors),
+		CompressionEngineBreakdown:     compressionEngineBreakdownValue(other, profit.KeyCompressionEngineBreakdown),
 		RouteMode:                      stringValue(other, profit.KeyRouteMode),
 		RouteCandidateCount:            int64Value(other, profit.KeyRouteCandidateCount),
 		RouteSelectedChannelID:         int(int64Value(other, profit.KeyRouteSelectedChannelID)),
@@ -557,6 +570,25 @@ func routeCandidatesValue(data map[string]interface{}, key string) []profit.Rout
 		return nil
 	}
 	return candidates
+}
+
+func compressionEngineBreakdownValue(data map[string]interface{}, key string) []promptcompress.EngineBreakdownItem {
+	value, ok := data[key]
+	if !ok || value == nil {
+		return nil
+	}
+	if items, ok := value.([]promptcompress.EngineBreakdownItem); ok {
+		return items
+	}
+	payload, err := common.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var items []promptcompress.EngineBreakdownItem
+	if err = common.Unmarshal(payload, &items); err != nil {
+		return nil
+	}
+	return items
 }
 
 func optionalFloat(data map[string]interface{}, key string) *float64 {

@@ -28,6 +28,12 @@ const (
 	KeyCompressionRulesVersion        = "compression_rules_version"
 	KeyCompressionPreservedBlocks     = "compression_preserved_blocks"
 	KeyCompressionRedactedSecrets     = "compression_redacted_secrets"
+	KeyCompressionEngine              = "compression_engine"
+	KeyCompressionTimestamp           = "compression_timestamp"
+	KeyCompressionFallbackApplied     = "compression_fallback_applied"
+	KeyCompressionValidationWarnings  = "compression_validation_warnings"
+	KeyCompressionValidationErrors    = "compression_validation_errors"
+	KeyCompressionEngineBreakdown     = "compression_engine_breakdown"
 	KeyCacheSavedUSD                  = "cache_saved_usd"
 	KeyRetryCostUSD                   = "retry_cost_usd"
 	KeyLongContextMode                = "long_context_mode"
@@ -107,6 +113,12 @@ var userHiddenKeys = []string{
 	KeyCompressionRulesVersion,
 	KeyCompressionPreservedBlocks,
 	KeyCompressionRedactedSecrets,
+	KeyCompressionEngine,
+	KeyCompressionTimestamp,
+	KeyCompressionFallbackApplied,
+	KeyCompressionValidationWarnings,
+	KeyCompressionValidationErrors,
+	KeyCompressionEngineBreakdown,
 	KeyCacheSavedUSD,
 	KeyRetryCostUSD,
 	KeyLongContextMode,

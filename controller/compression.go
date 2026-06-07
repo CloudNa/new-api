@@ -70,14 +70,15 @@ func PreviewCompression(c *gin.Context) {
 	}
 	config := settings.ToConfig(mode)
 	if len(req.Messages) > 0 {
-		messages, stats := promptcompress.CompressMessages(req.Messages, config)
+		messages, stats := service.PreviewPromptCompressionMessages(settings, mode, req.Messages)
 		common.ApiSuccess(c, gin.H{
 			"messages": messages,
 			"stats":    stats,
 		})
 		return
 	}
-	result := promptcompress.CompressText(req.Text, config)
+	_ = config
+	result := service.PreviewPromptCompressionText(settings, mode, req.Text)
 	common.ApiSuccess(c, gin.H{
 		"text":       result.Text,
 		"compressed": result.Compressed,
@@ -86,18 +87,13 @@ func PreviewCompression(c *gin.Context) {
 }
 
 func GetRTKFilters(c *gin.Context) {
+	filters, err := promptcompress.RTKFilterCatalog()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"filters": []gin.H{
-			{"id": "git-diff", "category": "git"},
-			{"id": "git-status", "category": "git"},
-			{"id": "go-test", "category": "test"},
-			{"id": "typescript", "category": "build"},
-			{"id": "docker-build", "category": "docker"},
-			{"id": "docker-logs", "category": "docker"},
-			{"id": "kubectl", "category": "infra"},
-			{"id": "terraform-plan", "category": "infra"},
-			{"id": "vite", "category": "build"},
-		},
+		"filters":     filters,
 		"attribution": promptcompress.Attribution,
 	})
 }

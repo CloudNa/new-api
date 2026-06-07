@@ -501,6 +501,11 @@ func (m *Message) SetStringContent(content string) {
 	m.parsedContent = nil
 }
 
+func (m *Message) SetContent(content any) {
+	m.Content = content
+	m.parsedContent = nil
+}
+
 func (m *Message) SetMediaContent(content []MediaContent) {
 	m.Content = content
 	m.parsedContent = content

@@ -348,7 +348,34 @@ export type CompressionMode =
   | 'rtk'
   | 'stacked'
 
-export type CavemanIntensity = 'lite' | 'standard' | 'aggressive' | 'ultra'
+export type CavemanIntensity =
+  | 'lite'
+  | 'full'
+  | 'standard'
+  | 'aggressive'
+  | 'ultra'
+export type RtkIntensity = 'minimal' | 'standard' | 'aggressive'
+export type RtkRawOutputRetention = 'never' | 'failures' | 'always'
+
+export type CompressionPipelineStep = {
+  engine: 'rtk' | 'caveman' | 'lite' | 'aggressive' | 'ultra' | 'standard'
+  intensity?: string
+}
+
+export type CompressionToolStrategies = {
+  file_content: boolean
+  grep_search: boolean
+  shell_output: boolean
+  json: boolean
+  error_message: boolean
+}
+
+export type CompressionAggressiveThresholds = {
+  full_summary: number
+  moderate: number
+  light: number
+  verbatim: number
+}
 
 export type PromptCompressionSettings = {
   enabled: boolean
@@ -363,18 +390,56 @@ export type PromptCompressionSettings = {
   channel_modes: Record<string, CompressionMode>
   global_kill_switch: boolean
   rtk: {
+    intensity: RtkIntensity
+    raw_output_retention: RtkRawOutputRetention
+    raw_output_max_bytes: number
+    custom_filters_enabled: boolean
+    trust_project_filters: boolean
     max_lines: number
     max_chars: number
     deduplicate_threshold: number
     enabled_filters: string[]
     disabled_filters: string[]
+    apply_to_tool_results: boolean
+    apply_to_assistant_messages: boolean
+    apply_to_code_blocks: boolean
   }
   caveman: {
     intensity: CavemanIntensity
     compress_roles: string[]
+    skip_rules: string[]
     min_message_length: number
+    preserve_patterns: string[]
+    language: string
+    auto_detect_language: boolean
+    enabled_language_packs: string[]
   }
+  aggressive: {
+    thresholds: CompressionAggressiveThresholds
+    tool_strategies: CompressionToolStrategies
+    summarizer_enabled: boolean
+    max_tokens_per_message: number
+    min_savings_threshold: number
+  }
+  ultra: {
+    compression_rate: number
+    min_score_threshold: number
+    slm_fallback_to_aggressive: boolean
+    model_path?: string
+    max_tokens_per_message: number
+  }
+  stacked_pipeline: CompressionPipelineStep[]
   attribution: string
+}
+
+export type CompressionEngineBreakdownItem = {
+  engine: string
+  original_tokens: number
+  compressed_tokens: number
+  savings_percent: number
+  techniques_used?: string[]
+  rules_applied?: string[]
+  duration_ms?: number
 }
 
 export type CompressionStats = {
@@ -382,12 +447,18 @@ export type CompressionStats = {
   compressed_tokens: number
   savings_percent: number
   mode: CompressionMode
+  engine?: string
   techniques_used?: string[]
   rules_applied?: string[]
   preserved_block_count: number
   redacted_secret_count: number
   compression_saved_tokens: number
   duration_ms: number
+  timestamp?: number
+  validation_warnings?: string[]
+  validation_errors?: string[]
+  fallback_applied?: boolean
+  engine_breakdown?: CompressionEngineBreakdownItem[]
   bypassed: boolean
   bypass_reason?: string
   omniroute_compatible_mode?: string
@@ -395,12 +466,14 @@ export type CompressionStats = {
 
 export type CompressionPreviewRequest = {
   mode?: CompressionMode
-  text: string
+  text?: string
+  messages?: Array<{ role: string; content: string }>
 }
 
 export type CompressionPreviewResponse = {
-  text: string
-  compressed: boolean
+  text?: string
+  messages?: Array<{ role: string; content: string }>
+  compressed?: boolean
   stats: CompressionStats
 }
 
@@ -413,11 +486,7 @@ export type RtkFiltersResponse = {
 }
 
 export type ProfitMode = 'off' | 'observe'
-export type ProfitOutputCapMode =
-  | 'off'
-  | 'observe'
-  | 'cap'
-  | 'premium_required'
+export type ProfitOutputCapMode = 'off' | 'observe' | 'cap' | 'premium_required'
 export type ProfitRiskMode = 'off' | 'alert'
 
 export type ProfitLongContextTier = {
@@ -592,6 +661,9 @@ export type ProfitEvent = {
   expected_margin_pct?: number | null
   compression_saved_tokens: number
   compression_mode?: string
+  compression_engine?: string
+  compression_timestamp?: number
+  compression_fallback_applied?: boolean
   compression_savings_percent?: number | null
   compression_bypassed?: boolean
   compression_bypass_reason?: string
@@ -599,6 +671,9 @@ export type ProfitEvent = {
   compression_rules_applied?: string[]
   compression_preserved_blocks?: number
   compression_redacted_secrets?: number
+  compression_validation_warnings?: string[]
+  compression_validation_errors?: string[]
+  compression_engine_breakdown?: CompressionEngineBreakdownItem[]
   profit_route_mode?: string
   profit_route_candidate_count?: number
   profit_route_selected_channel_id?: number

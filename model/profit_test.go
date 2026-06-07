@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/profit"
+	"github.com/QuantumNous/new-api/pkg/promptcompress"
 
 	"github.com/stretchr/testify/require"
 )
@@ -64,21 +65,37 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyGrossMarginPct:                 nil,
 		profit.KeyCompressionSavedTokens:         10,
 		profit.KeyCompressionMode:                "stacked",
+		profit.KeyCompressionEngine:              "stacked",
+		profit.KeyCompressionTimestamp:           int64(1710000000123),
+		profit.KeyCompressionFallbackApplied:     true,
 		profit.KeyCompressionSavingsPercent:      11.5,
 		profit.KeyCompressionBypassed:            false,
 		profit.KeyCompressionRulesVersion:        "omniroute-style-go-v1",
 		profit.KeyCompressionRulesApplied:        []string{"rtk:truncate", "caveman:pleasantries"},
 		profit.KeyCompressionPreservedBlocks:     2,
 		profit.KeyCompressionRedactedSecrets:     1,
-		profit.KeyRouteMode:                      profit.ModeObserve,
-		profit.KeyRouteCandidateCount:            2,
-		profit.KeyRouteSelectedChannelID:         501,
-		profit.KeyRouteSelectedMarginRank:        2,
-		profit.KeyRouteBestChannelID:             502,
-		profit.KeyRouteBestChannelName:           "cheap",
-		profit.KeyRouteBestCostProfileID:         "cheap-profile",
-		profit.KeyRouteBestExpectedMarginUSD:     0.88,
-		profit.KeyRouteWouldPreferDifferent:      true,
+		profit.KeyCompressionValidationWarnings:  []string{"ultra_slm_model_path_ignored_go_native_heuristic_used"},
+		profit.KeyCompressionValidationErrors:    []string{"preserved_block_mismatch"},
+		profit.KeyCompressionEngineBreakdown: []promptcompress.EngineBreakdownItem{
+			{
+				Engine:           "rtk",
+				OriginalTokens:   100,
+				CompressedTokens: 80,
+				SavingsPercent:   20,
+				TechniquesUsed:   []string{"rtk-filter"},
+				RulesApplied:     []string{"rtk:go-test"},
+				DurationMs:       3,
+			},
+		},
+		profit.KeyRouteMode:                  profit.ModeObserve,
+		profit.KeyRouteCandidateCount:        2,
+		profit.KeyRouteSelectedChannelID:     501,
+		profit.KeyRouteSelectedMarginRank:    2,
+		profit.KeyRouteBestChannelID:         502,
+		profit.KeyRouteBestChannelName:       "cheap",
+		profit.KeyRouteBestCostProfileID:     "cheap-profile",
+		profit.KeyRouteBestExpectedMarginUSD: 0.88,
+		profit.KeyRouteWouldPreferDifferent:  true,
 		profit.KeyRouteCandidates: []profit.RouteDecisionCandidate{
 			{ChannelID: 501, ChannelName: "gpt-load", Selected: true, MarginRank: 2},
 			{ChannelID: 502, ChannelName: "cheap", WouldPrefer: true, MarginRank: 1},
@@ -145,10 +162,19 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.NotNil(t, events[0].CompressionSavingsPercent)
 	require.InDelta(t, 11.5, *events[0].CompressionSavingsPercent, 0.0001)
 	require.False(t, events[0].CompressionBypassed)
+	require.Equal(t, "stacked", events[0].CompressionEngine)
+	require.Equal(t, int64(1710000000123), events[0].CompressionTimestamp)
+	require.True(t, events[0].CompressionFallbackApplied)
 	require.Equal(t, "omniroute-style-go-v1", events[0].CompressionRulesVersion)
 	require.Equal(t, []string{"rtk:truncate", "caveman:pleasantries"}, events[0].CompressionRulesApplied)
 	require.Equal(t, int64(2), events[0].CompressionPreservedBlocks)
 	require.Equal(t, int64(1), events[0].CompressionRedactedSecrets)
+	require.Equal(t, []string{"ultra_slm_model_path_ignored_go_native_heuristic_used"}, events[0].CompressionValidationWarnings)
+	require.Equal(t, []string{"preserved_block_mismatch"}, events[0].CompressionValidationErrors)
+	require.Len(t, events[0].CompressionEngineBreakdown, 1)
+	require.Equal(t, "rtk", events[0].CompressionEngineBreakdown[0].Engine)
+	require.Equal(t, 80, events[0].CompressionEngineBreakdown[0].CompressedTokens)
+	require.Equal(t, []string{"rtk:go-test"}, events[0].CompressionEngineBreakdown[0].RulesApplied)
 	require.Equal(t, profit.ModeObserve, events[0].RouteMode)
 	require.Equal(t, int64(2), events[0].RouteCandidateCount)
 	require.Equal(t, 501, events[0].RouteSelectedChannelID)

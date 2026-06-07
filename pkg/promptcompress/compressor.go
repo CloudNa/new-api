@@ -17,6 +17,18 @@ func CompressText(text string, config Config) Result {
 		stats.BypassReason = "below_min_tokens"
 		return Result{Text: text, Compressed: false, Stats: stats}
 	}
+	if mode == ModeRTK {
+		return CompressRTKText(text, config, RtkTextOptions{})
+	}
+	if mode == ModeStacked {
+		return CompressStackedText(text, config)
+	}
+	if mode == ModeAggressive {
+		return CompressAggressiveText(text, config)
+	}
+	if mode == ModeUltra {
+		return CompressUltraText(text, config)
+	}
 
 	protected := protect(text)
 	compressed := protected.Text
@@ -25,44 +37,17 @@ func CompressText(text string, config Config) Result {
 
 	switch mode {
 	case ModeLite:
-		compressed, rules = applyCaveman(compressed, IntensityLite)
+		compressed, rules = applyCavemanWithConfig(compressed, IntensityLite, "user", config)
 		techniques = appendTechnique(techniques, "caveman")
 	case ModeStandard:
-		compressed, rules = applyCaveman(compressed, IntensityStandard)
+		compressed, rules = applyCavemanWithConfig(compressed, normalizeCavemanIntensity(config.CavemanIntensity), "user", config)
 		techniques = appendTechnique(techniques, "caveman")
-	case ModeAggressive:
-		rtkText, rtkTechniques, rtkRules := applyRTK(compressed, aggressiveConfig(config), "")
-		compressed = rtkText
-		techniques = append(techniques, rtkTechniques...)
-		rules = append(rules, rtkRules...)
-		cavemanText, cavemanRules := applyCaveman(compressed, IntensityAggressive)
-		compressed = cavemanText
-		techniques = appendTechnique(techniques, "caveman")
-		rules = append(rules, cavemanRules...)
-	case ModeUltra:
-		rtkText, rtkTechniques, rtkRules := applyRTK(compressed, ultraConfig(config), "")
-		compressed = rtkText
-		techniques = append(techniques, rtkTechniques...)
-		rules = append(rules, rtkRules...)
-		cavemanText, cavemanRules := applyCaveman(compressed, IntensityUltra)
-		compressed = cavemanText
-		techniques = appendTechnique(techniques, "caveman")
-		rules = append(rules, cavemanRules...)
 	case ModeRTK:
 		compressed, techniques, rules = applyRTK(compressed, config, "")
-	case ModeStacked:
-		rtkText, rtkTechniques, rtkRules := applyRTK(compressed, config, "")
-		compressed = rtkText
-		techniques = append(techniques, rtkTechniques...)
-		rules = append(rules, rtkRules...)
-		cavemanText, cavemanRules := applyCaveman(compressed, IntensityStandard)
-		compressed = cavemanText
-		techniques = appendTechnique(techniques, "caveman")
-		rules = append(rules, cavemanRules...)
 	}
 
 	restored := restore(compressed, protected.Blocks)
-	if !verifyPreserved(restored, protected.Blocks) {
+	if !verifyPreserved(protected.ValidationText, restored, protected.Blocks) {
 		stats.Bypassed = true
 		stats.BypassReason = "preservation_check_failed"
 		return Result{Text: text, Compressed: false, Stats: stats}
@@ -89,12 +74,203 @@ func CompressText(text string, config Config) Result {
 	return Result{Text: restored, Compressed: stats.CompressedTokens < stats.OriginalTokens || protected.RedactedCount > 0, Stats: stats}
 }
 
+func CompressRTKText(text string, config Config, options RtkTextOptions) Result {
+	started := time.Now()
+	mode := ModeRTK
+	stats := newStats(mode, text, started)
+	if text == "" {
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+	if config.MinTokens > 0 && EstimateTokens(text) < config.MinTokens {
+		stats.Bypassed = true
+		stats.BypassReason = "below_min_tokens"
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+
+	var compressed string
+	var techniques []string
+	var rules []string
+	if options.CodeBlocksOnly {
+		compressed, techniques, rules = applyRTKCodeBlocksOnly(text, config)
+	} else {
+		compressed, techniques, rules = applyRTKWithOptions(text, config, rtkApplyOptions{
+			command:     options.Command,
+			skipFilters: options.SkipFilters,
+		})
+	}
+	stats.TechniquesUsed = uniqueStrings(techniques)
+	stats.RulesApplied = uniqueStrings(rules)
+	stats.CompressedTokens = EstimateTokens(compressed)
+	stats.CompressionSavedTokens = maxInt(0, stats.OriginalTokens-stats.CompressedTokens)
+	if stats.OriginalTokens > 0 {
+		stats.SavingsPercent = float64(stats.CompressionSavedTokens) / float64(stats.OriginalTokens) * 100
+	}
+	stats.DurationMs = time.Since(started).Milliseconds()
+	if stats.CompressedTokens >= stats.OriginalTokens && len([]rune(compressed)) >= len([]rune(text)) {
+		stats.Bypassed = true
+		stats.BypassReason = "no_savings"
+		stats.CompressedTokens = stats.OriginalTokens
+		stats.CompressionSavedTokens = 0
+		stats.SavingsPercent = 0
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+	if pointer, err := maybePersistRtkRawOutput(text, config, options.Command); err == nil && pointer != nil {
+		stats.RtkRawOutputPointers = append(stats.RtkRawOutputPointers, *pointer)
+		stats.TechniquesUsed = uniqueStrings(append(stats.TechniquesUsed, "rtk-raw-output-retention"))
+		stats.RulesApplied = uniqueStrings(append(stats.RulesApplied, "rtk:raw-output-retention"))
+	}
+	return Result{Text: compressed, Compressed: stats.CompressedTokens < stats.OriginalTokens, Stats: stats}
+}
+
+func CompressStackedText(text string, config Config) Result {
+	started := time.Now()
+	stats := newStats(ModeStacked, text, started)
+	if text == "" {
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+	if config.MinTokens > 0 && EstimateTokens(text) < config.MinTokens {
+		stats.Bypassed = true
+		stats.BypassReason = "below_min_tokens"
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+
+	current := text
+	for _, step := range NormalizeStackedPipeline(config.StackedPipeline) {
+		stepConfig := config
+		var result Result
+		switch step.Engine {
+		case "rtk":
+			stepConfig.RtkIntensity = pipelineRtkIntensity(step.Intensity, config.RtkIntensity)
+			result = CompressRTKText(current, stepConfig, RtkTextOptions{})
+		case "lite":
+			result = CompressCavemanText(current, stepConfig, IntensityLite, "user")
+		case "aggressive":
+			rtkResult := CompressRTKText(current, aggressiveConfig(stepConfig), RtkTextOptions{})
+			stats.TechniquesUsed = append(stats.TechniquesUsed, rtkResult.Stats.TechniquesUsed...)
+			stats.RulesApplied = append(stats.RulesApplied, rtkResult.Stats.RulesApplied...)
+			stats.PreservedBlockCount += rtkResult.Stats.PreservedBlockCount
+			stats.RedactedSecretCount += rtkResult.Stats.RedactedSecretCount
+			stats.RtkRawOutputPointers = append(stats.RtkRawOutputPointers, rtkResult.Stats.RtkRawOutputPointers...)
+			if rtkResult.Compressed {
+				current = rtkResult.Text
+			}
+			result = CompressCavemanText(current, stepConfig, IntensityAggressive, "user")
+		case "ultra":
+			rtkResult := CompressRTKText(current, ultraConfig(stepConfig), RtkTextOptions{})
+			stats.TechniquesUsed = append(stats.TechniquesUsed, rtkResult.Stats.TechniquesUsed...)
+			stats.RulesApplied = append(stats.RulesApplied, rtkResult.Stats.RulesApplied...)
+			stats.PreservedBlockCount += rtkResult.Stats.PreservedBlockCount
+			stats.RedactedSecretCount += rtkResult.Stats.RedactedSecretCount
+			stats.RtkRawOutputPointers = append(stats.RtkRawOutputPointers, rtkResult.Stats.RtkRawOutputPointers...)
+			if rtkResult.Compressed {
+				current = rtkResult.Text
+			}
+			result = CompressCavemanText(current, stepConfig, IntensityUltra, "user")
+		default:
+			result = CompressCavemanText(current, stepConfig, pipelineCavemanIntensity(step.Intensity, config.CavemanIntensity), "user")
+		}
+		stats.TechniquesUsed = append(stats.TechniquesUsed, result.Stats.TechniquesUsed...)
+		stats.RulesApplied = append(stats.RulesApplied, result.Stats.RulesApplied...)
+		stats.PreservedBlockCount += result.Stats.PreservedBlockCount
+		stats.RedactedSecretCount += result.Stats.RedactedSecretCount
+		stats.RtkRawOutputPointers = append(stats.RtkRawOutputPointers, result.Stats.RtkRawOutputPointers...)
+		if result.Stats.Bypassed && isHardCompressionBypass(result.Stats.BypassReason) {
+			stats.Bypassed = true
+			stats.BypassReason = result.Stats.BypassReason
+			stats.CompressedTokens = stats.OriginalTokens
+			stats.CompressionSavedTokens = 0
+			stats.SavingsPercent = 0
+			stats.DurationMs = time.Since(started).Milliseconds()
+			return Result{Text: text, Compressed: false, Stats: stats}
+		}
+		if result.Compressed {
+			current = result.Text
+		}
+	}
+
+	stats.TechniquesUsed = uniqueStrings(stats.TechniquesUsed)
+	stats.RulesApplied = uniqueStrings(stats.RulesApplied)
+	stats.CompressedTokens = EstimateTokens(current)
+	stats.CompressionSavedTokens = maxInt(0, stats.OriginalTokens-stats.CompressedTokens)
+	if stats.OriginalTokens > 0 {
+		stats.SavingsPercent = float64(stats.CompressionSavedTokens) / float64(stats.OriginalTokens) * 100
+	}
+	stats.DurationMs = time.Since(started).Milliseconds()
+	if stats.CompressedTokens >= stats.OriginalTokens && len([]rune(current)) >= len([]rune(text)) && stats.RedactedSecretCount == 0 {
+		stats.Bypassed = true
+		stats.BypassReason = "no_savings"
+		stats.CompressedTokens = stats.OriginalTokens
+		stats.CompressionSavedTokens = 0
+		stats.SavingsPercent = 0
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+	return Result{Text: current, Compressed: stats.CompressedTokens < stats.OriginalTokens || stats.RedactedSecretCount > 0, Stats: stats}
+}
+
+func CompressCavemanText(text string, config Config, intensity Intensity, role string) Result {
+	started := time.Now()
+	mode := ModeStandard
+	stats := newStats(mode, text, started)
+	if text == "" {
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+	if config.MinTokens > 0 && EstimateTokens(text) < config.MinTokens {
+		stats.Bypassed = true
+		stats.BypassReason = "below_min_tokens"
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+
+	protected := protectWithPatterns(text, config.CavemanPreservePatterns)
+	compressed, rules := applyCavemanWithConfig(protected.Text, intensity, role, config)
+	restored := restore(compressed, protected.Blocks)
+	if !verifyPreserved(protected.ValidationText, restored, protected.Blocks) {
+		stats.Bypassed = true
+		stats.BypassReason = "preservation_check_failed"
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+
+	stats.PreservedBlockCount = len(protected.Blocks)
+	stats.RedactedSecretCount = protected.RedactedCount
+	stats.TechniquesUsed = []string{"caveman"}
+	stats.RulesApplied = uniqueStrings(rules)
+	stats.CompressedTokens = EstimateTokens(restored)
+	stats.CompressionSavedTokens = maxInt(0, stats.OriginalTokens-stats.CompressedTokens)
+	if stats.OriginalTokens > 0 {
+		stats.SavingsPercent = float64(stats.CompressionSavedTokens) / float64(stats.OriginalTokens) * 100
+	}
+	stats.DurationMs = time.Since(started).Milliseconds()
+	if stats.CompressedTokens >= stats.OriginalTokens && len([]rune(restored)) >= len([]rune(text)) && protected.RedactedCount == 0 {
+		stats.Bypassed = true
+		stats.BypassReason = "no_savings"
+		stats.CompressedTokens = stats.OriginalTokens
+		stats.CompressionSavedTokens = 0
+		stats.SavingsPercent = 0
+		return Result{Text: text, Compressed: false, Stats: stats}
+	}
+	return Result{Text: restored, Compressed: stats.CompressedTokens < stats.OriginalTokens || protected.RedactedCount > 0, Stats: stats}
+}
+
+func isHardCompressionBypass(reason string) bool {
+	switch reason {
+	case "empty_output", "preservation_check_failed":
+		return true
+	default:
+		return false
+	}
+}
+
 func CompressMessages(messages []Message, config Config) ([]Message, Stats) {
 	started := time.Now()
 	mode := normalizeMode(config.Mode)
 	stats := Stats{Mode: mode, OmniRouteCompatibleMode: string(mode)}
 	if mode == ModeOff {
 		return append([]Message(nil), messages...), stats
+	}
+	switch mode {
+	case ModeAggressive:
+		return CompressAggressiveMessages(messages, config)
+	case ModeUltra:
+		return CompressUltraMessages(messages, config)
 	}
 	out := make([]Message, len(messages))
 	for i, message := range messages {
@@ -111,6 +287,7 @@ func CompressMessages(messages []Message, config Config) ([]Message, Stats) {
 		stats.RulesApplied = append(stats.RulesApplied, result.Stats.RulesApplied...)
 		stats.PreservedBlockCount += result.Stats.PreservedBlockCount
 		stats.RedactedSecretCount += result.Stats.RedactedSecretCount
+		stats.RtkRawOutputPointers = append(stats.RtkRawOutputPointers, result.Stats.RtkRawOutputPointers...)
 	}
 	stats.TechniquesUsed = uniqueStrings(stats.TechniquesUsed)
 	stats.RulesApplied = uniqueStrings(stats.RulesApplied)
@@ -128,6 +305,37 @@ func normalizeMode(mode Mode) Mode {
 		return mode
 	default:
 		return ModeOff
+	}
+}
+
+func normalizeCavemanIntensity(intensity Intensity) Intensity {
+	if intensity == "" {
+		return IntensityLite
+	}
+	if !validIntensity(intensity) {
+		return IntensityLite
+	}
+	return intensity
+}
+
+func pipelineRtkIntensity(value string, fallback RtkIntensity) RtkIntensity {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return NormalizeRtkIntensity(fallback)
+	}
+	return NormalizeRtkIntensity(RtkIntensity(value))
+}
+
+func pipelineCavemanIntensity(value string, fallback Intensity) Intensity {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return normalizeCavemanIntensity(fallback)
+	}
+	switch Intensity(value) {
+	case IntensityLite, IntensityFull, IntensityStandard, IntensityAggressive, IntensityUltra:
+		return Intensity(value)
+	default:
+		return normalizeCavemanIntensity(fallback)
 	}
 }
 
@@ -195,4 +403,16 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func stringSet(items []string) map[string]bool {
+	out := make(map[string]bool, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		out[item] = true
+	}
+	return out
 }
