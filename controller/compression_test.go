@@ -98,6 +98,7 @@ func TestGetRTKFiltersReturnsOmniRouteCatalog(t *testing.T) {
 
 func TestRTKCompressionUsesCommandOption(t *testing.T) {
 	settings := promptcompress.DefaultSettings()
+	settings.MinTokens = 1200
 	payload, err := common.Marshal(settings.Normalize())
 	require.NoError(t, err)
 

@@ -113,7 +113,9 @@ func TestRTKCompression(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	result := promptcompress.CompressRTKText(req.Text, settings.ToConfig(promptcompress.ModeRTK), promptcompress.RtkTextOptions{
+	config := settings.ToConfig(promptcompress.ModeRTK)
+	config.MinTokens = 0
+	result := promptcompress.CompressRTKText(req.Text, config, promptcompress.RtkTextOptions{
 		Command:             req.Command,
 		SkipFilters:         req.SkipFilters,
 		CodeBlocksOnly:      req.CodeBlocksOnly,
