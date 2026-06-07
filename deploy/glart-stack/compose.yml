@@ -17,9 +17,7 @@ services:
       ERROR_LOG_ENABLED: "true"
       MEMORY_CACHE_ENABLED: "true"
       NODE_NAME: glart-new-api
-      GPT_LOAD_INTERNAL_URL: http://gpt-load:3001
       CLIPROXYAPI_INTERNAL_URL: http://cliproxyapi:8317
-      SIDECAR_GPT_LOAD_AUTH_KEY: ${GPT_LOAD_AUTH_KEY}
       SIDECAR_CLIPROXYAPI_MANAGEMENT_KEY: ${CLIPROXYAPI_MANAGEMENT_KEY}
       GLART_STACK_UPDATER_URL: http://glart-stack-updater:8787
       GLART_STACK_UPDATER_TOKEN: ${GLART_STACK_UPDATER_TOKEN}
@@ -29,8 +27,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      gpt-load:
-        condition: service_started
       cliproxyapi:
         condition: service_started
       glart-stack-updater:
@@ -64,37 +60,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  gpt-load:
-    image: ghcr.io/tbphp/gpt-load:latest
-    container_name: glart-gpt-load
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      PORT: "3001"
-      HOST: 0.0.0.0
-      TZ: ${TZ:-Asia/Shanghai}
-      AUTH_KEY: ${GPT_LOAD_AUTH_KEY}
-      ENCRYPTION_KEY: ${GPT_LOAD_ENCRYPTION_KEY}
-      DATABASE_DSN: ./data/gpt-load.db
-      REDIS_DSN: ""
-      ENABLE_CORS: "true"
-      ALLOWED_ORIGINS: https://${GLART_DOMAIN}
-      LOG_ENABLE_FILE: "true"
-      LOG_FILE_PATH: ./data/logs/app.log
-    volumes:
-      - ./runtime/gpt-load:/app/data
-    expose:
-      - "3001"
-    networks:
-      - glart-internal
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider -T 10 -O /dev/null http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
 
   cliproxyapi:
     image: eceasy/cli-proxy-api:latest

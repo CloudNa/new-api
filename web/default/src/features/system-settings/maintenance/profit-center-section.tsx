@@ -128,8 +128,8 @@ const SAMPLE_PROFILE: ProfitCostProfiles = {
   version: 1,
   items: [
     {
-      id: 'proxy-test-gpt-load-gemini',
-      name: 'proxy-test GPT-Load Gemini',
+      id: 'proxy-test-cliproxyapi-gemini',
+      name: 'proxy-test CLIProxyAPI Gemini',
       enabled: false,
       priority: 10,
       provider: '',
@@ -157,7 +157,7 @@ const SAMPLE_PREVIEW: ProfitRoutePreviewRequest = {
   estimated_revenue_usd: 0.08,
   candidates: [
     {
-      provider: 'gpt-load',
+      provider: 'cliproxyapi',
       channel_id: 0,
       model_name: 'gemini-2.5-flash',
       upstream_actual_prompt_tokens: 24000,

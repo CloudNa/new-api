@@ -55,7 +55,7 @@ load_env() {
 
 normalize_component() {
   case "$1" in
-    all|new-api|gpt-load|cliproxyapi) printf '%s' "$1" ;;
+    all|new-api|cliproxyapi) printf '%s' "$1" ;;
     *) log "invalid component: $1"; fail ;;
   esac
 }
@@ -63,7 +63,6 @@ normalize_component() {
 component_service() {
   case "$1" in
     new-api) printf '%s' "new-api" ;;
-    gpt-load) printf '%s' "gpt-load" ;;
     cliproxyapi) printf '%s' "cliproxyapi" ;;
     *) printf '%s' "" ;;
   esac
@@ -72,7 +71,6 @@ component_service() {
 component_container() {
   case "$1" in
     new-api) printf '%s' "glart-new-api" ;;
-    gpt-load) printf '%s' "glart-gpt-load" ;;
     cliproxyapi) printf '%s' "glart-cliproxyapi" ;;
     *) printf '%s' "" ;;
   esac
@@ -81,7 +79,6 @@ component_container() {
 component_image() {
   case "$1" in
     new-api) printf 'glart/new-api:%s' "${NEW_API_VERSION:-clean}" ;;
-    gpt-load) printf '%s' "ghcr.io/tbphp/gpt-load:latest" ;;
     cliproxyapi) printf '%s' "eceasy/cli-proxy-api:latest" ;;
     *) printf '%s' "" ;;
   esac
@@ -90,7 +87,6 @@ component_image() {
 component_runtime_path() {
   case "$1" in
     new-api) printf '%s' "runtime/new-api" ;;
-    gpt-load) printf '%s' "runtime/gpt-load" ;;
     cliproxyapi) printf '%s' "runtime/cliproxyapi" ;;
     all) printf '%s' "runtime" ;;
     *) printf '%s' "" ;;
@@ -104,9 +100,7 @@ precheck_common() {
   require_file "$ROOT_DIR/controller/sidecar_proxy.go"
   require_file "$ROOT_DIR/router/web-router.go"
   require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
-  grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
-  grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "CLIProxyAPI" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   run docker compose -f "$COMPOSE_DIR/$COMPOSE_FILE" config --quiet
 }
@@ -181,9 +175,7 @@ git_update_and_tests() {
   require_file "$ROOT_DIR/controller/sidecar_proxy.go"
   require_file "$ROOT_DIR/router/web-router.go"
   require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
-  grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
-  grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "CLIProxyAPI" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "GetSystemUpdateStatus" "$ROOT_DIR/controller/system_update.go" || fail
   grep -q 'apiRouter.Group("/profit")' "$ROOT_DIR/router/api-router.go" || fail
@@ -248,11 +240,6 @@ smoke_new_api() {
   retry_smoke "new-api" 40 3 sh -c "docker exec glart-new-api wget -q -O - http://localhost:3000/api/status | grep -q '\"success\"[[:space:]]*:[[:space:]]*true'"
 }
 
-smoke_gpt_load() {
-  STAGE="smoke-gpt-load"
-  retry_smoke "gpt-load" 30 2 docker exec glart-gpt-load wget -q --spider -T 10 -O /dev/null http://localhost:3001/health
-}
-
 smoke_cliproxyapi() {
   STAGE="smoke-cliproxyapi"
   retry_smoke "cliproxyapi" 30 2 docker exec glart-cliproxyapi wget -q --spider -T 10 -O /dev/null http://localhost:8317/management.html
@@ -289,23 +276,12 @@ update_new_api() {
   STAGE="build-new-api"
   run compose build new-api
   STAGE="up-new-api"
-  run compose up -d --no-deps new-api
+  run compose up -d --remove-orphans new-api redis cliproxyapi caddy glart-stack-updater
   if ! smoke_new_api; then
     rollback_after_failed_update new-api
   fi
   if ! optional_proxy_test_chat_smoke; then
     rollback_after_failed_update new-api
-  fi
-}
-
-update_gpt_load() {
-  create_backup gpt-load
-  STAGE="pull-gpt-load"
-  run compose pull gpt-load
-  STAGE="up-gpt-load"
-  run compose up -d --no-deps gpt-load
-  if ! smoke_gpt_load; then
-    rollback_after_failed_update gpt-load
   fi
 }
 
@@ -329,7 +305,6 @@ update_updater() {
 
 update_all() {
   update_new_api
-  update_gpt_load
   update_cliproxyapi
   update_updater
 }
@@ -379,7 +354,6 @@ rollback_component() {
   run compose up -d --no-deps "$service"
   case "$component" in
     new-api) smoke_new_api ;;
-    gpt-load) smoke_gpt_load ;;
     cliproxyapi) smoke_cliproxyapi ;;
   esac
   log "$component rollback completed from $backup_dir"
@@ -393,10 +367,8 @@ main() {
   case "$ACTION:$COMPONENT" in
     update:all) update_all ;;
     update:new-api) update_new_api ;;
-    update:gpt-load) update_gpt_load ;;
     update:cliproxyapi) update_cliproxyapi ;;
     rollback:new-api) rollback_component new-api ;;
-    rollback:gpt-load) rollback_component gpt-load ;;
     rollback:cliproxyapi) rollback_component cliproxyapi ;;
     *) log "unsupported action/component: $ACTION $COMPONENT"; fail ;;
   esac

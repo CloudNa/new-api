@@ -267,7 +267,6 @@ export async function previewProfitRoute(request: ProfitRoutePreviewRequest) {
 export type SystemUpdateComponent =
   | 'all'
   | 'new-api'
-  | 'gpt-load'
   | 'cliproxyapi'
 
 export type SystemRollbackComponent = Exclude<SystemUpdateComponent, 'all'>
@@ -313,7 +312,6 @@ export type SystemUpdateSmoke = {
   status?: number | null
   content_type?: string
   new_api_healthy: boolean
-  gpt_load_healthy: boolean
   cliproxyapi_ready: boolean
   sidecar_bridge_sources_ok?: boolean
   proxy_test_chat_checked?: boolean

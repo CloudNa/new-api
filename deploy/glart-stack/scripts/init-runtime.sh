@@ -17,7 +17,6 @@ for dir in \
   runtime/new-api/data \
   runtime/new-api/logs \
   runtime/redis \
-  runtime/gpt-load \
   runtime/cliproxyapi/auths \
   runtime/cliproxyapi/logs \
   runtime/caddy/data \

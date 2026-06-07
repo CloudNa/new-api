@@ -3,7 +3,6 @@
 This stack deploys the clean composition line:
 
 - `new-api` is the only public gateway at `https://api.glart.cn`.
-- `gpt-load` stays private on the Docker network and is reachable from root users through `/gl`.
 - `CLIProxyAPI` stays private on the Docker network and is reachable from root users through `/cpa`.
 - Caddy is the only service publishing host ports `80` and `443`.
 
@@ -35,9 +34,6 @@ Do not commit files under `runtime/` or `.env`; they hold database files, logs, 
 
 Use these internal base URLs when adding channels in `new-api`:
 
-- GPT-Load OpenAI-compatible group: `http://gpt-load:3001/proxy/openai`
-- GPT-Load Gemini group: `http://gpt-load:3001/proxy/gemini`
-- GPT-Load Anthropic group: `http://gpt-load:3001/proxy/anthropic`
 - CLIProxyAPI OpenAI-compatible endpoint: `http://cliproxyapi:8317`
 
 Use a `proxy-test` group for initial validation before moving channels to default production groups.
@@ -50,10 +46,10 @@ The dashboard system maintenance page calls the private `glart-stack-updater` se
 backup runtime/.env into runtime/backups/
 git pull --ff-only
 go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit ./pkg/promptcompress -count=1
-docker compose pull gpt-load cliproxyapi caddy redis
+docker compose pull cliproxyapi caddy redis
 docker compose build new-api glart-stack-updater
-docker compose up -d --remove-orphans new-api gpt-load cliproxyapi caddy redis
-smoke new-api, GPT-Load, CLIProxyAPI, and Glart bridge source retention
+docker compose up -d --remove-orphans new-api cliproxyapi caddy redis
+smoke new-api, CLIProxyAPI, and Glart bridge source retention
 ```
 
 This keeps the Glart bridge and deployment scripts in the Git branch, so future upstream `new-api` updates do not overwrite the local sidecar integration.
