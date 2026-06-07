@@ -116,9 +116,10 @@ type Config struct {
 }
 
 type RtkTextOptions struct {
-	Command        string
-	SkipFilters    bool
-	CodeBlocksOnly bool
+	Command             string
+	SkipFilters         bool
+	CodeBlocksOnly      bool
+	EmbeddedOutputsOnly bool
 }
 
 type Message struct {

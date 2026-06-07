@@ -92,6 +92,8 @@ func CompressRTKText(text string, config Config, options RtkTextOptions) Result 
 	var rules []string
 	if options.CodeBlocksOnly {
 		compressed, techniques, rules = applyRTKCodeBlocksOnly(text, config)
+	} else if options.EmbeddedOutputsOnly {
+		compressed, techniques, rules = applyRTKEmbeddedOutputsOnly(text, config)
 	} else {
 		compressed, techniques, rules = applyRTKWithOptions(text, config, rtkApplyOptions{
 			command:     options.Command,

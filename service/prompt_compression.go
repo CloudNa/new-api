@@ -692,9 +692,31 @@ func shouldPromptCompressionRTKMessage(message dto.Message, config promptcompres
 		return config.ApplyToToolResults || config.ApplyToCodeBlocks && promptCompressionContentHasCodeFence(message.Content)
 	case "assistant":
 		return config.ApplyToAssistantMessages || config.ApplyToCodeBlocks && promptCompressionContentHasCodeFence(message.Content)
+	case "user":
+		return promptCompressionContentHasRTKOutput(message.Content, config)
 	default:
 		return false
 	}
+}
+
+func promptCompressionContentHasRTKOutput(content any, config promptcompress.Config) bool {
+	switch value := content.(type) {
+	case string:
+		return promptcompress.ContainsRTKOutput(value, config)
+	case []any:
+		for _, item := range value {
+			if text, ok := promptCompressionTextBlockText(item); ok && promptcompress.ContainsRTKOutput(text, config) {
+				return true
+			}
+		}
+	case []dto.MediaContent:
+		for _, item := range value {
+			if item.Type == dto.ContentTypeText && promptcompress.ContainsRTKOutput(item.Text, config) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func promptCompressionContentHasCodeFence(content any) bool {
@@ -774,6 +796,11 @@ func promptCompressionCommandFromArguments(arguments string) string {
 func promptCompressionRTKOptions(message dto.Message, lookup map[string]promptCompressionToolMeta, config promptcompress.Config) promptcompress.RtkTextOptions {
 	options := promptcompress.RtkTextOptions{
 		CodeBlocksOnly: config.ApplyToCodeBlocks && !config.ApplyToToolResults && !config.ApplyToAssistantMessages,
+	}
+	if strings.EqualFold(message.Role, "user") {
+		options.CodeBlocksOnly = false
+		options.EmbeddedOutputsOnly = true
+		return options
 	}
 	meta, ok := lookup[message.ToolCallId]
 	if !ok {

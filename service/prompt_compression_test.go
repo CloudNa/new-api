@@ -155,6 +155,54 @@ func TestApplyPromptCompressionForRelayStackedMatchesOmniRouteRoleSemantics(t *t
 	require.Contains(t, info.PromptCompressionStats.RulesApplied, "docker-build:strip")
 }
 
+func TestApplyPromptCompressionForRelayStackedCompressesExplicitUserTerminalOutput(t *testing.T) {
+	withPromptCompressionOptionMap(t, promptcompress.Settings{
+		Enabled:              true,
+		DefaultMode:          promptcompress.ModeStacked,
+		PreserveSystemPrompt: true,
+		AllowedGroups:        []string{profit.DefaultObserveGroup},
+		Caveman: promptcompress.CavemanSettings{
+			CompressRoles:    []string{"user"},
+			MinMessageLength: 1,
+		},
+	})
+	c := newPromptCompressionTestContext()
+	output := strings.Join([]string{
+		"Here is terminal output from `go test ./...`:",
+		"```text",
+		"=== RUN TestA",
+		"=== RUN TestB",
+		"--- FAIL: TestB (0.00s)",
+		"    a_test.go:1: boom",
+		"=== RUN TestC",
+		"FAIL\t./pkg\t0.1s",
+		"```",
+		"Please explain in detail what failed and please provide a detailed fix plan.",
+	}, "\n")
+	request := &dto.GeneralOpenAIRequest{
+		Model: "glart-test",
+		Messages: []dto.Message{
+			{Role: "system", Content: "Keep this system prompt."},
+			{Role: "user", Content: output},
+		},
+	}
+	info := newPromptCompressionRelayInfo(profit.DefaultObserveGroup)
+
+	ApplyPromptCompressionForRelay(c, info, request, false)
+
+	require.NotNil(t, info.PromptCompressionStats)
+	require.False(t, info.PromptCompressionStats.Bypassed, "%+v", info.PromptCompressionStats)
+	content := request.Messages[1].Content.(string)
+	require.Contains(t, content, "--- FAIL: TestB")
+	require.Contains(t, content, "a_test.go:1: boom")
+	require.Contains(t, content, "FAIL\t./pkg\t0.1s")
+	require.NotContains(t, content, "=== RUN TestA")
+	require.NotContains(t, content, "please provide a detailed")
+	require.Contains(t, info.PromptCompressionStats.TechniquesUsed, "rtk-filter")
+	require.Contains(t, info.PromptCompressionStats.RulesApplied, "test-go:keep")
+	require.Contains(t, info.PromptCompressionStats.TechniquesUsed, "caveman")
+}
+
 func TestApplyPromptCompressionForRelayRTKSkipsNonTerminalToolFilters(t *testing.T) {
 	withPromptCompressionOptionMap(t, promptcompress.Settings{
 		Enabled:              true,

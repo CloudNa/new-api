@@ -226,6 +226,7 @@ type rtkApplyOptions struct {
 var (
 	rtkFencedCodePattern    = regexp.MustCompile("```([A-Za-z0-9_+.-]*)\\r?\\n([\\s\\S]*?)```")
 	rtkCodeOnlyFencePattern = regexp.MustCompile("```([\\s\\S]*?)```")
+	rtkShellPromptPattern   = regexp.MustCompile(`(?m)^\s*(?:[$>#]|PS\s+[^>]+>)\s*\S+`)
 )
 
 func applyRTK(text string, config Config, command string) (string, []string, []string) {
@@ -296,6 +297,103 @@ func applyRTKCodeBlocksOnly(text string, config Config) (string, []string, []str
 		return text, uniqueStrings(techniques), uniqueStrings(rules)
 	}
 	return result, uniqueStrings(techniques), uniqueStrings(rules)
+}
+
+// ContainsRTKOutput reports whether text contains an explicit terminal/tool output
+// segment that can be handled by the OmniRoute RTK filter catalog.
+func ContainsRTKOutput(text string, config Config) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	if rtkFencedCodePattern.MatchString(text) {
+		for _, match := range rtkFencedCodePattern.FindAllStringSubmatch(text, -1) {
+			if len(match) != 3 {
+				continue
+			}
+			if rtkFenceLooksLikeOutput(match[1], match[2], config) {
+				return true
+			}
+		}
+		return false
+	}
+	return rtkPlainTextLooksLikeOutput(text, config)
+}
+
+func applyRTKEmbeddedOutputsOnly(text string, config Config) (string, []string, []string) {
+	techniques := []string{}
+	rules := []string{}
+	changed := false
+	result := rtkFencedCodePattern.ReplaceAllStringFunc(text, func(match string) string {
+		parts := rtkFencedCodePattern.FindStringSubmatch(match)
+		if len(parts) != 3 {
+			return match
+		}
+		languageHint := strings.TrimSpace(parts[1])
+		output := parts[2]
+		if !rtkFenceLooksLikeOutput(languageHint, output, config) {
+			return match
+		}
+		processed, processedTechniques, processedRules := applyRTKWithOptions(output, config, rtkApplyOptions{})
+		techniques = append(techniques, processedTechniques...)
+		rules = append(rules, processedRules...)
+		if EstimateTokens(processed) >= EstimateTokens(output) && len([]rune(processed)) >= len([]rune(output)) {
+			return match
+		}
+		changed = true
+		return "```" + languageHint + "\n" + strings.TrimRight(processed, "\r\n") + "\n```"
+	})
+	if changed {
+		return result, uniqueStrings(techniques), uniqueStrings(rules)
+	}
+	if !strings.Contains(text, "```") && rtkPlainTextLooksLikeOutput(text, config) {
+		return applyRTKWithOptions(text, config, rtkApplyOptions{})
+	}
+	return text, uniqueStrings(techniques), uniqueStrings(rules)
+}
+
+func rtkFenceLooksLikeOutput(language string, text string, config Config) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	if rtkTextLooksLikeOutput(text, config) {
+		return true
+	}
+	return rtkTerminalFenceLanguage(language) && rtkTerminalTextHasCommandSignal(text)
+}
+
+func rtkTextLooksLikeOutput(text string, config Config) bool {
+	filter := matchRTKSignalFilterWithConfig(text, "", config)
+	return filter != nil && rtkFilterAllowed(filter.ID, config)
+}
+
+func rtkPlainTextLooksLikeOutput(text string, config Config) bool {
+	filter := matchRTKSignalFilterWithConfig(text, "", config)
+	if filter == nil || !rtkFilterAllowed(filter.ID, config) {
+		return false
+	}
+	if rtkTerminalTextHasCommandSignal(text) {
+		return true
+	}
+	if filter.ID == "generic-output" {
+		return false
+	}
+	return len(splitLines(text)) >= 2
+}
+
+func rtkTerminalFenceLanguage(language string) bool {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "", "text", "txt", "log", "logs", "console", "terminal", "term", "shell", "sh", "bash", "zsh", "fish", "powershell", "pwsh", "ps1", "cmd", "diff", "patch":
+		return true
+	default:
+		return false
+	}
+}
+
+func rtkTerminalTextHasCommandSignal(text string) bool {
+	if detectCommandFromText(text) != "" {
+		return true
+	}
+	return rtkShellPromptPattern.MatchString(text)
 }
 
 func applyRTKCodeStrip(text string, config Config) (string, []string, []string) {
@@ -691,7 +789,18 @@ func matchRTKFilterWithConfig(text string, command string, config Config) *rtkFi
 	})
 }
 
+func matchRTKSignalFilterWithConfig(text string, command string, config Config) *rtkFilter {
+	return matchRTKFilterWithOptionsAndFallback(text, command, rtkFilterLoadOptions{
+		customFiltersEnabled: config.CustomFiltersEnabled,
+		trustProjectFilters:  config.TrustProjectFilters,
+	}, false)
+}
+
 func matchRTKFilterWithOptions(text string, command string, options rtkFilterLoadOptions) *rtkFilter {
+	return matchRTKFilterWithOptionsAndFallback(text, command, options, true)
+}
+
+func matchRTKFilterWithOptionsAndFallback(text string, command string, options rtkFilterLoadOptions, includeGenericFallback bool) *rtkFilter {
 	filters, err := loadRTKFiltersWithOptions(options)
 	if err != nil {
 		return nil
@@ -711,6 +820,9 @@ func matchRTKFilterWithOptions(text string, command string, options rtkFilterLoa
 		if anyRTKPatternMatches(filters[i].MatchPatterns, text) {
 			return &filters[i]
 		}
+	}
+	if !includeGenericFallback {
+		return nil
 	}
 	for i := range filters {
 		if containsString(filters[i].CommandTypes, "generic-output") {

@@ -471,6 +471,59 @@ func TestOmniRouteRTKCodeBlocksOnlyWideFenceParity(t *testing.T) {
 	require.NotEmpty(t, result.Stats.RulesApplied)
 }
 
+func TestOmniRouteRTKEmbeddedOutputOnlyCompressesFencedTerminalOutput(t *testing.T) {
+	input := strings.Join([]string{
+		"before",
+		"```text",
+		"=== RUN TestA",
+		"--- FAIL: TestA (0.00s)",
+		"    a_test.go:1: boom",
+		"FAIL\t./pkg\t0.1s",
+		"```",
+		"after",
+	}, "\n")
+
+	result := CompressRTKText(input, Config{
+		Mode:     ModeRTK,
+		MaxLines: 120,
+		MaxChars: 12000,
+	}, RtkTextOptions{EmbeddedOutputsOnly: true})
+
+	require.True(t, result.Compressed, "%+v text=%q", result.Stats, result.Text)
+	require.Contains(t, result.Text, "before")
+	require.Contains(t, result.Text, "after")
+	require.Contains(t, result.Text, "```text\n--- FAIL: TestA")
+	require.Contains(t, result.Text, "a_test.go:1: boom")
+	require.Contains(t, result.Text, "FAIL\t./pkg\t0.1s")
+	require.NotContains(t, result.Text, "=== RUN TestA")
+	require.Contains(t, result.Stats.TechniquesUsed, "rtk-filter")
+	require.Contains(t, result.Stats.RulesApplied, "test-go:keep")
+}
+
+func TestOmniRouteRTKEmbeddedOutputOnlySkipsSourceCodeFence(t *testing.T) {
+	input := strings.Join([]string{
+		"before",
+		"```go",
+		"package main",
+		"",
+		"func main() {",
+		"    println(\"x\")",
+		"}",
+		"```",
+		"after",
+	}, "\n")
+
+	result := CompressRTKText(input, Config{
+		Mode:     ModeRTK,
+		MaxLines: 120,
+		MaxChars: 12000,
+	}, RtkTextOptions{EmbeddedOutputsOnly: true})
+
+	require.False(t, result.Compressed, "%+v text=%q", result.Stats, result.Text)
+	require.Equal(t, input, result.Text)
+	require.NotContains(t, result.Stats.TechniquesUsed, "rtk-filter")
+}
+
 func TestOmniRouteRTKIntensityControlsTruncateWindow(t *testing.T) {
 	head, tail := rtkTruncateWindow(Config{
 		RtkIntensity:     RtkIntensityAggressive,
