@@ -18,7 +18,11 @@ type compressionPreviewRequest struct {
 }
 
 type rtkTestRequest struct {
-	Text string `json:"text"`
+	Text                string `json:"text"`
+	Command             string `json:"command"`
+	SkipFilters         bool   `json:"skip_filters"`
+	CodeBlocksOnly      bool   `json:"code_blocks_only"`
+	EmbeddedOutputsOnly bool   `json:"embedded_outputs_only"`
 }
 
 func GetCompressionSettings(c *gin.Context) {
@@ -109,7 +113,12 @@ func TestRTKCompression(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	result := promptcompress.CompressText(req.Text, settings.ToConfig(promptcompress.ModeRTK))
+	result := promptcompress.CompressRTKText(req.Text, settings.ToConfig(promptcompress.ModeRTK), promptcompress.RtkTextOptions{
+		Command:             req.Command,
+		SkipFilters:         req.SkipFilters,
+		CodeBlocksOnly:      req.CodeBlocksOnly,
+		EmbeddedOutputsOnly: req.EmbeddedOutputsOnly,
+	})
 	common.ApiSuccess(c, gin.H{
 		"text":       result.Text,
 		"compressed": result.Compressed,

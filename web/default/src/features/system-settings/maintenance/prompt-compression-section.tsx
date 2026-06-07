@@ -712,6 +712,10 @@ export function PromptCompressionSection() {
   const [rtkText, setRtkText] = useState(
     'go test ./service\nPASS\nok github.com/QuantumNous/new-api/service 1.23s\n'
   )
+  const [rtkCommand, setRtkCommand] = useState('go test ./service')
+  const [rtkSkipFilters, setRtkSkipFilters] = useState(false)
+  const [rtkCodeBlocksOnly, setRtkCodeBlocksOnly] = useState(false)
+  const [rtkEmbeddedOutputsOnly, setRtkEmbeddedOutputsOnly] = useState(false)
   const [rtkResult, setRtkResult] = useState<CompressionPreviewResponse | null>(
     null
   )
@@ -809,7 +813,13 @@ export function PromptCompressionSection() {
   const runRtkTest = async () => {
     setTesting(true)
     try {
-      const res = await testRtkCompression(rtkText)
+      const res = await testRtkCompression({
+        text: rtkText,
+        command: rtkCommand.trim() || undefined,
+        skip_filters: rtkSkipFilters,
+        code_blocks_only: rtkCodeBlocksOnly,
+        embedded_outputs_only: rtkEmbeddedOutputsOnly,
+      })
       if (!res.success || !res.data) {
         toast.error(res.message || t('RTK test failed'))
         return
@@ -1434,6 +1444,37 @@ export function PromptCompressionSection() {
                 <span>{t('Run test')}</span>
               </Button>
             </div>
+          </div>
+          <div className='grid min-w-0 gap-3 md:grid-cols-2'>
+            <div className='min-w-0 space-y-1.5 md:col-span-2'>
+              <Label className='text-xs font-medium'>
+                {t('RTK command')}
+              </Label>
+              <Input
+                value={rtkCommand}
+                onChange={(event) => setRtkCommand(event.target.value)}
+                placeholder='go test ./...'
+                className='font-mono text-xs'
+              />
+            </div>
+            <SettingsSwitchField
+              label={t('RTK skip filters')}
+              checked={rtkSkipFilters}
+              onCheckedChange={setRtkSkipFilters}
+              className='rounded-md border px-3'
+            />
+            <SettingsSwitchField
+              label={t('RTK code blocks only')}
+              checked={rtkCodeBlocksOnly}
+              onCheckedChange={setRtkCodeBlocksOnly}
+              className='rounded-md border px-3'
+            />
+            <SettingsSwitchField
+              label={t('RTK embedded outputs only')}
+              checked={rtkEmbeddedOutputsOnly}
+              onCheckedChange={setRtkEmbeddedOutputsOnly}
+              className='rounded-md border px-3 md:col-span-2'
+            />
           </div>
           <Textarea
             rows={9}

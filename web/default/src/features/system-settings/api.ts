@@ -186,8 +186,8 @@ export async function getRtkFilters() {
   }
 }
 
-export async function testRtkCompression(text: string) {
-  const res = await api.post('/api/context/rtk/test', { text })
+export async function testRtkCompression(request: RtkTestRequest) {
+  const res = await api.post('/api/context/rtk/test', request)
   return res.data as {
     success: boolean
     message?: string
@@ -466,6 +466,14 @@ export type CompressionPreviewRequest = {
   mode?: CompressionMode
   text?: string
   messages?: Array<{ role: string; content: string }>
+}
+
+export type RtkTestRequest = {
+  text: string
+  command?: string
+  skip_filters?: boolean
+  code_blocks_only?: boolean
+  embedded_outputs_only?: boolean
 }
 
 export type CompressionPreviewResponse = {
