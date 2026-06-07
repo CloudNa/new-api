@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/dlclark/regexp2"
@@ -1064,7 +1065,7 @@ func smartTruncateWithPriority(text string, maxLines int, maxChars int, preserve
 	}
 	lines := splitLines(text)
 	overLines := maxLines > 0 && len(lines) > maxLines
-	overChars := maxChars > 0 && len([]rune(text)) > maxChars
+	overChars := maxChars > 0 && utf16CodeUnitLen(text) > maxChars
 	if !overLines && !overChars {
 		return text, false
 	}
@@ -1090,27 +1091,61 @@ func smartTruncateWithPriority(text string, maxLines int, maxChars int, preserve
 	}
 	dropped := maxInt(0, len(lines)-len(selected))
 	result := strings.Join(append(selected[:minInt(len(head), len(selected))], append([]string{fmt.Sprintf("[rtk:truncated %d lines]", dropped)}, selected[minInt(len(head), len(selected)):]...)...), "\n")
-	if maxChars > 0 && len([]rune(result)) > maxChars {
-		marker := []rune("\n[rtk:truncated by chars]\n")
-		runes := []rune(result)
-		budget := maxInt(0, maxChars-len(marker))
+	if maxChars > 0 && utf16CodeUnitLen(result) > maxChars {
+		marker := "\n[rtk:truncated by chars]\n"
+		budget := maxInt(0, maxChars-utf16CodeUnitLen(marker))
 		if budget == 0 {
-			return string(marker[:minInt(len(marker), maxChars)]), true
+			return utf16CodeUnitSlice(marker, 0, maxChars), true
 		}
-		headChars := int(float64(budget) * 0.55)
-		if budget-headChars > 0 && float64(budget)*0.55 > float64(headChars) {
-			headChars++
-		}
+		headChars := ceilPercent(budget, 55)
 		tailChars := budget - headChars
-		result = string(runes[:minInt(headChars, len(runes))]) + string(marker)
-		if tailChars > 0 && len(runes) > tailChars {
-			result += string(runes[len(runes)-tailChars:])
+		original := result
+		result = utf16CodeUnitSlice(original, 0, headChars) + marker
+		if tailChars > 0 {
+			result += utf16CodeUnitTail(original, tailChars)
 		}
-		if len([]rune(result)) > maxChars {
-			result = string([]rune(result)[:maxChars])
+		if utf16CodeUnitLen(result) > maxChars {
+			result = utf16CodeUnitSlice(result, 0, maxChars)
 		}
 	}
 	return result, true
+}
+
+func utf16CodeUnitLen(text string) int {
+	return len(utf16.Encode([]rune(text)))
+}
+
+func utf16CodeUnitSlice(text string, start int, end int) string {
+	units := utf16.Encode([]rune(text))
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if start > len(units) {
+		start = len(units)
+	}
+	if end > len(units) {
+		end = len(units)
+	}
+	return string(utf16.Decode(units[start:end]))
+}
+
+func utf16CodeUnitTail(text string, count int) string {
+	if count <= 0 {
+		return ""
+	}
+	units := utf16.Encode([]rune(text))
+	start := maxInt(0, len(units)-count)
+	return string(utf16.Decode(units[start:]))
+}
+
+func ceilPercent(value int, percent int) int {
+	if value <= 0 || percent <= 0 {
+		return 0
+	}
+	return (value*percent + 99) / 100
 }
 
 func normalizedMaxLines(value int) int {

@@ -540,6 +540,28 @@ func TestOmniRouteRTKIntensityControlsTruncateWindow(t *testing.T) {
 	require.Equal(t, 24, tail)
 }
 
+func TestOmniRouteRTKSmartTruncateASCIICharParity(t *testing.T) {
+	input := strings.Repeat("a", 100)
+
+	result, truncated := smartTruncateWithPriority(input, 0, 40, 20, 20, nil)
+
+	require.True(t, truncated)
+	require.Equal(t, "aaaaaaaa\n[rtk:truncated by chars]\nlines]", result)
+	require.Equal(t, 40, utf16CodeUnitLen(result))
+}
+
+func TestOmniRouteRTKSmartTruncateUsesUTF16CodeUnitLimit(t *testing.T) {
+	input := strings.Repeat("😀", 30)
+
+	result, truncated := smartTruncateWithPriority(input, 0, 45, 20, 20, nil)
+
+	require.True(t, truncated)
+	require.Contains(t, result, "[rtk:truncated by chars]")
+	require.LessOrEqual(t, utf16CodeUnitLen(result), 45)
+	require.Greater(t, utf16CodeUnitLen(input), 45)
+	require.LessOrEqual(t, len([]rune(input)), 45)
+}
+
 func TestRTKRawOutputRetentionDefaultNever(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("DATA_DIR", dataDir)
