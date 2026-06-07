@@ -174,6 +174,14 @@ const FooterBar = () => {
                   >
                     CoAI
                   </a>
+                  <a
+                    href='https://www.gpt-load.com/'
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='!text-semi-color-text-1'
+                  >
+                    GPT-Load
+                  </a>
                 </div>
               </div>
             </div>

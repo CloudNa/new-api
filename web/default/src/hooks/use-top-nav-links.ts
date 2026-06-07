@@ -74,6 +74,7 @@ export function useTopNavLinks(): TopNavLink[] {
   }
 
   if (isRoot) {
+    links.push({ title: 'GPT-Load', href: '/gl', external: true })
     links.push({ title: 'CLIProxyAPI', href: '/cpa', external: true })
   }
 

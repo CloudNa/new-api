@@ -51,6 +51,7 @@ type glartStackSmokeResult struct {
 	Status                 *int   `json:"status,omitempty"`
 	ContentType            string `json:"content_type,omitempty"`
 	NewAPIHealthy          bool   `json:"new_api_healthy"`
+	GPTLoadHealthy         bool   `json:"gpt_load_healthy"`
 	CLIProxyAPIReady       bool   `json:"cliproxyapi_ready"`
 	SidecarBridgeSourcesOK bool   `json:"sidecar_bridge_sources_ok"`
 	ProxyTestChatChecked   bool   `json:"proxy_test_chat_checked"`
@@ -89,11 +90,13 @@ type systemUpdateRollbackRequest struct {
 var validSystemUpdateComponents = map[string]bool{
 	"all":         true,
 	"new-api":     true,
+	"gpt-load":    true,
 	"cliproxyapi": true,
 }
 
 var validSystemRollbackComponents = map[string]bool{
 	"new-api":     true,
+	"gpt-load":    true,
 	"cliproxyapi": true,
 }
 

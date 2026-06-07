@@ -67,7 +67,7 @@ func TestMatchOutputPolicyPrefersSpecificPolicy(t *testing.T) {
 		Group:       DefaultObserveGroup,
 		ModelName:   "gemini-2.5-flash",
 		ChannelID:   7,
-		ChannelName: "cliproxyapi",
+		ChannelName: "gpt-load",
 	})
 
 	require.True(t, ok)

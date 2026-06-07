@@ -34,7 +34,7 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 
 	require.NoError(t, DB.Create(&Channel{
 		Id:     501,
-		Name:   "cliproxyapi",
+		Name:   "gpt-load",
 		Key:    "test-key",
 		Group:  profit.DefaultObserveGroup,
 		Models: "gpt-4o-mini",
@@ -97,7 +97,7 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyRouteBestExpectedMarginUSD: 0.88,
 		profit.KeyRouteWouldPreferDifferent:  true,
 		profit.KeyRouteCandidates: []profit.RouteDecisionCandidate{
-			{ChannelID: 501, ChannelName: "cliproxyapi", Selected: true, MarginRank: 2},
+			{ChannelID: 501, ChannelName: "gpt-load", Selected: true, MarginRank: 2},
 			{ChannelID: 502, ChannelName: "cheap", WouldPrefer: true, MarginRank: 1},
 		},
 		profit.KeyOutputPolicyMode:               profit.ModeCap,
@@ -153,7 +153,7 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.Equal(t, int64(1), total)
 	require.Len(t, events, 1)
 	require.Equal(t, "alice", events[0].Username)
-	require.Equal(t, "cliproxyapi", events[0].ChannelName)
+	require.Equal(t, "gpt-load", events[0].ChannelName)
 	require.Equal(t, int64(100), events[0].BillablePromptTokens)
 	require.Equal(t, int64(90), events[0].UpstreamActualPromptTokens)
 	require.Nil(t, events[0].EstimatedUpstreamCostUSD)

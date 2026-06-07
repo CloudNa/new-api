@@ -51,10 +51,12 @@ import { SettingsSection } from '../components/settings-section'
 const UPDATE_COMPONENTS: SystemUpdateComponent[] = [
   'all',
   'new-api',
+  'gpt-load',
   'cliproxyapi',
 ]
 const ROLLBACK_COMPONENTS: SystemRollbackComponent[] = [
   'new-api',
+  'gpt-load',
   'cliproxyapi',
 ]
 
@@ -90,6 +92,7 @@ export function UpdateCheckerSection({
     Record<SystemRollbackComponent, SystemUpdateBackup[]>
   >({
     'new-api': [],
+    'gpt-load': [],
     cliproxyapi: [],
   })
   const [precheck, setPrecheck] = useState<SystemUpdatePrecheck | null>(null)
@@ -407,7 +410,7 @@ export function UpdateCheckerSection({
                 )
               : pendingOperation?.component === 'all'
                 ? t(
-                    'This will update new-api and CLIProxyAPI together while preserving separate backups for each component.'
+                    'This will update new-api, GPT-Load, and CLIProxyAPI together while preserving separate backups for each component.'
                   )
                 : t(
                     'This will update only the selected component and create a component-specific rollback point.'
@@ -509,6 +512,10 @@ export function UpdateCheckerSection({
               <HealthRow
                 label={t('new-api health')}
                 ok={smoke.new_api_healthy}
+              />
+              <HealthRow
+                label={t('GPT-Load health')}
+                ok={smoke.gpt_load_healthy}
               />
               <HealthRow
                 label={t('CLIProxyAPI health')}
@@ -616,6 +623,8 @@ function getSystemUpdateComponentLabel(
       return t('Combined stack')
     case 'new-api':
       return 'new-api'
+    case 'gpt-load':
+      return 'GPT-Load'
     case 'cliproxyapi':
       return 'CLIProxyAPI'
   }

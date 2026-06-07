@@ -21,8 +21,8 @@ COMPOSE_FILE = os.environ.get("GLART_STACK_COMPOSE_FILE", "compose.yml")
 SCRIPT = ROOT / "deploy/glart-stack/scripts/update-glart-stack.sh"
 LOG_LIMIT = 200
 BACKUP_DIR = Path(os.environ.get("GLART_STACK_BACKUP_DIR", str(COMPOSE_DIR / "runtime/backups")))
-VALID_UPDATE_COMPONENTS = {"all", "new-api", "cliproxyapi"}
-VALID_ROLLBACK_COMPONENTS = {"new-api", "cliproxyapi"}
+VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi"}
+VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi"}
 
 state_lock = threading.Lock()
 state = {
@@ -210,6 +210,7 @@ def smoke() -> dict:
         "status": None,
         "content_type": "",
         "new_api_healthy": False,
+        "gpt_load_healthy": False,
         "cliproxyapi_ready": False,
         "sidecar_bridge_sources_ok": False,
         "proxy_test_chat_checked": False,
@@ -218,12 +219,14 @@ def smoke() -> dict:
     }
     try:
         result["new_api_healthy"], result["status"], result["content_type"] = http_status_ok("http://new-api:3000/api/status")
+        result["gpt_load_healthy"] = http_ok("http://gpt-load:3001/health")
         result["cliproxyapi_ready"] = http_ok("http://cliproxyapi:8317/management.html")
         result["sidecar_bridge_sources_ok"] = custom_bridge_sources_ok()
         result["proxy_test_chat_checked"], result["proxy_test_chat_ok"], result["proxy_test_chat_skipped"] = proxy_test_chat_smoke()
         result["ok"] = all(
             [
                 result["new_api_healthy"],
+                result["gpt_load_healthy"],
                 result["cliproxyapi_ready"],
                 result["sidecar_bridge_sources_ok"],
                 result["proxy_test_chat_ok"] or result["proxy_test_chat_skipped"],
@@ -254,8 +257,11 @@ def custom_bridge_sources_ok() -> bool:
         controller = (ROOT / "controller/sidecar_proxy.go").read_text(encoding="utf-8")
         return all(
             [
+                '"/gl"' in web_router,
                 '"/cpa"' in web_router,
+                "GPT-Load" in top_nav,
                 "CLIProxyAPI" in top_nav,
+                "GPT_LOAD_INTERNAL_URL" in controller,
                 "CLIPROXYAPI_INTERNAL_URL" in controller,
             ]
         )

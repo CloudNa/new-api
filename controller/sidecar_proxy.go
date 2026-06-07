@@ -8,20 +8,27 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 const (
-	cpaBridgeManagementKey = "SIDECAR_CLIPROXYAPI_MANAGEMENT_KEY"
-	cpaBridgeBrowserToken  = "glart-new-api-cliproxyapi-bridge"
+	gptLoadBridgeAuthKey      = "SIDECAR_GPT_LOAD_AUTH_KEY"
+	gptLoadBridgeBrowserToken = "glart-new-api-gpt-load-bridge"
+	cpaBridgeManagementKey    = "SIDECAR_CLIPROXYAPI_MANAGEMENT_KEY"
+	cpaBridgeBrowserToken     = "glart-new-api-cliproxyapi-bridge"
 )
 
 type sidecarProxyTarget struct {
 	baseURL *url.URL
 	prefix  string
 	service string
+}
+
+func GPTLoadProxy(c *gin.Context) {
+	proxySidecarByService(c, "gpt-load", "/gl")
 }
 
 func CLIProxyAPIProxy(c *gin.Context) {
@@ -56,6 +63,8 @@ func getSidecarProxyTarget(service string, prefix string) (sidecarProxyTarget, b
 
 func sidecarProxyBaseURL(service string) string {
 	switch service {
+	case "gpt-load":
+		return envOrDefault("GPT_LOAD_INTERNAL_URL", "http://gpt-load:3001")
 	case "cliproxyapi":
 		return envOrDefault("CLIPROXYAPI_INTERNAL_URL", "http://cliproxyapi:8317")
 	default:
@@ -130,6 +139,20 @@ func normalizeSidecarRequestPath(requestPath string, target sidecarProxyTarget) 
 		return "/management.html"
 	}
 
+	if target.service == "gpt-load" {
+		duplicatedPrefix := "/api" + target.prefix
+		if requestPath == duplicatedPrefix {
+			return "/api"
+		}
+		if strings.HasPrefix(requestPath, duplicatedPrefix+"/") {
+			rest := strings.TrimPrefix(requestPath, duplicatedPrefix+"/")
+			if rest == "api" || strings.HasPrefix(rest, "api/") {
+				return "/" + rest
+			}
+			return "/api/" + rest
+		}
+	}
+
 	return requestPath
 }
 
@@ -158,6 +181,14 @@ func filterSidecarRequestCookies(cookieHeader string) string {
 
 func applySidecarBridgeAuth(req *http.Request, target sidecarProxyTarget) {
 	switch target.service {
+	case "gpt-load":
+		authKey := strings.TrimSpace(os.Getenv(gptLoadBridgeAuthKey))
+		if authKey == "" {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+authKey)
+		req.Header.Set("X-Auth-Token", authKey)
+		replaceBridgeQueryToken(req, authKey, gptLoadBridgeBrowserToken)
 	case "cliproxyapi":
 		managementKey := strings.TrimSpace(os.Getenv(cpaBridgeManagementKey))
 		if managementKey == "" {
@@ -167,6 +198,20 @@ func applySidecarBridgeAuth(req *http.Request, target sidecarProxyTarget) {
 			strings.HasPrefix(req.URL.Path, "/v0/management") {
 			req.Header.Set("Authorization", "Bearer "+managementKey)
 		}
+	}
+}
+
+func replaceBridgeQueryToken(req *http.Request, realToken string, browserToken string) {
+	query := req.URL.Query()
+	updated := false
+	for _, key := range []string{"key", "auth_key", "token"} {
+		if query.Get(key) == browserToken {
+			query.Set(key, realToken)
+			updated = true
+		}
+	}
+	if updated {
+		req.URL.RawQuery = query.Encode()
 	}
 }
 
@@ -246,6 +291,12 @@ func shouldPassThroughSidecarBody(requestPath string, target sidecarProxyTarget)
 	}
 
 	switch target.service {
+	case "gpt-load":
+		if !strings.HasPrefix(normalizedPath, "/assets/") {
+			return false
+		}
+		name := normalizedPath[strings.LastIndex(normalizedPath, "/")+1:]
+		return !strings.HasPrefix(name, "index-")
 	case "cliproxyapi":
 		return strings.HasSuffix(normalizedPath, ".svg") ||
 			strings.HasSuffix(normalizedPath, ".png") ||
@@ -281,12 +332,19 @@ func sidecarBodyCacheControl(contentType string, statusCode int) string {
 	return "no-store"
 }
 
+var gptLoadHistoryBasePattern = regexp.MustCompile(`history:([A-Za-z_$][A-Za-z0-9_$]*)\("/"\)`)
+
 func rewriteSidecarRuntimeBody(body []byte, contentType string, target sidecarProxyTarget) []byte {
 	if !strings.Contains(strings.ToLower(contentType), "javascript") {
 		return body
 	}
 
-	return body
+	switch target.service {
+	case "gpt-load":
+		return gptLoadHistoryBasePattern.ReplaceAll(body, []byte(`history:${1}("`+target.prefix+`/")`))
+	default:
+		return body
+	}
 }
 
 func replaceSidecarAbsolutePaths(body []byte, target sidecarProxyTarget) []byte {
@@ -315,6 +373,9 @@ func replaceSidecarAbsolutePaths(body []byte, target sidecarProxyTarget) []byte 
 		rewritten = rewriteSidecarPathAfterMarker(rewritten, marker, prefix, false)
 	}
 
+	if target.service == "gpt-load" {
+		rewritten = rewriteGPTLoadAPIRootPath(rewritten, prefix)
+	}
 	rewritten = rewriteRelativeAssetDeps(rewritten, prefix)
 	return []byte(rewritten)
 }
@@ -357,12 +418,24 @@ func rewriteRelativeAssetDeps(value string, prefix string) string {
 	return value
 }
 
+func rewriteGPTLoadAPIRootPath(value string, prefix string) string {
+	for _, quote := range []string{`"`, `'`, "`"} {
+		value = strings.ReplaceAll(value, quote+"/api"+quote, quote+prefix+"/api"+quote)
+	}
+	return value
+}
+
 func injectSidecarBridgeState(body []byte, contentType string, target sidecarProxyTarget) []byte {
 	if !strings.Contains(strings.ToLower(contentType), "text/html") {
 		return body
 	}
 
 	switch target.service {
+	case "gpt-load":
+		if strings.TrimSpace(os.Getenv(gptLoadBridgeAuthKey)) == "" {
+			return body
+		}
+		return injectHTMLHeadScript(body, `<script>try{window.localStorage.setItem("authKey","`+gptLoadBridgeBrowserToken+`")}catch(e){}</script>`)
 	case "cliproxyapi":
 		if strings.TrimSpace(os.Getenv(cpaBridgeManagementKey)) == "" {
 			return body
