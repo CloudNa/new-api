@@ -15,10 +15,14 @@ func resetProfitTestData(t *testing.T) {
 	require.NoError(t, DB.Exec("DELETE FROM logs").Error)
 	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
 	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
+	require.NoError(t, DB.Exec("DELETE FROM user_subscriptions").Error)
+	require.NoError(t, DB.Exec("DELETE FROM subscription_plans").Error)
 	t.Cleanup(func() {
 		DB.Exec("DELETE FROM logs")
 		DB.Exec("DELETE FROM channels")
 		DB.Exec("DELETE FROM abilities")
+		DB.Exec("DELETE FROM user_subscriptions")
+		DB.Exec("DELETE FROM subscription_plans")
 	})
 }
 
@@ -654,6 +658,100 @@ func TestGetProfitAnalyticsGuardrailRecommendationsCoverObservedRisks(t *testing
 	require.Equal(t, "review_long_context_premium", profitGuardrailRecommendationByID(t, analytics, "long-context-premium").Action)
 	require.Equal(t, "review_retry_budget", profitGuardrailRecommendationByID(t, analytics, "retry-budget").Action)
 	require.Equal(t, "loss_making_requests_observed", profitGuardrailRecommendationByID(t, analytics, "margin-risk").Reason)
+}
+
+func TestGetProfitAnalyticsAddsSubscriptionUnusedQuotaReport(t *testing.T) {
+	resetProfitTestData(t)
+
+	now := common.GetTimestamp()
+	require.NoError(t, DB.Create(&SubscriptionPlan{
+		Id:          901,
+		Title:       "Team monthly",
+		PriceAmount: 29,
+		Currency:    "USD",
+		TotalAmount: 1000,
+	}).Error)
+	require.NoError(t, DB.Create(&SubscriptionPlan{
+		Id:          902,
+		Title:       "Unlimited trial",
+		PriceAmount: 9,
+		Currency:    "USD",
+		TotalAmount: 0,
+	}).Error)
+	require.NoError(t, DB.Create(&[]UserSubscription{
+		{
+			UserId:      11,
+			PlanId:      901,
+			AmountTotal: 1000,
+			AmountUsed:  250,
+			StartTime:   now - 60,
+			EndTime:     now + 3600,
+			Status:      "active",
+		},
+		{
+			UserId:      12,
+			PlanId:      901,
+			AmountTotal: 1000,
+			AmountUsed:  1200,
+			StartTime:   now - 60,
+			EndTime:     now + 3600,
+			Status:      "active",
+		},
+		{
+			UserId:      11,
+			PlanId:      902,
+			AmountTotal: 0,
+			AmountUsed:  0,
+			StartTime:   now - 60,
+			EndTime:     now + 3600,
+			Status:      "active",
+		},
+		{
+			UserId:      13,
+			PlanId:      901,
+			AmountTotal: 1000,
+			AmountUsed:  100,
+			StartTime:   now - 3600,
+			EndTime:     now - 60,
+			Status:      "active",
+		},
+		{
+			UserId:      14,
+			PlanId:      901,
+			AmountTotal: 1000,
+			AmountUsed:  100,
+			StartTime:   now - 60,
+			EndTime:     now + 3600,
+			Status:      "cancelled",
+		},
+	}).Error)
+
+	report, err := GetProfitSubscriptionUnusedQuotaPlans(10)
+	require.NoError(t, err)
+	require.Len(t, report, 2)
+	require.Equal(t, 901, report[0].PlanID)
+	require.Equal(t, "Team monthly", report[0].PlanTitle)
+	require.Equal(t, int64(2), report[0].ActiveSubscriptionCount)
+	require.Equal(t, int64(2), report[0].ActiveUserCount)
+	require.Equal(t, int64(2000), report[0].PaidQuota)
+	require.Equal(t, int64(1450), report[0].UsedQuota)
+	require.Equal(t, int64(750), report[0].UnusedQuota)
+	require.Equal(t, int64(200), report[0].OverusedQuota)
+	require.InDelta(t, 37.5, report[0].UnusedQuotaPct, 0.0001)
+	require.Equal(t, 902, report[1].PlanID)
+	require.Equal(t, int64(1), report[1].UnlimitedSubscriptionCount)
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+	require.NoError(t, err)
+	require.Equal(t, int64(3), analytics.SubscriptionActiveCount)
+	require.Equal(t, int64(2), analytics.SubscriptionActiveUserCount)
+	require.Equal(t, int64(1), analytics.SubscriptionUnlimitedCount)
+	require.Equal(t, int64(2000), analytics.SubscriptionPaidQuota)
+	require.Equal(t, int64(1450), analytics.SubscriptionUsedQuota)
+	require.Equal(t, int64(750), analytics.SubscriptionUnusedQuota)
+	require.Equal(t, int64(200), analytics.SubscriptionOverusedQuota)
+	require.InDelta(t, 37.5, analytics.SubscriptionUnusedQuotaPct, 0.0001)
+	require.Len(t, analytics.SubscriptionUnusedQuotaPlans, 2)
 }
 
 func profitGuardrailRecommendationByID(t *testing.T, analytics ProfitAnalytics, id string) ProfitGuardrailRecommendation {

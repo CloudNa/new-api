@@ -640,6 +640,22 @@ export type ProfitGuardrailRecommendation = {
   template_json?: string
 }
 
+export type ProfitSubscriptionQuotaPlan = {
+  plan_id: number
+  plan_title: string
+  plan_price_amount: number
+  plan_currency?: string
+  active_subscription_count: number
+  active_user_count: number
+  unlimited_subscription_count: number
+  paid_quota: number
+  used_quota: number
+  unused_quota: number
+  overused_quota: number
+  unused_quota_usd: number
+  unused_quota_pct: number
+}
+
 export type ProfitAnalytics = {
   request_count: number
   scanned_events: number
@@ -701,6 +717,16 @@ export type ProfitAnalytics = {
   profit_retry_attempt_count?: number
   profit_retry_budget_would_skip_count?: number
   profit_retry_budget_live_enforced_count?: number
+  subscription_active_count?: number
+  subscription_active_user_count?: number
+  subscription_unlimited_count?: number
+  subscription_paid_quota?: number
+  subscription_used_quota?: number
+  subscription_unused_quota?: number
+  subscription_overused_quota?: number
+  subscription_unused_quota_usd?: number
+  subscription_unused_quota_pct?: number
+  subscription_unused_quota_plans?: ProfitSubscriptionQuotaPlan[]
 }
 
 export type ProfitRetryAttempt = {

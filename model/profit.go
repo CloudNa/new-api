@@ -15,6 +15,7 @@ import (
 const profitAnalyticsScanLimit = 20000
 const outputPolicyRecommendationMinSamples = 20
 const outputPolicyRecommendationTokenStep int64 = 64
+const profitSubscriptionPlanReportLimit = 10
 
 const (
 	profitGuardrailActionNone                 = "none"
@@ -229,6 +230,16 @@ type ProfitAnalytics struct {
 	RetryAttemptCount                    int64                           `json:"profit_retry_attempt_count"`
 	RetryBudgetWouldSkipCount            int64                           `json:"profit_retry_budget_would_skip_count"`
 	RetryBudgetLiveEnforcedCount         int64                           `json:"profit_retry_budget_live_enforced_count"`
+	SubscriptionActiveCount              int64                           `json:"subscription_active_count"`
+	SubscriptionActiveUserCount          int64                           `json:"subscription_active_user_count"`
+	SubscriptionUnlimitedCount           int64                           `json:"subscription_unlimited_count"`
+	SubscriptionPaidQuota                int64                           `json:"subscription_paid_quota"`
+	SubscriptionUsedQuota                int64                           `json:"subscription_used_quota"`
+	SubscriptionUnusedQuota              int64                           `json:"subscription_unused_quota"`
+	SubscriptionOverusedQuota            int64                           `json:"subscription_overused_quota"`
+	SubscriptionUnusedQuotaUSD           float64                         `json:"subscription_unused_quota_usd"`
+	SubscriptionUnusedQuotaPct           float64                         `json:"subscription_unused_quota_pct"`
+	SubscriptionUnusedQuotaPlans         []ProfitSubscriptionQuotaPlan   `json:"subscription_unused_quota_plans,omitempty"`
 }
 
 type ProfitGuardrailRecommendation struct {
@@ -242,6 +253,34 @@ type ProfitGuardrailRecommendation struct {
 	Notes                []string             `json:"notes,omitempty"`
 	OutputPolicyTemplate *profit.OutputPolicy `json:"output_policy_template,omitempty"`
 	TemplateJSON         string               `json:"template_json,omitempty"`
+}
+
+type ProfitSubscriptionQuotaPlan struct {
+	PlanID                     int     `json:"plan_id"`
+	PlanTitle                  string  `json:"plan_title"`
+	PlanPriceAmount            float64 `json:"plan_price_amount"`
+	PlanCurrency               string  `json:"plan_currency,omitempty"`
+	ActiveSubscriptionCount    int64   `json:"active_subscription_count"`
+	ActiveUserCount            int64   `json:"active_user_count"`
+	UnlimitedSubscriptionCount int64   `json:"unlimited_subscription_count"`
+	PaidQuota                  int64   `json:"paid_quota"`
+	UsedQuota                  int64   `json:"used_quota"`
+	UnusedQuota                int64   `json:"unused_quota"`
+	OverusedQuota              int64   `json:"overused_quota"`
+	UnusedQuotaUSD             float64 `json:"unused_quota_usd"`
+	UnusedQuotaPct             float64 `json:"unused_quota_pct"`
+}
+
+type profitSubscriptionQuotaSummary struct {
+	ActiveSubscriptionCount    int64
+	ActiveUserCount            int64
+	UnlimitedSubscriptionCount int64
+	PaidQuota                  int64
+	UsedQuota                  int64
+	UnusedQuota                int64
+	OverusedQuota              int64
+	UnusedQuotaUSD             float64
+	UnusedQuotaPct             float64
 }
 
 func GetProfitEvents(filter ProfitLogFilter, startIdx int, num int) (events []*ProfitEvent, total int64, err error) {
@@ -453,8 +492,152 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 	applyProfitGuardrailRecommendation(&analytics)
 	applyProfitGuardrailPolicyTemplate(&analytics, filter)
 	applyProfitGuardrailRecommendations(&analytics)
+	if err = attachProfitSubscriptionAnalytics(&analytics); err != nil {
+		return analytics, err
+	}
 
 	return analytics, nil
+}
+
+func attachProfitSubscriptionAnalytics(analytics *ProfitAnalytics) error {
+	if analytics == nil {
+		return nil
+	}
+	plans, summary, err := buildProfitSubscriptionUnusedQuotaReport(profitSubscriptionPlanReportLimit)
+	if err != nil {
+		return err
+	}
+	analytics.SubscriptionUnusedQuotaPlans = plans
+	analytics.SubscriptionActiveCount = summary.ActiveSubscriptionCount
+	analytics.SubscriptionActiveUserCount = summary.ActiveUserCount
+	analytics.SubscriptionUnlimitedCount = summary.UnlimitedSubscriptionCount
+	analytics.SubscriptionPaidQuota = summary.PaidQuota
+	analytics.SubscriptionUsedQuota = summary.UsedQuota
+	analytics.SubscriptionUnusedQuota = summary.UnusedQuota
+	analytics.SubscriptionOverusedQuota = summary.OverusedQuota
+	analytics.SubscriptionUnusedQuotaUSD = summary.UnusedQuotaUSD
+	analytics.SubscriptionUnusedQuotaPct = summary.UnusedQuotaPct
+	return nil
+}
+
+func GetProfitSubscriptionUnusedQuotaPlans(limit int) ([]ProfitSubscriptionQuotaPlan, error) {
+	plans, _, err := buildProfitSubscriptionUnusedQuotaReport(limit)
+	return plans, err
+}
+
+func buildProfitSubscriptionUnusedQuotaReport(limit int) ([]ProfitSubscriptionQuotaPlan, profitSubscriptionQuotaSummary, error) {
+	var summary profitSubscriptionQuotaSummary
+	if limit <= 0 {
+		limit = profitSubscriptionPlanReportLimit
+	}
+	now := common.GetTimestamp()
+	var subs []UserSubscription
+	if err := DB.Where("status = ? AND end_time > ?", "active", now).Find(&subs).Error; err != nil {
+		return nil, summary, err
+	}
+	if len(subs) == 0 {
+		return []ProfitSubscriptionQuotaPlan{}, summary, nil
+	}
+
+	planIDs := make([]int, 0)
+	seenPlanIDs := map[int]struct{}{}
+	for _, sub := range subs {
+		if sub.PlanId <= 0 {
+			continue
+		}
+		if _, ok := seenPlanIDs[sub.PlanId]; ok {
+			continue
+		}
+		seenPlanIDs[sub.PlanId] = struct{}{}
+		planIDs = append(planIDs, sub.PlanId)
+	}
+
+	plansByID := map[int]SubscriptionPlan{}
+	if len(planIDs) > 0 {
+		var plans []SubscriptionPlan
+		if err := DB.Where("id IN ?", planIDs).Find(&plans).Error; err != nil {
+			return nil, summary, err
+		}
+		for _, plan := range plans {
+			plansByID[plan.Id] = plan
+		}
+	}
+
+	reportByPlan := map[int]*ProfitSubscriptionQuotaPlan{}
+	usersByPlan := map[int]map[int]struct{}{}
+	globalUsers := map[int]struct{}{}
+	for _, sub := range subs {
+		planID := sub.PlanId
+		item, ok := reportByPlan[planID]
+		if !ok {
+			plan := plansByID[planID]
+			title := strings.TrimSpace(plan.Title)
+			if title == "" {
+				title = "Plan #" + strconv.Itoa(planID)
+			}
+			item = &ProfitSubscriptionQuotaPlan{
+				PlanID:          planID,
+				PlanTitle:       title,
+				PlanPriceAmount: plan.PriceAmount,
+				PlanCurrency:    strings.TrimSpace(plan.Currency),
+			}
+			reportByPlan[planID] = item
+			usersByPlan[planID] = map[int]struct{}{}
+		}
+		item.ActiveSubscriptionCount++
+		summary.ActiveSubscriptionCount++
+		if sub.UserId > 0 {
+			usersByPlan[planID][sub.UserId] = struct{}{}
+			globalUsers[sub.UserId] = struct{}{}
+		}
+		if sub.AmountTotal <= 0 {
+			item.UnlimitedSubscriptionCount++
+			summary.UnlimitedSubscriptionCount++
+			continue
+		}
+		paid := sub.AmountTotal
+		used := maxInt64(0, sub.AmountUsed)
+		unused := paid - used
+		if unused < 0 {
+			item.OverusedQuota += -unused
+			summary.OverusedQuota += -unused
+			unused = 0
+		}
+		item.PaidQuota += paid
+		item.UsedQuota += used
+		item.UnusedQuota += unused
+		summary.PaidQuota += paid
+		summary.UsedQuota += used
+		summary.UnusedQuota += unused
+	}
+
+	out := make([]ProfitSubscriptionQuotaPlan, 0, len(reportByPlan))
+	for planID, item := range reportByPlan {
+		item.ActiveUserCount = int64(len(usersByPlan[planID]))
+		item.UnusedQuotaUSD = quotaUnitsToProfitUSD(item.UnusedQuota)
+		if item.PaidQuota > 0 {
+			item.UnusedQuotaPct = float64(item.UnusedQuota) / float64(item.PaidQuota) * 100
+		}
+		out = append(out, *item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].UnusedQuota == out[j].UnusedQuota {
+			if out[i].ActiveSubscriptionCount == out[j].ActiveSubscriptionCount {
+				return out[i].PlanID < out[j].PlanID
+			}
+			return out[i].ActiveSubscriptionCount > out[j].ActiveSubscriptionCount
+		}
+		return out[i].UnusedQuota > out[j].UnusedQuota
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	summary.ActiveUserCount = int64(len(globalUsers))
+	summary.UnusedQuotaUSD = quotaUnitsToProfitUSD(summary.UnusedQuota)
+	if summary.PaidQuota > 0 {
+		summary.UnusedQuotaPct = float64(summary.UnusedQuota) / float64(summary.PaidQuota) * 100
+	}
+	return out, summary, nil
 }
 
 func applyProfitGuardrailRecommendation(analytics *ProfitAnalytics) {
@@ -1086,4 +1269,18 @@ func numericValue(value interface{}) (float64, bool) {
 
 func floatPtr(value float64) *float64 {
 	return &value
+}
+
+func maxInt64(a int64, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func quotaUnitsToProfitUSD(quota int64) float64 {
+	if quota <= 0 || common.QuotaPerUnit <= 0 {
+		return 0
+	}
+	return float64(quota) / common.QuotaPerUnit
 }

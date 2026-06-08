@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { formatQuota as formatQuotaValue } from '@/lib/format'
 import {
   Select,
   SelectContent,
@@ -680,6 +681,11 @@ function formatUSD(value: number | null | undefined): string {
   return `$${value.toFixed(6)}`
 }
 
+function formatQuotaAmount(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '-'
+  return formatQuotaValue(value)
+}
+
 function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '0'
   return value.toLocaleString()
@@ -1088,6 +1094,27 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
       '长上下文建议增收',
       formatUSD(analytics?.long_context_suggested_extra_revenue_usd),
     ],
+    ['订阅活跃数', formatNumber(analytics?.subscription_active_count)],
+    [
+      '订阅活跃用户',
+      formatNumber(analytics?.subscription_active_user_count),
+    ],
+    [
+      '订阅未使用额度',
+      formatQuotaAmount(analytics?.subscription_unused_quota),
+    ],
+    [
+      '订阅未使用率',
+      formatPercent(analytics?.subscription_unused_quota_pct),
+    ],
+    [
+      '订阅超用额度',
+      formatQuotaAmount(analytics?.subscription_overused_quota),
+    ],
+    [
+      '无限额度订阅',
+      formatNumber(analytics?.subscription_unlimited_count),
+    ],
   ]
 
   return (
@@ -1100,6 +1127,93 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
           <div className='mt-1 truncate text-sm font-semibold'>{value}</div>
         </div>
       ))}
+    </div>
+  )
+}
+
+function SubscriptionUnusedQuotaTable({
+  analytics,
+}: {
+  analytics: ProfitAnalytics | null
+}) {
+  const { t } = useTranslation()
+  const plans = analytics?.subscription_unused_quota_plans ?? []
+
+  return (
+    <div className='min-w-0 space-y-3'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
+        <div className='min-w-0'>
+          <h4 className='text-sm font-semibold'>{t('套餐未使用额度')}</h4>
+          <p className='text-muted-foreground text-xs'>
+            {t('平台已售但尚未消耗的活跃套餐额度。')}
+          </p>
+        </div>
+        <Badge variant='outline'>
+          {formatQuotaAmount(analytics?.subscription_unused_quota)}
+        </Badge>
+      </div>
+      {plans.length === 0 ? (
+        <div className='text-muted-foreground rounded-lg border border-dashed p-4 text-sm'>
+          {t('暂无活跃套餐额度')}
+        </div>
+      ) : (
+        <div className='overflow-x-auto rounded-lg border'>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('套餐')}</TableHead>
+                <TableHead>{t('订阅')}</TableHead>
+                <TableHead>{t('用户')}</TableHead>
+                <TableHead>{t('已售额度')}</TableHead>
+                <TableHead>{t('已用额度')}</TableHead>
+                <TableHead>{t('未使用额度')}</TableHead>
+                <TableHead>{t('未使用率')}</TableHead>
+                <TableHead>{t('超用')}</TableHead>
+                <TableHead>{t('无限额度')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {plans.map((plan) => (
+                <TableRow key={plan.plan_id}>
+                  <TableCell className='min-w-48'>
+                    <div className='flex min-w-0 flex-col gap-1'>
+                      <span className='truncate font-medium'>
+                        {plan.plan_title}
+                      </span>
+                      <span className='text-muted-foreground text-xs'>
+                        {plan.plan_currency
+                          ? `${plan.plan_currency} ${plan.plan_price_amount}`
+                          : plan.plan_price_amount}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {formatNumber(plan.active_subscription_count)}
+                  </TableCell>
+                  <TableCell>{formatNumber(plan.active_user_count)}</TableCell>
+                  <TableCell>{formatQuotaAmount(plan.paid_quota)}</TableCell>
+                  <TableCell>{formatQuotaAmount(plan.used_quota)}</TableCell>
+                  <TableCell>
+                    <div className='flex flex-col gap-1'>
+                      <span className='font-medium'>
+                        {formatQuotaAmount(plan.unused_quota)}
+                      </span>
+                      <span className='text-muted-foreground text-xs'>
+                        {formatUSD(plan.unused_quota_usd)}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{formatPercent(plan.unused_quota_pct)}</TableCell>
+                  <TableCell>{formatQuotaAmount(plan.overused_quota)}</TableCell>
+                  <TableCell>
+                    {formatNumber(plan.unlimited_subscription_count)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   )
 }
@@ -2342,6 +2456,7 @@ export function ProfitCenterSection() {
           </div>
         </div>
         <StatGrid analytics={analytics} />
+        <SubscriptionUnusedQuotaTable analytics={analytics} />
         <GuardrailPolicyTemplate
           analytics={analytics}
           onUseTemplate={useGuardrailPolicyTemplate}
