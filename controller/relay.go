@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/profit"
 	"github.com/QuantumNous/new-api/relay"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -122,6 +123,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	applyProfitModelAlias(c, relayInfo)
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -181,7 +183,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	retryParam := &service.RetryParam{
 		Ctx:        c,
 		TokenGroup: relayInfo.TokenGroup,
-		ModelName:  relayInfo.OriginModelName,
+		ModelName:  relayRoutingModelName(relayInfo),
 		Retry:      common.GetPointer(0),
 	}
 	relayInfo.RetryIndex = 0
@@ -260,6 +262,55 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func applyProfitModelAlias(c *gin.Context, info *relaycommon.RelayInfo) {
+	if c == nil || info == nil {
+		return
+	}
+	var decision profit.ModelAliasDecision
+	if raw, ok := c.Get(profit.ContextKeyModelAliasDecision); ok {
+		if typed, ok := raw.(profit.ModelAliasDecision); ok {
+			decision = typed
+		}
+	}
+	if !decision.Applied {
+		group := info.UsingGroup
+		if group == "" {
+			group = info.TokenGroup
+		}
+		decision = profit.ResolveModelAlias(profit.CurrentSettings(), profit.ModelAliasInput{
+			Group: group,
+			SKU:   info.OriginModelName,
+		})
+		if decision.Applied {
+			c.Set(profit.ContextKeyModelAliasDecision, decision)
+		}
+	}
+	if !decision.Applied {
+		return
+	}
+	info.ModelAliasApplied = true
+	info.ModelAliasMode = decision.Mode
+	info.ModelAliasID = decision.AliasID
+	info.ModelAliasName = decision.AliasName
+	info.ModelAliasSKU = decision.SKU
+	info.ModelAliasUpstreamModelName = decision.UpstreamModelName
+	info.ModelAliasTargetChannelID = decision.TargetChannelID
+	info.ModelAliasTargetChannelName = decision.TargetChannelName
+	info.ModelAliasCandidateCount = decision.CandidateCount
+	info.ModelAliasObserveOnly = decision.ObserveOnly
+	info.ModelAliasBypassReason = decision.BypassReason
+}
+
+func relayRoutingModelName(info *relaycommon.RelayInfo) string {
+	if info == nil {
+		return ""
+	}
+	if info.ModelAliasApplied && info.ModelAliasUpstreamModelName != "" {
+		return info.ModelAliasUpstreamModelName
+	}
+	return info.OriginModelName
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
@@ -528,7 +579,7 @@ func RelayTask(c *gin.Context) {
 	retryParam := &service.RetryParam{
 		Ctx:        c,
 		TokenGroup: relayInfo.TokenGroup,
-		ModelName:  relayInfo.OriginModelName,
+		ModelName:  relayRoutingModelName(relayInfo),
 		Retry:      common.GetPointer(0),
 	}
 

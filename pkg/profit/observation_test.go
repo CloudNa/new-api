@@ -84,6 +84,39 @@ func TestAppendObservationAddsCacheSavingsWhenObserved(t *testing.T) {
 	require.InDelta(t, 0.9, *(other[KeyCacheSavedUSD].(*float64)), 0.0000001)
 }
 
+func TestAppendObservationAddsModelAliasDecision(t *testing.T) {
+	withProfitOptionMap(t, map[string]string{})
+	other := map[string]interface{}{}
+
+	AppendObservation(other, ObservationInput{
+		Group:                "proxy-test",
+		ModelName:            "glart-fast",
+		BillablePromptTokens: 100,
+		UserQuota:            500000,
+		ModelAliasDecision: &ModelAliasDecision{
+			Applied:           true,
+			Mode:              ModeObserve,
+			AliasID:           "proxy-test-glart-fast",
+			AliasName:         "glart-fast",
+			SKU:               "glart-fast",
+			UpstreamModelName: "gpt-5.5",
+			TargetChannelID:   4,
+			TargetChannelName: "CLIProxyAPI proxy-test",
+			CandidateCount:    2,
+			ObserveOnly:       true,
+		},
+	})
+
+	require.Equal(t, true, other[KeyModelAliasApplied])
+	require.Equal(t, ModeObserve, other[KeyModelAliasMode])
+	require.Equal(t, "proxy-test-glart-fast", other[KeyModelAliasID])
+	require.Equal(t, "glart-fast", other[KeyModelAliasSKU])
+	require.Equal(t, "gpt-5.5", other[KeyModelAliasUpstreamModel])
+	require.Equal(t, 4, other[KeyModelAliasTargetChannelID])
+	require.Equal(t, 2, other[KeyModelAliasCandidateCount])
+	require.Equal(t, true, other[KeyModelAliasObserveOnly])
+}
+
 func TestAppendObservationAddsRouteDecision(t *testing.T) {
 	bestMargin := 0.42
 	other := map[string]interface{}{}

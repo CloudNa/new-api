@@ -155,6 +155,18 @@ type RelayInfo struct {
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string
 
+	ModelAliasApplied           bool
+	ModelAliasMode              string
+	ModelAliasID                string
+	ModelAliasName              string
+	ModelAliasSKU               string
+	ModelAliasUpstreamModelName string
+	ModelAliasTargetChannelID   int
+	ModelAliasTargetChannelName string
+	ModelAliasCandidateCount    int
+	ModelAliasObserveOnly       bool
+	ModelAliasBypassReason      string
+
 	// PromptCompressionStats records the root-only compression decision for
 	// this relay attempt. User-facing logs strip these fields before display.
 	PromptCompressionStats *promptcompress.Stats

@@ -96,6 +96,16 @@ const (
 	KeyRiskMinExpectedMarginPct       = "profit_risk_min_expected_margin_pct"
 	KeyRiskObserveOnly                = "profit_risk_observe_only"
 	KeyRiskLiveEnforced               = "profit_risk_live_enforced"
+	KeyModelAliasApplied              = "sku_alias_applied"
+	KeyModelAliasMode                 = "sku_alias_mode"
+	KeyModelAliasID                   = "sku_alias_id"
+	KeyModelAliasName                 = "sku_alias_name"
+	KeyModelAliasSKU                  = "sku_alias_sku"
+	KeyModelAliasUpstreamModel        = "sku_alias_upstream_model"
+	KeyModelAliasTargetChannelID      = "sku_alias_target_channel_id"
+	KeyModelAliasTargetChannelName    = "sku_alias_target_channel_name"
+	KeyModelAliasCandidateCount       = "sku_alias_candidate_count"
+	KeyModelAliasObserveOnly          = "sku_alias_observe_only"
 	CostStatusMissingCostProfile      = "missing_cost_profile"
 )
 
@@ -189,6 +199,16 @@ var userHiddenKeys = []string{
 	KeyRiskMinExpectedMarginPct,
 	KeyRiskObserveOnly,
 	KeyRiskLiveEnforced,
+	KeyModelAliasApplied,
+	KeyModelAliasMode,
+	KeyModelAliasID,
+	KeyModelAliasName,
+	KeyModelAliasSKU,
+	KeyModelAliasUpstreamModel,
+	KeyModelAliasTargetChannelID,
+	KeyModelAliasTargetChannelName,
+	KeyModelAliasCandidateCount,
+	KeyModelAliasObserveOnly,
 }
 
 type ObservationInput struct {
@@ -212,6 +232,7 @@ type ObservationInput struct {
 	RetryCostUSD                   *float64
 	RetryAttemptCount              int
 	RetryAttempts                  []RetryAttemptObservation
+	ModelAliasDecision             *ModelAliasDecision
 }
 
 func EnabledForGroup(group string) bool {
@@ -239,12 +260,16 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	}
 
 	revenueUSD := quotaToUSD(input.UserQuota)
+	costModelName := input.ModelName
+	if input.ModelAliasDecision != nil && input.ModelAliasDecision.Applied && input.ModelAliasDecision.UpstreamModelName != "" {
+		costModelName = input.ModelAliasDecision.UpstreamModelName
+	}
 	costEstimate := EstimateCost(CostInput{
 		Group:                    input.Group,
 		Provider:                 input.Provider,
 		ChannelID:                input.ChannelID,
 		ChannelName:              input.ChannelName,
-		ModelName:                input.ModelName,
+		ModelName:                costModelName,
 		BillablePromptTokens:     input.BillablePromptTokens,
 		BillableCompletionTokens: input.BillableCompletionTokens,
 		UpstreamPromptTokens:     input.UpstreamActualPromptTokens,
@@ -303,6 +328,7 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	if len(input.RetryAttempts) > 0 {
 		other[KeyRetryAttempts] = input.RetryAttempts
 	}
+	appendModelAliasDecision(other, input.ModelAliasDecision)
 	appendLongContextDecision(other, longContextDecision)
 	other[KeyExpectedCostUSD] = costEstimate.ExpectedCostUSD
 	other[KeyExpectedMarginUSD] = costEstimate.ExpectedMarginUSD
@@ -310,6 +336,32 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	appendRouteDecision(other, input.RouteDecision)
 	appendOutputPolicyDecision(other, input.OutputPolicyDecision)
 	appendRiskDecision(other, riskDecision)
+}
+
+func appendModelAliasDecision(other map[string]interface{}, decision *ModelAliasDecision) {
+	if other == nil || decision == nil || !decision.Applied {
+		return
+	}
+	other[KeyModelAliasApplied] = true
+	other[KeyModelAliasMode] = decision.Mode
+	if decision.AliasID != "" {
+		other[KeyModelAliasID] = decision.AliasID
+	}
+	if decision.AliasName != "" {
+		other[KeyModelAliasName] = decision.AliasName
+	}
+	if decision.SKU != "" {
+		other[KeyModelAliasSKU] = decision.SKU
+	}
+	if decision.UpstreamModelName != "" {
+		other[KeyModelAliasUpstreamModel] = decision.UpstreamModelName
+	}
+	other[KeyModelAliasTargetChannelID] = positiveInt(decision.TargetChannelID)
+	if decision.TargetChannelName != "" {
+		other[KeyModelAliasTargetChannelName] = decision.TargetChannelName
+	}
+	other[KeyModelAliasCandidateCount] = positiveInt(decision.CandidateCount)
+	other[KeyModelAliasObserveOnly] = decision.ObserveOnly
 }
 
 func appendLongContextDecision(other map[string]interface{}, decision *LongContextDecision) {

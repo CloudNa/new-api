@@ -39,6 +39,7 @@ type Settings struct {
 	CacheMode                    string              `json:"cache_mode"`
 	LongContextMode              string              `json:"long_context_mode"`
 	OutputCapMode                string              `json:"output_cap_mode"`
+	ModelAliasMode               string              `json:"model_alias_mode"`
 	RetryBudgetMode              string              `json:"retry_budget_mode"`
 	MaxRetryCostUSD              float64             `json:"max_retry_cost_usd,omitempty"`
 	RetryLowMarginSkip           bool                `json:"retry_low_margin_skip,omitempty"`
@@ -51,6 +52,7 @@ type Settings struct {
 	CostProfilesUsed             bool                `json:"cost_profiles_used"`
 	LongContextPolicies          []LongContextPolicy `json:"long_context_policies,omitempty"`
 	OutputPolicies               []OutputPolicy      `json:"output_policies,omitempty"`
+	ModelAliases                 []ModelAlias        `json:"model_aliases,omitempty"`
 }
 
 type LongContextPolicy struct {
@@ -95,6 +97,27 @@ type OutputPolicy struct {
 	Notes            string `json:"notes,omitempty"`
 }
 
+type ModelAlias struct {
+	ID       string             `json:"id"`
+	Name     string             `json:"name,omitempty"`
+	Enabled  bool               `json:"enabled"`
+	Priority int                `json:"priority,omitempty"`
+	Group    string             `json:"group,omitempty"`
+	SKU      string             `json:"sku"`
+	Mode     string             `json:"mode,omitempty"`
+	Targets  []ModelAliasTarget `json:"targets,omitempty"`
+	Notes    string             `json:"notes,omitempty"`
+}
+
+type ModelAliasTarget struct {
+	ModelName   string `json:"model_name"`
+	ChannelID   int    `json:"channel_id,omitempty"`
+	ChannelName string `json:"channel_name,omitempty"`
+	Priority    int    `json:"priority,omitempty"`
+	Weight      int    `json:"weight,omitempty"`
+	Notes       string `json:"notes,omitempty"`
+}
+
 func DefaultSettings() Settings {
 	return Settings{
 		Version:                      ObservationVersion,
@@ -109,12 +132,14 @@ func DefaultSettings() Settings {
 		CacheMode:                    ModeOff,
 		LongContextMode:              ModeOff,
 		OutputCapMode:                ModeOff,
+		ModelAliasMode:               ModeOff,
 		RetryBudgetMode:              ModeOff,
 		MaxRetryCostUSD:              0,
 		RetryLowMarginSkip:           false,
 		RiskEnforcement:              ModeOff,
 		SettingsWritable:             true,
 		CostProfilesUsed:             true,
+		ModelAliases:                 DefaultModelAliases(),
 	}
 }
 
@@ -178,6 +203,13 @@ func (s Settings) Normalize() Settings {
 		s.OutputCapMode = defaults.OutputCapMode
 	}
 	s.OutputPolicies = normalizeOutputPolicies(s.OutputPolicies)
+	if !validOffObserveMode(s.ModelAliasMode) {
+		s.ModelAliasMode = defaults.ModelAliasMode
+	}
+	if len(s.ModelAliases) == 0 {
+		s.ModelAliases = defaults.ModelAliases
+	}
+	s.ModelAliases = normalizeModelAliases(s.ModelAliases)
 	if !validRetryBudgetMode(s.RetryBudgetMode) {
 		s.RetryBudgetMode = defaults.RetryBudgetMode
 	}
@@ -234,6 +266,18 @@ func (s Settings) Validate() error {
 	if s.OutputCapMode != "" && !validOutputCapMode(s.OutputCapMode) {
 		return errors.New("invalid output_cap_mode")
 	}
+	if s.ModelAliasMode != "" && !validOffObserveMode(s.ModelAliasMode) {
+		return errors.New("invalid model_alias_mode")
+	}
+	for _, alias := range s.ModelAliases {
+		mode := strings.TrimSpace(alias.Mode)
+		if mode != "" && !validOffObserveMode(mode) {
+			return errors.New("invalid model alias mode")
+		}
+		if alias.ChannelIDLessThanZero() {
+			return errors.New("model alias target channel_id cannot be negative")
+		}
+	}
 	if s.RetryBudgetMode != "" && !validRetryBudgetMode(s.RetryBudgetMode) {
 		return errors.New("invalid retry_budget_mode")
 	}
@@ -263,6 +307,27 @@ func (s Settings) Validate() error {
 	} {
 		if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
 			return errors.New(name + " must be non-negative")
+		}
+	}
+	for _, alias := range s.ModelAliases {
+		if !alias.Enabled {
+			continue
+		}
+		mode := strings.TrimSpace(alias.Mode)
+		if mode == "" {
+			mode = ModeObserve
+		}
+		if mode == ModeOff {
+			continue
+		}
+		if strings.TrimSpace(alias.Group) != DefaultObserveGroup {
+			return errors.New("model aliases must target proxy-test group")
+		}
+		if !strings.HasPrefix(strings.TrimSpace(alias.SKU), "glart-") {
+			return errors.New("model alias sku must start with glart-")
+		}
+		if len(alias.Targets) == 0 {
+			return errors.New("model alias must have at least one target")
 		}
 	}
 	return nil
@@ -430,4 +495,84 @@ func normalizeOutputPolicies(policies []OutputPolicy) []OutputPolicy {
 		out = append(out, policy)
 	}
 	return out
+}
+
+func DefaultModelAliases() []ModelAlias {
+	return []ModelAlias{
+		defaultModelAlias("glart-fast", "glart-fast", "gpt-5.4-mini", 100),
+		defaultModelAlias("glart-balanced", "glart-balanced", "gpt-5.5", 90),
+		defaultModelAlias("glart-coder", "glart-coder", "gpt-5.5", 80),
+		defaultModelAlias("glart-long", "glart-long", "gpt-5.5", 70),
+		defaultModelAlias("glart-premium", "glart-premium", "gpt-5.5", 60),
+	}
+}
+
+func defaultModelAlias(id string, sku string, modelName string, priority int) ModelAlias {
+	return ModelAlias{
+		ID:       id,
+		Name:     sku,
+		Enabled:  true,
+		Priority: priority,
+		Group:    DefaultObserveGroup,
+		SKU:      sku,
+		Mode:     ModeObserve,
+		Targets: []ModelAliasTarget{{
+			ModelName: modelName,
+			Priority:  100,
+		}},
+		Notes: "Proxy-test SKU alias seed. Users buy the stable glart SKU; upstream model can be changed later.",
+	}
+}
+
+func normalizeModelAliases(aliases []ModelAlias) []ModelAlias {
+	out := make([]ModelAlias, 0, len(aliases))
+	for _, alias := range aliases {
+		alias.ID = strings.TrimSpace(alias.ID)
+		alias.Name = strings.TrimSpace(alias.Name)
+		alias.Group = strings.TrimSpace(alias.Group)
+		alias.SKU = strings.TrimSpace(alias.SKU)
+		alias.Mode = strings.TrimSpace(alias.Mode)
+		alias.Notes = strings.TrimSpace(alias.Notes)
+		if alias.Mode == "" {
+			alias.Mode = ModeObserve
+		}
+		if !validOffObserveMode(alias.Mode) {
+			alias.Mode = ModeObserve
+		}
+		alias.Targets = normalizeModelAliasTargets(alias.Targets)
+		if alias.ID == "" && alias.Group == "" && alias.SKU == "" && len(alias.Targets) == 0 {
+			continue
+		}
+		out = append(out, alias)
+	}
+	return out
+}
+
+func normalizeModelAliasTargets(targets []ModelAliasTarget) []ModelAliasTarget {
+	out := make([]ModelAliasTarget, 0, len(targets))
+	for _, target := range targets {
+		target.ModelName = strings.TrimSpace(target.ModelName)
+		target.ChannelName = strings.TrimSpace(target.ChannelName)
+		target.Notes = strings.TrimSpace(target.Notes)
+		if target.ChannelID < 0 {
+			target.ChannelID = 0
+		}
+		if target.Weight < 0 {
+			target.Weight = 0
+		}
+		if target.ModelName == "" {
+			continue
+		}
+		out = append(out, target)
+	}
+	return out
+}
+
+func (alias ModelAlias) ChannelIDLessThanZero() bool {
+	for _, target := range alias.Targets {
+		if target.ChannelID < 0 {
+			return true
+		}
+	}
+	return false
 }

@@ -62,6 +62,7 @@ import {
   type ProfitEventsPage,
   type ProfitGuardrailRecommendation,
   type ProfitLongContextPolicy,
+  type ProfitModelAlias,
   type ProfitMode,
   type ProfitOutputCapMode,
   type ProfitOutputPolicy,
@@ -135,6 +136,7 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   cache_mode: 'off',
   long_context_mode: 'off',
   output_cap_mode: 'off',
+  model_alias_mode: 'off',
   retry_budget_mode: 'off',
   max_retry_cost_usd: 0,
   retry_low_margin_skip: false,
@@ -147,6 +149,7 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   cost_profiles_used: true,
   long_context_policies: [],
   output_policies: [],
+  model_aliases: [],
 }
 
 const DEFAULT_PROFILES: ProfitCostProfiles = {
@@ -499,6 +502,64 @@ const SAMPLE_LONG_CONTEXT_POLICIES: ProfitLongContextPolicy[] = [
   },
 ]
 
+const SAMPLE_MODEL_ALIASES: ProfitModelAlias[] = [
+  {
+    id: 'proxy-test-glart-fast',
+    name: 'glart-fast',
+    enabled: true,
+    priority: 100,
+    group: PROFIT_SAFE_GROUP,
+    sku: 'glart-fast',
+    mode: 'observe',
+    targets: [{ model_name: 'gpt-5.5', priority: 100 }],
+    notes: 'Stable platform SKU for fast requests. Upstream can be changed without changing user-facing model.',
+  },
+  {
+    id: 'proxy-test-glart-balanced',
+    name: 'glart-balanced',
+    enabled: true,
+    priority: 90,
+    group: PROFIT_SAFE_GROUP,
+    sku: 'glart-balanced',
+    mode: 'observe',
+    targets: [{ model_name: 'gpt-5.5', priority: 100 }],
+    notes: 'Stable platform SKU for balanced quality/cost routing.',
+  },
+  {
+    id: 'proxy-test-glart-coder',
+    name: 'glart-coder',
+    enabled: true,
+    priority: 80,
+    group: PROFIT_SAFE_GROUP,
+    sku: 'glart-coder',
+    mode: 'observe',
+    targets: [{ model_name: 'gpt-5.5', priority: 100 }],
+    notes: 'Stable platform SKU for coding workloads.',
+  },
+  {
+    id: 'proxy-test-glart-long',
+    name: 'glart-long',
+    enabled: true,
+    priority: 70,
+    group: PROFIT_SAFE_GROUP,
+    sku: 'glart-long',
+    mode: 'observe',
+    targets: [{ model_name: 'gpt-5.5', priority: 100 }],
+    notes: 'Stable platform SKU for long context workloads.',
+  },
+  {
+    id: 'proxy-test-glart-premium',
+    name: 'glart-premium',
+    enabled: true,
+    priority: 60,
+    group: PROFIT_SAFE_GROUP,
+    sku: 'glart-premium',
+    mode: 'observe',
+    targets: [{ model_name: 'gpt-5.5', priority: 100 }],
+    notes: 'Stable platform SKU for premium capability routing.',
+  },
+]
+
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
@@ -538,7 +599,8 @@ function policyLabel(policy: { id?: string; name?: string }) {
 function buildProfitSettingsSafetyWarnings(
   observeGroups: string[],
   longContextPolicies: ProfitLongContextPolicy[],
-  outputPolicies: ProfitOutputPolicy[]
+  outputPolicies: ProfitOutputPolicy[],
+  modelAliases: ProfitModelAlias[]
 ) {
   const warnings: string[] = []
   const unsafeGroups = observeGroups.filter(
@@ -561,6 +623,20 @@ function buildProfitSettingsSafetyWarnings(
       warnings.push(
         `输出策略 ${policyLabel(policy)} 必须限定 group=${PROFIT_SAFE_GROUP}`
       )
+    }
+  }
+  for (const alias of modelAliases) {
+    if (!activeProfitPolicy(alias)) continue
+    if ((alias.group || '').trim() !== PROFIT_SAFE_GROUP) {
+      warnings.push(
+        `SKU alias ${policyLabel(alias)} 必须限定 group=${PROFIT_SAFE_GROUP}`
+      )
+    }
+    if (!(alias.sku || '').trim().startsWith('glart-')) {
+      warnings.push(`SKU alias ${policyLabel(alias)} 必须使用 glart- 前缀`)
+    }
+    if (!Array.isArray(alias.targets) || alias.targets.length === 0) {
+      warnings.push(`SKU alias ${policyLabel(alias)} 必须至少配置一个上游模型`)
     }
   }
   return warnings
@@ -916,6 +992,7 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     ['Cache read tokens', formatNumber(analytics?.cache_read_tokens)],
     ['Cache write tokens', formatNumber(analytics?.cache_write_tokens)],
     ['Cache saved USD', formatUSD(analytics?.cache_saved_usd)],
+    ['SKU alias observed', formatNumber(analytics?.sku_alias_observed_count)],
     [
       'Missing cost profiles',
       formatNumber(analytics?.missing_cost_profile_count),
@@ -1228,7 +1305,15 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
               return (
                 <TableRow key={event.id}>
                 <TableCell className='max-w-52 truncate font-medium'>
-                  {event.model_name || '-'}
+                  <div className='flex min-w-0 flex-col gap-1'>
+                    <span className='truncate'>{event.model_name || '-'}</span>
+                    {event.sku_alias_applied &&
+                    event.sku_alias_upstream_model ? (
+                      <span className='text-muted-foreground truncate text-xs'>
+                        {`${event.sku_alias_sku || 'SKU'} -> ${event.sku_alias_upstream_model}`}
+                      </span>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className='max-w-44 truncate'>
                   {event.channel_name || event.channel || '-'}
@@ -1517,6 +1602,9 @@ export function ProfitCenterSection() {
   const [longContextPolicyJson, setLongContextPolicyJson] = useState(
     formatJson(DEFAULT_SETTINGS.long_context_policies ?? [])
   )
+  const [modelAliasJson, setModelAliasJson] = useState(
+    formatJson(DEFAULT_SETTINGS.model_aliases ?? SAMPLE_MODEL_ALIASES)
+  )
   const [profileJson, setProfileJson] = useState(formatJson(DEFAULT_PROFILES))
   const [analyticsGroup, setAnalyticsGroup] = useState('proxy-test')
   const [analyticsModel, setAnalyticsModel] = useState('')
@@ -1570,6 +1658,9 @@ export function ProfitCenterSection() {
         setObserveGroups((next.observe_groups ?? ['proxy-test']).join(', '))
         setLongContextPolicyJson(formatJson(next.long_context_policies ?? []))
         setOutputPolicyJson(formatJson(next.output_policies ?? []))
+        setModelAliasJson(
+          formatJson(next.model_aliases ?? SAMPLE_MODEL_ALIASES)
+        )
       } else {
         toast.error(settingsRes.message || t('Failed to load profit settings'))
       }
@@ -1604,6 +1695,9 @@ export function ProfitCenterSection() {
       formatJson(initialSettings.long_context_policies ?? [])
     )
     setOutputPolicyJson(formatJson(initialSettings.output_policies ?? []))
+    setModelAliasJson(
+      formatJson(initialSettings.model_aliases ?? SAMPLE_MODEL_ALIASES)
+    )
   }
 
   const handleSave = async () => {
@@ -1615,11 +1709,13 @@ export function ProfitCenterSection() {
       )
       const outputPolicies =
         safeParseJson<ProfitOutputPolicy[]>(outputPolicyJson)
+      const modelAliases = safeParseJson<ProfitModelAlias[]>(modelAliasJson)
       const parsedObserveGroups = parseCsv(observeGroups)
       const warnings = buildProfitSettingsSafetyWarnings(
         parsedObserveGroups,
         longContextPolicies,
-        outputPolicies
+        outputPolicies,
+        modelAliases
       )
       setSafetyWarnings(warnings)
       if (warnings.length > 0) {
@@ -1632,6 +1728,7 @@ export function ProfitCenterSection() {
         observe_only: true,
         long_context_policies: longContextPolicies,
         output_policies: outputPolicies,
+        model_aliases: modelAliases,
       }
       const [settingsRes, profilesRes] = await Promise.all([
         updateProfitSettings(payload),
@@ -1652,6 +1749,9 @@ export function ProfitCenterSection() {
         formatJson(settingsRes.data.long_context_policies ?? [])
       )
       setOutputPolicyJson(formatJson(settingsRes.data.output_policies ?? []))
+      setModelAliasJson(
+        formatJson(settingsRes.data.model_aliases ?? SAMPLE_MODEL_ALIASES)
+      )
       setProfileJson(formatJson(profilesRes.data))
       setSafetyWarnings([])
       toast.success(t('Profit settings saved.'))
@@ -1690,6 +1790,10 @@ export function ProfitCenterSection() {
 
   const loadSampleLongContextPolicies = () => {
     setLongContextPolicyJson(formatJson(SAMPLE_LONG_CONTEXT_POLICIES))
+  }
+
+  const loadSampleModelAliases = () => {
+    setModelAliasJson(formatJson(SAMPLE_MODEL_ALIASES))
   }
 
   const runRoutePreview = async () => {
@@ -1838,6 +1942,26 @@ export function ProfitCenterSection() {
                   setSettings((current) => ({ ...current, output_cap_mode }))
                 }
               />
+            </div>
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label className='text-sm font-medium'>{t('SKU alias 模式')}</Label>
+            <div className='mt-1.5'>
+              <ModeSelect
+                value={settings.model_alias_mode}
+                label='SKU alias 模式'
+                onChange={(model_alias_mode) =>
+                  setSettings((current) => ({
+                    ...current,
+                    model_alias_mode,
+                  }))
+                }
+              />
+              {settings.model_alias_mode === 'observe' ? (
+                <p className='text-muted-foreground mt-1 text-xs'>
+                  {t('仅 proxy-test 可使用 glart-* SKU 映射到上游模型。')}
+                </p>
+              ) : null}
             </div>
           </SettingsFormGridItem>
           <SettingsFormGridItem>
@@ -2064,6 +2188,39 @@ export function ProfitCenterSection() {
           rows={11}
           value={longContextPolicyJson}
           onChange={(event) => setLongContextPolicyJson(event.target.value)}
+          className='font-mono text-xs'
+        />
+      </div>
+
+      <Separator />
+
+      <div className='min-w-0 space-y-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div className='min-w-0'>
+            <h4 className='text-sm font-semibold'>{t('SKU aliases')}</h4>
+            <p className='text-muted-foreground text-xs'>
+              {t('用户请求稳定 glart-* SKU，平台在 proxy-test 映射到真实上游模型。')}
+            </p>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={loadSampleModelAliases}
+          >
+            <CalculatorIcon data-icon='inline-start' />
+            <span>{t('加载 SKU 示例')}</span>
+          </Button>
+        </div>
+        <Label htmlFor='profit-model-aliases-json' className='sr-only'>
+          {t('SKU aliases')}
+        </Label>
+        <Textarea
+          id='profit-model-aliases-json'
+          name='profit-model-aliases-json'
+          rows={10}
+          value={modelAliasJson}
+          onChange={(event) => setModelAliasJson(event.target.value)}
           className='font-mono text-xs'
         />
       </div>

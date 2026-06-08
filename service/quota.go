@@ -240,12 +240,14 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	aliasDecision := profitModelAliasDecision(relayInfo)
+	profitRouteModel := profitRoutingModelName(relayInfo, modelName)
 	routeDecision := buildProfitRouteDecision(ctx, profitRouteDecisionInput{
 		Group:                          relayInfo.UsingGroup,
 		Provider:                       ctx.GetString("channel_name"),
 		SelectedChannelID:              relayInfo.ChannelId,
 		SelectedChannelName:            ctx.GetString("channel_name"),
-		ModelName:                      modelName,
+		ModelName:                      profitRouteModel,
 		BillablePromptTokens:           usage.InputTokens,
 		BillableCompletionTokens:       usage.OutputTokens,
 		UpstreamActualPromptTokens:     usage.InputTokens,
@@ -266,6 +268,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		UserQuota:                      quota,
 		LatencyMs:                      int(useTimeSeconds * 1000),
 		RouteDecision:                  routeDecision,
+		ModelAliasDecision:             aliasDecision,
 	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
@@ -388,12 +391,14 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	aliasDecision := profitModelAliasDecision(relayInfo)
+	profitRouteModel := profitRoutingModelName(relayInfo, relayInfo.OriginModelName)
 	routeDecision := buildProfitRouteDecision(ctx, profitRouteDecisionInput{
 		Group:                          relayInfo.UsingGroup,
 		Provider:                       ctx.GetString("channel_name"),
 		SelectedChannelID:              relayInfo.ChannelId,
 		SelectedChannelName:            ctx.GetString("channel_name"),
-		ModelName:                      relayInfo.OriginModelName,
+		ModelName:                      profitRouteModel,
 		BillablePromptTokens:           usage.PromptTokens,
 		BillableCompletionTokens:       usage.CompletionTokens,
 		UpstreamActualPromptTokens:     usage.PromptTokens,
@@ -414,6 +419,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		UserQuota:                      quota,
 		LatencyMs:                      int(useTimeSeconds * 1000),
 		RouteDecision:                  routeDecision,
+		ModelAliasDecision:             aliasDecision,
 	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

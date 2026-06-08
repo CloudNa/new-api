@@ -153,6 +153,16 @@ type ProfitEvent struct {
 	CacheReadTokens                int64                                `json:"cache_read_tokens"`
 	CacheWriteTokens               int64                                `json:"cache_write_tokens"`
 	CacheSavedUSD                  *float64                             `json:"cache_saved_usd"`
+	ModelAliasApplied              bool                                 `json:"sku_alias_applied"`
+	ModelAliasMode                 string                               `json:"sku_alias_mode,omitempty"`
+	ModelAliasID                   string                               `json:"sku_alias_id,omitempty"`
+	ModelAliasName                 string                               `json:"sku_alias_name,omitempty"`
+	ModelAliasSKU                  string                               `json:"sku_alias_sku,omitempty"`
+	ModelAliasUpstreamModel        string                               `json:"sku_alias_upstream_model,omitempty"`
+	ModelAliasTargetChannelID      int                                  `json:"sku_alias_target_channel_id"`
+	ModelAliasTargetChannelName    string                               `json:"sku_alias_target_channel_name,omitempty"`
+	ModelAliasCandidateCount       int64                                `json:"sku_alias_candidate_count"`
+	ModelAliasObserveOnly          bool                                 `json:"sku_alias_observe_only"`
 	RetryCostUSD                   *float64                             `json:"retry_cost_usd"`
 	RetryAttemptCount              int64                                `json:"profit_retry_attempt_count"`
 	RetryAttempts                  []profit.RetryAttemptObservation     `json:"profit_retry_attempts,omitempty"`
@@ -214,6 +224,7 @@ type ProfitAnalytics struct {
 	CacheReadTokens                      int64                           `json:"cache_read_tokens"`
 	CacheWriteTokens                     int64                           `json:"cache_write_tokens"`
 	CacheSavedUSD                        *float64                        `json:"cache_saved_usd"`
+	ModelAliasObservedCount              int64                           `json:"sku_alias_observed_count"`
 	RetryCostUSD                         *float64                        `json:"retry_cost_usd"`
 	RetryAttemptCount                    int64                           `json:"profit_retry_attempt_count"`
 	RetryBudgetWouldSkipCount            int64                           `json:"profit_retry_budget_would_skip_count"`
@@ -304,6 +315,9 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 		analytics.CompressionSavedTokens += event.CompressionSavedTokens
 		analytics.CacheReadTokens += event.CacheReadTokens
 		analytics.CacheWriteTokens += event.CacheWriteTokens
+		if event.ModelAliasApplied {
+			analytics.ModelAliasObservedCount++
+		}
 		if event.OutputPolicyMode != "" {
 			analytics.OutputPolicyObservedCount++
 			analytics.OutputPolicyCompletionTokens += event.OutputPolicyCompletionTokens
@@ -859,6 +873,16 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		CacheReadTokens:                int64Value(other, profit.KeyCacheReadTokens),
 		CacheWriteTokens:               int64Value(other, profit.KeyCacheWriteTokens),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
+		ModelAliasApplied:              boolValue(other, profit.KeyModelAliasApplied),
+		ModelAliasMode:                 stringValue(other, profit.KeyModelAliasMode),
+		ModelAliasID:                   stringValue(other, profit.KeyModelAliasID),
+		ModelAliasName:                 stringValue(other, profit.KeyModelAliasName),
+		ModelAliasSKU:                  stringValue(other, profit.KeyModelAliasSKU),
+		ModelAliasUpstreamModel:        stringValue(other, profit.KeyModelAliasUpstreamModel),
+		ModelAliasTargetChannelID:      int(int64Value(other, profit.KeyModelAliasTargetChannelID)),
+		ModelAliasTargetChannelName:    stringValue(other, profit.KeyModelAliasTargetChannelName),
+		ModelAliasCandidateCount:       int64Value(other, profit.KeyModelAliasCandidateCount),
+		ModelAliasObserveOnly:          boolValue(other, profit.KeyModelAliasObserveOnly),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
 		RetryAttemptCount:              int64Value(other, profit.KeyRetryAttemptCount),
 		RetryAttempts:                  retryAttemptsValue(other, profit.KeyRetryAttempts),

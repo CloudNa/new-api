@@ -541,6 +541,27 @@ export type ProfitOutputPolicy = {
   notes?: string
 }
 
+export type ProfitModelAliasTarget = {
+  model_name: string
+  channel_id?: number
+  channel_name?: string
+  priority?: number
+  weight?: number
+  notes?: string
+}
+
+export type ProfitModelAlias = {
+  id: string
+  name?: string
+  enabled: boolean
+  priority?: number
+  group?: string
+  sku: string
+  mode?: ProfitMode
+  targets?: ProfitModelAliasTarget[]
+  notes?: string
+}
+
 export type ProfitSettings = {
   version: number
   enabled: boolean
@@ -554,6 +575,7 @@ export type ProfitSettings = {
   cache_mode: ProfitMode
   long_context_mode: ProfitMode
   output_cap_mode: ProfitOutputCapMode
+  model_alias_mode: ProfitMode
   retry_budget_mode: ProfitRetryBudgetMode
   max_retry_cost_usd?: number
   retry_low_margin_skip?: boolean
@@ -566,6 +588,7 @@ export type ProfitSettings = {
   cost_profiles_used: boolean
   long_context_policies?: ProfitLongContextPolicy[]
   output_policies?: ProfitOutputPolicy[]
+  model_aliases?: ProfitModelAlias[]
 }
 
 export type ProfitCostProfile = {
@@ -673,6 +696,7 @@ export type ProfitAnalytics = {
   cache_read_tokens: number
   cache_write_tokens: number
   cache_saved_usd?: number | null
+  sku_alias_observed_count?: number
   retry_cost_usd?: number | null
   profit_retry_attempt_count?: number
   profit_retry_budget_would_skip_count?: number
@@ -813,6 +837,16 @@ export type ProfitEvent = {
   cache_read_tokens?: number
   cache_write_tokens?: number
   cache_saved_usd?: number | null
+  sku_alias_applied?: boolean
+  sku_alias_mode?: ProfitMode
+  sku_alias_id?: string
+  sku_alias_name?: string
+  sku_alias_sku?: string
+  sku_alias_upstream_model?: string
+  sku_alias_target_channel_id?: number
+  sku_alias_target_channel_name?: string
+  sku_alias_candidate_count?: number
+  sku_alias_observe_only?: boolean
   retry_cost_usd?: number | null
   profit_retry_attempt_count?: number
   profit_retry_attempts?: ProfitRetryAttempt[]
