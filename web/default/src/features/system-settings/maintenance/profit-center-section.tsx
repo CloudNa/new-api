@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect, useMemo, useState } from 'react'
 import {
   CalculatorIcon,
+  CopyIcon,
   RefreshCcwIcon,
   RouteIcon,
   TrendingUpIcon,
@@ -460,6 +461,22 @@ function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
 
+async function copyText(
+  value: string,
+  successMessage: string,
+  failureMessage: string
+) {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) {
+      throw new Error('Clipboard is not available')
+    }
+    await navigator.clipboard.writeText(value)
+    toast.success(successMessage)
+  } catch {
+    toast.error(failureMessage)
+  }
+}
+
 function parseCsv(value: string): string[] {
   return value
     .split(',')
@@ -785,6 +802,84 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
           <div className='mt-1 truncate text-sm font-semibold'>{value}</div>
         </div>
       ))}
+    </div>
+  )
+}
+
+function GuardrailPolicyTemplate({
+  analytics,
+  onUseTemplate,
+}: {
+  analytics: ProfitAnalytics | null
+  onUseTemplate: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  const templateJson = analytics?.profit_guardrail_policy_template
+    ? formatJson([analytics.profit_guardrail_policy_template])
+    : (analytics?.profit_guardrail_policy_template_json ?? '')
+  const hasTemplate = templateJson.trim().length > 0
+  return (
+    <div className='min-w-0 space-y-3 rounded-lg border p-3'>
+      <div className='flex flex-wrap items-start justify-between gap-2'>
+        <div className='min-w-0 space-y-1'>
+          <h4 className='text-sm font-semibold'>{t('策略模板')}</h4>
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              '基于当前 proxy-test 收益观测生成输出上限模板；填入后仍需手动保存才会进入配置。'
+            )}
+          </p>
+        </div>
+        <Badge variant={hasTemplate ? 'default' : 'secondary'}>
+          {hasTemplate ? t('可套用') : t('暂无模板')}
+        </Badge>
+      </div>
+      {hasTemplate ? (
+        <>
+          <Label
+            htmlFor='profit-guardrail-policy-template-json'
+            className='sr-only'
+          >
+            {t('策略模板')}
+          </Label>
+          <Textarea
+            id='profit-guardrail-policy-template-json'
+            name='profit-guardrail-policy-template-json'
+            rows={7}
+            value={templateJson}
+            readOnly
+            className='font-mono text-xs'
+          />
+          <div className='flex flex-wrap gap-2'>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              onClick={() =>
+                copyText(templateJson, t('已复制策略模板'), t('复制策略模板失败'))
+              }
+            >
+              <CopyIcon data-icon='inline-start' />
+              <span>{t('复制模板')}</span>
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              onClick={() => {
+                onUseTemplate(templateJson)
+                toast.success(t('已填入输出策略，保存后生效'))
+              }}
+            >
+              <CalculatorIcon data-icon='inline-start' />
+              <span>{t('填入输出策略')}</span>
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div className='bg-muted/20 text-muted-foreground rounded-md border border-dashed p-3 text-xs'>
+          {t('暂无可套用模板')}
+        </div>
+      )}
     </div>
   )
 }
@@ -1655,6 +1750,10 @@ export function ProfitCenterSection() {
           </div>
         </div>
         <StatGrid analytics={analytics} />
+        <GuardrailPolicyTemplate
+          analytics={analytics}
+          onUseTemplate={setOutputPolicyJson}
+        />
         <ProfitEventsTable events={events} />
       </div>
 

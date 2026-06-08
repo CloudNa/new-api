@@ -637,6 +637,8 @@ export type ProfitAnalytics = {
   profit_guardrail_output_mode: ProfitOutputCapMode | ''
   profit_guardrail_default_max_tokens: number
   profit_guardrail_hard_max_tokens: number
+  profit_guardrail_policy_template?: ProfitOutputPolicy | null
+  profit_guardrail_policy_template_json?: string
   profit_risk_observed_count: number
   profit_risk_alert_count: number
   profit_risk_loss_making_count: number

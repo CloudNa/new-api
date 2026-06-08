@@ -480,7 +480,10 @@ func TestGetProfitAnalyticsGuardrailSuggestsOutputCapForMarginRisk(t *testing.T)
 		})
 	}
 
-	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{
+		Group:     profit.DefaultObserveGroup,
+		ModelName: "gpt-5.5",
+	})
 
 	require.NoError(t, err)
 	require.Equal(t, int64(20), analytics.RiskLowExpectedMarginCount)
@@ -490,6 +493,19 @@ func TestGetProfitAnalyticsGuardrailSuggestsOutputCapForMarginRisk(t *testing.T)
 	require.Equal(t, profit.ModeCap, analytics.ProfitGuardrailOutputMode)
 	require.Equal(t, int64(1920), analytics.ProfitGuardrailDefaultMaxTokens)
 	require.Equal(t, int64(2048), analytics.ProfitGuardrailHardMaxTokens)
+	require.NotNil(t, analytics.ProfitGuardrailPolicyTemplate)
+	require.Equal(t, "proxy-test-output-cap-recommended-gpt-5-5", analytics.ProfitGuardrailPolicyTemplate.ID)
+	require.Equal(t, profit.DefaultObserveGroup, analytics.ProfitGuardrailPolicyTemplate.Group)
+	require.Equal(t, "gpt-5.5", analytics.ProfitGuardrailPolicyTemplate.ModelName)
+	require.Equal(t, profit.ModeCap, analytics.ProfitGuardrailPolicyTemplate.Mode)
+	require.Equal(t, 1920, analytics.ProfitGuardrailPolicyTemplate.DefaultMaxTokens)
+	require.Equal(t, 2048, analytics.ProfitGuardrailPolicyTemplate.HardMaxTokens)
+	require.True(t, analytics.ProfitGuardrailPolicyTemplate.RewriteOverLimit)
+
+	var templates []profit.OutputPolicy
+	require.NoError(t, common.UnmarshalJsonStr(analytics.ProfitGuardrailPolicyTemplateJSON, &templates))
+	require.Len(t, templates, 1)
+	require.Equal(t, *analytics.ProfitGuardrailPolicyTemplate, templates[0])
 }
 
 func TestGetProfitAnalyticsGuardrailCollectsSamplesBeforeCap(t *testing.T) {
