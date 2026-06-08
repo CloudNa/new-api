@@ -99,6 +99,10 @@ type ProfitEvent struct {
 	RouteBestExpectedMarginUSD     *float64                             `json:"profit_route_best_expected_margin_usd,omitempty"`
 	RouteWouldPreferDifferent      bool                                 `json:"profit_route_would_prefer_different"`
 	RouteCandidates                []profit.RouteDecisionCandidate      `json:"profit_route_candidates,omitempty"`
+	RouteLiveRoutingUsed           bool                                 `json:"profit_route_live_routing_used"`
+	RouteBypassReason              string                               `json:"profit_route_bypass_reason,omitempty"`
+	RouteHealthMinSamples          int64                                `json:"profit_route_health_min_samples"`
+	RouteHealthMinSuccessRatePct   float64                              `json:"profit_route_health_min_success_rate_pct"`
 	OutputPolicyMode               string                               `json:"output_policy_mode,omitempty"`
 	OutputPolicyID                 string                               `json:"output_policy_id,omitempty"`
 	OutputPolicyName               string                               `json:"output_policy_name,omitempty"`
@@ -630,6 +634,10 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		RouteBestExpectedMarginUSD:     optionalFloat(other, profit.KeyRouteBestExpectedMarginUSD),
 		RouteWouldPreferDifferent:      boolValue(other, profit.KeyRouteWouldPreferDifferent),
 		RouteCandidates:                routeCandidatesValue(other, profit.KeyRouteCandidates),
+		RouteLiveRoutingUsed:           boolValue(other, profit.KeyRouteLiveRoutingUsed),
+		RouteBypassReason:              stringValue(other, profit.KeyRouteBypassReason),
+		RouteHealthMinSamples:          int64Value(other, profit.KeyRouteHealthMinSamples),
+		RouteHealthMinSuccessRatePct:   floatValue(other, profit.KeyRouteHealthMinSuccessRatePct),
 		OutputPolicyMode:               stringValue(other, profit.KeyOutputPolicyMode),
 		OutputPolicyID:                 stringValue(other, profit.KeyOutputPolicyID),
 		OutputPolicyName:               stringValue(other, profit.KeyOutputPolicyName),

@@ -27,6 +27,9 @@ func TestProfitSettingsDefaultsObserveProxyTest(t *testing.T) {
 	require.True(t, settings.ObserveOnly)
 	require.Equal(t, []string{DefaultObserveGroup}, settings.ObserveGroups)
 	require.Equal(t, ModeObserve, settings.CostRoutingMode)
+	require.Equal(t, DefaultCostRoutingMinSamples, settings.CostRoutingMinSamples)
+	require.Equal(t, float64(DefaultCostRoutingMinSuccessRatePct), settings.CostRoutingMinSuccessRatePct)
+	require.Equal(t, DefaultCostRoutingHealthWindowHours, settings.CostRoutingHealthWindowHours)
 	require.True(t, EnabledForGroup(DefaultObserveGroup))
 	require.False(t, EnabledForGroup("default"))
 }
@@ -73,6 +76,29 @@ func TestProfitSettingsValidateRiskThresholds(t *testing.T) {
 	settings.RiskMinGrossUSD = 0
 	settings.RiskMinExpectPct = 10
 	require.NoError(t, settings.Validate())
+}
+
+func TestProfitSettingsValidateCostRoutingHealthThresholds(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMinSamples = -1
+	require.ErrorContains(t, settings.Validate(), "cost_routing_min_samples")
+
+	settings = DefaultSettings()
+	settings.CostRoutingMinSuccessRatePct = 101
+	require.ErrorContains(t, settings.Validate(), "cost_routing_min_success_rate_pct")
+
+	settings = DefaultSettings()
+	settings.CostRoutingHealthWindowHours = -1
+	require.ErrorContains(t, settings.Validate(), "cost_routing_health_window_hours")
+
+	settings = DefaultSettings()
+	settings.CostRoutingMinSamples = 0
+	settings.CostRoutingMinSuccessRatePct = 0
+	settings.CostRoutingHealthWindowHours = 0
+	normalized := settings.Normalize()
+	require.Equal(t, DefaultCostRoutingMinSamples, normalized.CostRoutingMinSamples)
+	require.Equal(t, float64(DefaultCostRoutingMinSuccessRatePct), normalized.CostRoutingMinSuccessRatePct)
+	require.Equal(t, DefaultCostRoutingHealthWindowHours, normalized.CostRoutingHealthWindowHours)
 }
 
 func TestProfitSettingsAllowsPreferMarginCostRoutingPreview(t *testing.T) {

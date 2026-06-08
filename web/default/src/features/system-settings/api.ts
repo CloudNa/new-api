@@ -547,6 +547,9 @@ export type ProfitSettings = {
   observe_groups: string[]
   global_kill_switch: boolean
   cost_routing_mode: ProfitCostRoutingMode
+  cost_routing_min_samples?: number
+  cost_routing_min_success_rate_pct?: number
+  cost_routing_health_window_hours?: number
   cache_mode: ProfitMode
   long_context_mode: ProfitMode
   output_cap_mode: ProfitOutputCapMode
@@ -710,6 +713,10 @@ export type ProfitEvent = {
   profit_route_best_expected_margin_usd?: number | null
   profit_route_would_prefer_different?: boolean
   profit_route_candidates?: ProfitRouteDecisionCandidate[]
+  profit_route_live_routing_used?: boolean
+  profit_route_bypass_reason?: string
+  profit_route_health_min_samples?: number
+  profit_route_health_min_success_rate_pct?: number
   output_policy_mode?: ProfitOutputCapMode
   output_policy_id?: string
   output_policy_name?: string
@@ -768,6 +775,10 @@ export type ProfitRouteDecisionCandidate = {
   margin_rank: number
   priority?: number
   weight?: number
+  failure_rate?: number
+  health_request_count?: number
+  health_success_rate_pct?: number
+  health_status?: string
 }
 
 export type ProfitEventsPage = {

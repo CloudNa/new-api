@@ -19,27 +19,34 @@ const (
 	ModePremiumRequired = "premium_required"
 
 	RiskModeAlert = "alert"
+
+	DefaultCostRoutingMinSamples        = 20
+	DefaultCostRoutingMinSuccessRatePct = 95
+	DefaultCostRoutingHealthWindowHours = 24
 )
 
 type Settings struct {
-	Version             int                 `json:"version"`
-	Enabled             bool                `json:"enabled"`
-	ObserveOnly         bool                `json:"observe_only"`
-	ObserveGroups       []string            `json:"observe_groups"`
-	GlobalKillSwitch    bool                `json:"global_kill_switch"`
-	CostRoutingMode     string              `json:"cost_routing_mode"`
-	CacheMode           string              `json:"cache_mode"`
-	LongContextMode     string              `json:"long_context_mode"`
-	OutputCapMode       string              `json:"output_cap_mode"`
-	RiskEnforcement     string              `json:"risk_enforcement"`
-	RiskMinGrossUSD     float64             `json:"risk_min_gross_margin_usd,omitempty"`
-	RiskMinGrossPct     float64             `json:"risk_min_gross_margin_pct,omitempty"`
-	RiskMinExpectUSD    float64             `json:"risk_min_expected_margin_usd,omitempty"`
-	RiskMinExpectPct    float64             `json:"risk_min_expected_margin_pct,omitempty"`
-	SettingsWritable    bool                `json:"settings_writable"`
-	CostProfilesUsed    bool                `json:"cost_profiles_used"`
-	LongContextPolicies []LongContextPolicy `json:"long_context_policies,omitempty"`
-	OutputPolicies      []OutputPolicy      `json:"output_policies,omitempty"`
+	Version                      int                 `json:"version"`
+	Enabled                      bool                `json:"enabled"`
+	ObserveOnly                  bool                `json:"observe_only"`
+	ObserveGroups                []string            `json:"observe_groups"`
+	GlobalKillSwitch             bool                `json:"global_kill_switch"`
+	CostRoutingMode              string              `json:"cost_routing_mode"`
+	CostRoutingMinSamples        int                 `json:"cost_routing_min_samples,omitempty"`
+	CostRoutingMinSuccessRatePct float64             `json:"cost_routing_min_success_rate_pct,omitempty"`
+	CostRoutingHealthWindowHours int                 `json:"cost_routing_health_window_hours,omitempty"`
+	CacheMode                    string              `json:"cache_mode"`
+	LongContextMode              string              `json:"long_context_mode"`
+	OutputCapMode                string              `json:"output_cap_mode"`
+	RiskEnforcement              string              `json:"risk_enforcement"`
+	RiskMinGrossUSD              float64             `json:"risk_min_gross_margin_usd,omitempty"`
+	RiskMinGrossPct              float64             `json:"risk_min_gross_margin_pct,omitempty"`
+	RiskMinExpectUSD             float64             `json:"risk_min_expected_margin_usd,omitempty"`
+	RiskMinExpectPct             float64             `json:"risk_min_expected_margin_pct,omitempty"`
+	SettingsWritable             bool                `json:"settings_writable"`
+	CostProfilesUsed             bool                `json:"cost_profiles_used"`
+	LongContextPolicies          []LongContextPolicy `json:"long_context_policies,omitempty"`
+	OutputPolicies               []OutputPolicy      `json:"output_policies,omitempty"`
 }
 
 type LongContextPolicy struct {
@@ -86,18 +93,21 @@ type OutputPolicy struct {
 
 func DefaultSettings() Settings {
 	return Settings{
-		Version:          ObservationVersion,
-		Enabled:          true,
-		ObserveOnly:      true,
-		ObserveGroups:    []string{DefaultObserveGroup},
-		GlobalKillSwitch: false,
-		CostRoutingMode:  ModeObserve,
-		CacheMode:        ModeOff,
-		LongContextMode:  ModeOff,
-		OutputCapMode:    ModeOff,
-		RiskEnforcement:  ModeOff,
-		SettingsWritable: true,
-		CostProfilesUsed: true,
+		Version:                      ObservationVersion,
+		Enabled:                      true,
+		ObserveOnly:                  true,
+		ObserveGroups:                []string{DefaultObserveGroup},
+		GlobalKillSwitch:             false,
+		CostRoutingMode:              ModeObserve,
+		CostRoutingMinSamples:        DefaultCostRoutingMinSamples,
+		CostRoutingMinSuccessRatePct: DefaultCostRoutingMinSuccessRatePct,
+		CostRoutingHealthWindowHours: DefaultCostRoutingHealthWindowHours,
+		CacheMode:                    ModeOff,
+		LongContextMode:              ModeOff,
+		OutputCapMode:                ModeOff,
+		RiskEnforcement:              ModeOff,
+		SettingsWritable:             true,
+		CostProfilesUsed:             true,
 	}
 }
 
@@ -138,6 +148,18 @@ func (s Settings) Normalize() Settings {
 	if !validCostRoutingMode(s.CostRoutingMode) {
 		s.CostRoutingMode = defaults.CostRoutingMode
 	}
+	if s.CostRoutingMinSamples <= 0 {
+		s.CostRoutingMinSamples = defaults.CostRoutingMinSamples
+	}
+	if s.CostRoutingMinSuccessRatePct <= 0 {
+		s.CostRoutingMinSuccessRatePct = defaults.CostRoutingMinSuccessRatePct
+	}
+	if s.CostRoutingMinSuccessRatePct > 100 {
+		s.CostRoutingMinSuccessRatePct = 100
+	}
+	if s.CostRoutingHealthWindowHours <= 0 {
+		s.CostRoutingHealthWindowHours = defaults.CostRoutingHealthWindowHours
+	}
 	if !validOffObserveMode(s.CacheMode) {
 		s.CacheMode = defaults.CacheMode
 	}
@@ -162,6 +184,15 @@ func (s Settings) Normalize() Settings {
 func (s Settings) Validate() error {
 	if s.CostRoutingMode != "" && !validCostRoutingMode(s.CostRoutingMode) {
 		return errors.New("invalid cost_routing_mode")
+	}
+	if s.CostRoutingMinSamples < 0 {
+		return errors.New("cost_routing_min_samples must be non-negative")
+	}
+	if s.CostRoutingMinSuccessRatePct < 0 || s.CostRoutingMinSuccessRatePct > 100 || math.IsNaN(s.CostRoutingMinSuccessRatePct) || math.IsInf(s.CostRoutingMinSuccessRatePct, 0) {
+		return errors.New("cost_routing_min_success_rate_pct must be between 0 and 100")
+	}
+	if s.CostRoutingHealthWindowHours < 0 {
+		return errors.New("cost_routing_health_window_hours must be non-negative")
 	}
 	if s.CacheMode != "" && !validOffObserveMode(s.CacheMode) {
 		return errors.New("invalid cache_mode")

@@ -118,6 +118,9 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   observe_groups: ['proxy-test'],
   global_kill_switch: false,
   cost_routing_mode: 'observe',
+  cost_routing_min_samples: 20,
+  cost_routing_min_success_rate_pct: 95,
+  cost_routing_health_window_hours: 24,
   cache_mode: 'off',
   long_context_mode: 'off',
   output_cap_mode: 'off',
@@ -1118,12 +1121,22 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                         {event.profit_route_would_prefer_different ? (
                           <Badge variant='secondary'>{t('Would prefer')}</Badge>
                         ) : null}
+                        {event.profit_route_live_routing_used ? (
+                          <Badge variant='secondary'>{t('Live routing')}</Badge>
+                        ) : event.profit_route_bypass_reason ? (
+                          <Badge variant='secondary'>{t('Bypassed')}</Badge>
+                        ) : null}
                       </div>
                       <span className='text-muted-foreground text-xs'>
                         {t('Margin rank')}:{' '}
                         {event.profit_route_selected_margin_rank || '-'} /{' '}
                         {event.profit_route_candidate_count || 0}
                       </span>
+                      {event.profit_route_bypass_reason ? (
+                        <span className='text-muted-foreground max-w-44 truncate text-xs'>
+                          {t('Reason')}: {event.profit_route_bypass_reason}
+                        </span>
+                      ) : null}
                       {event.profit_route_best_channel_name ||
                       event.profit_route_best_channel_id ? (
                         <span className='text-muted-foreground max-w-44 truncate text-xs'>

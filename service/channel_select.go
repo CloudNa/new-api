@@ -168,6 +168,10 @@ func CacheGetProfitPreferredChannel(param *RetryParam, promptTokens int, complet
 	if param == nil || param.Ctx == nil || param.TokenGroup == "auto" {
 		return nil, nil, nil
 	}
+	settings := profit.CurrentSettings().Normalize()
+	if settings.CostRoutingMode != profit.ModePreferMargin {
+		return nil, nil, nil
+	}
 
 	candidates, err := model.GetSatisfiedChannelCandidatesForProfitObservation(
 		param.TokenGroup,
@@ -190,7 +194,7 @@ func CacheGetProfitPreferredChannel(param *RetryParam, promptTokens int, complet
 		Model:      param.ModelName,
 		Group:      param.TokenGroup,
 		ChannelIDs: channelIDs,
-		Hours:      24,
+		Hours:      settings.CostRoutingHealthWindowHours,
 	})
 	if healthErr != nil {
 		logger.LogWarn(param.Ctx, "profit channel health skipped: "+healthErr.Error())
@@ -221,12 +225,14 @@ func CacheGetProfitPreferredChannel(param *RetryParam, promptTokens int, complet
 			UserQuota:                      userQuota,
 			LatencyMs:                      latencyMs,
 			FailureRate:                    failureRate,
+			HealthRequestCount:             channelHealth[candidate.ChannelID].RequestCount,
+			HealthSuccessRatePct:           channelHealth[candidate.ChannelID].SuccessRate,
 			Priority:                       candidate.Priority,
 			Weight:                         candidate.Weight,
 		})
 	}
 
-	selection := profit.SelectPreferMarginRoute(profit.CurrentSettings(), profit.RouteDecisionInput{
+	selection := profit.SelectPreferMarginRoute(settings, profit.RouteDecisionInput{
 		Group:                          param.TokenGroup,
 		ModelName:                      param.ModelName,
 		BillablePromptTokens:           promptTokens,
@@ -236,6 +242,8 @@ func CacheGetProfitPreferredChannel(param *RetryParam, promptTokens int, complet
 		UserQuota:                      userQuota,
 		Candidates:                     routeCandidates,
 	})
+	param.Ctx.Set(profit.KeyRouteLiveRoutingUsed, selection.LiveRoutingUsed)
+	param.Ctx.Set(profit.KeyRouteBypassReason, selection.Reason)
 	if !selection.LiveRoutingUsed {
 		return nil, &selection, nil
 	}

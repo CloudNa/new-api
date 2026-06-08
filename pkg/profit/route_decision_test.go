@@ -44,8 +44,8 @@ func TestBuildRouteDecisionRanksExpectedMargin(t *testing.T) {
 		UpstreamActualCompletionTokens: 100000,
 		UserQuota:                      500000,
 		Candidates: []RouteCandidateInput{
-			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100},
-			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100},
+			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100, HealthRequestCount: 20, HealthSuccessRatePct: 100},
+			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100, HealthRequestCount: 20, HealthSuccessRatePct: 100},
 		},
 	})
 
@@ -110,8 +110,8 @@ func TestBuildRouteDecisionPreferMarginPreviewRanksExpectedMargin(t *testing.T) 
 		UpstreamActualCompletionTokens: 100000,
 		UserQuota:                      500000,
 		Candidates: []RouteCandidateInput{
-			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100},
-			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100},
+			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100, HealthRequestCount: 20, HealthSuccessRatePct: 100},
+			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100, HealthRequestCount: 20, HealthSuccessRatePct: 100},
 		},
 	})
 
@@ -192,8 +192,8 @@ func TestSelectPreferMarginRouteChoosesBestKnownMargin(t *testing.T) {
 		UpstreamActualCompletionTokens: 100000,
 		UserQuota:                      500000,
 		Candidates: []RouteCandidateInput{
-			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100},
-			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100},
+			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100, HealthRequestCount: 20, HealthSuccessRatePct: 100},
+			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100, HealthRequestCount: 20, HealthSuccessRatePct: 100},
 		},
 	})
 
@@ -201,6 +201,74 @@ func TestSelectPreferMarginRouteChoosesBestKnownMargin(t *testing.T) {
 	require.Equal(t, 2, selection.ChannelID)
 	require.NotNil(t, selection.Decision)
 	require.Equal(t, ModePreferMargin, selection.Decision.Mode)
+}
+
+func TestSelectPreferMarginRouteBypassesWhenBestHasInsufficientSamples(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = false
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{ID: "expensive", Enabled: true, ChannelID: 1, ModelName: "model-a", InputUSDPerMillion: 10, OutputUSDPerMillion: 10},
+		{ID: "cheap", Enabled: true, ChannelID: 2, ModelName: "model-a", InputUSDPerMillion: 1, OutputUSDPerMillion: 1},
+	}}
+	payload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{CostProfilesOptionKey: string(payload)})
+
+	selection := SelectPreferMarginRoute(settings, RouteDecisionInput{
+		Group:                          DefaultObserveGroup,
+		ModelName:                      "model-a",
+		BillablePromptTokens:           100000,
+		BillableCompletionTokens:       100000,
+		UpstreamActualPromptTokens:     100000,
+		UpstreamActualCompletionTokens: 100000,
+		UserQuota:                      500000,
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, ChannelName: "expensive", HealthRequestCount: 20, HealthSuccessRatePct: 100},
+			{ChannelID: 2, ChannelName: "cheap", HealthRequestCount: 3, HealthSuccessRatePct: 100},
+		},
+	})
+
+	require.False(t, selection.LiveRoutingUsed)
+	require.Equal(t, "insufficient_health_samples", selection.Reason)
+	require.NotNil(t, selection.Decision)
+	require.Equal(t, 2, selection.Decision.BestChannelID)
+	require.Equal(t, "insufficient_health_samples", selection.Decision.BypassReason)
+	require.Equal(t, "insufficient_samples", selection.Decision.Candidates[1].HealthStatus)
+}
+
+func TestSelectPreferMarginRouteBypassesWhenBestSuccessRateIsLow(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = false
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{ID: "expensive", Enabled: true, ChannelID: 1, ModelName: "model-a", InputUSDPerMillion: 10, OutputUSDPerMillion: 10},
+		{ID: "cheap", Enabled: true, ChannelID: 2, ModelName: "model-a", InputUSDPerMillion: 1, OutputUSDPerMillion: 1},
+	}}
+	payload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{CostProfilesOptionKey: string(payload)})
+
+	selection := SelectPreferMarginRoute(settings, RouteDecisionInput{
+		Group:                          DefaultObserveGroup,
+		ModelName:                      "model-a",
+		BillablePromptTokens:           100000,
+		BillableCompletionTokens:       100000,
+		UpstreamActualPromptTokens:     100000,
+		UpstreamActualCompletionTokens: 100000,
+		UserQuota:                      500000,
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, ChannelName: "expensive", HealthRequestCount: 20, HealthSuccessRatePct: 100},
+			{ChannelID: 2, ChannelName: "cheap", HealthRequestCount: 20, HealthSuccessRatePct: 80},
+		},
+	})
+
+	require.False(t, selection.LiveRoutingUsed)
+	require.Equal(t, "below_success_rate", selection.Reason)
+	require.NotNil(t, selection.Decision)
+	require.Equal(t, 2, selection.Decision.BestChannelID)
+	require.Equal(t, "below_success_rate", selection.Decision.BypassReason)
+	require.Equal(t, "below_success_rate", selection.Decision.Candidates[1].HealthStatus)
 }
 
 func TestSelectPreferMarginRouteRequiresMultipleCandidates(t *testing.T) {

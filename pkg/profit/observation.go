@@ -65,6 +65,10 @@ const (
 	KeyRouteBestExpectedMarginUSD     = "profit_route_best_expected_margin_usd"
 	KeyRouteWouldPreferDifferent      = "profit_route_would_prefer_different"
 	KeyRouteCandidates                = "profit_route_candidates"
+	KeyRouteLiveRoutingUsed           = "profit_route_live_routing_used"
+	KeyRouteBypassReason              = "profit_route_bypass_reason"
+	KeyRouteHealthMinSamples          = "profit_route_health_min_samples"
+	KeyRouteHealthMinSuccessRatePct   = "profit_route_health_min_success_rate_pct"
 	KeyOutputPolicyMode               = "output_policy_mode"
 	KeyOutputPolicyID                 = "output_policy_id"
 	KeyOutputPolicyName               = "output_policy_name"
@@ -150,6 +154,10 @@ var userHiddenKeys = []string{
 	KeyRouteBestExpectedMarginUSD,
 	KeyRouteWouldPreferDifferent,
 	KeyRouteCandidates,
+	KeyRouteLiveRoutingUsed,
+	KeyRouteBypassReason,
+	KeyRouteHealthMinSamples,
+	KeyRouteHealthMinSuccessRatePct,
 	KeyOutputPolicyMode,
 	KeyOutputPolicyID,
 	KeyOutputPolicyName,
@@ -350,6 +358,16 @@ func appendRouteDecision(other map[string]interface{}, decision *RouteDecision) 
 	}
 	other[KeyRouteBestExpectedMarginUSD] = decision.BestExpectedMarginUSD
 	other[KeyRouteWouldPreferDifferent] = decision.WouldPreferDifferent
+	other[KeyRouteLiveRoutingUsed] = decision.LiveRoutingUsed
+	if decision.BypassReason != "" {
+		other[KeyRouteBypassReason] = decision.BypassReason
+	}
+	if decision.HealthMinSamples > 0 {
+		other[KeyRouteHealthMinSamples] = decision.HealthMinSamples
+	}
+	if decision.HealthMinSuccessRate > 0 {
+		other[KeyRouteHealthMinSuccessRatePct] = decision.HealthMinSuccessRate
+	}
 	if len(decision.Candidates) > 0 {
 		other[KeyRouteCandidates] = decision.Candidates
 	}
