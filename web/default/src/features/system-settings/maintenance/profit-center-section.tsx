@@ -162,7 +162,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.004,
       latency_penalty_usd_per_second: 0.00003,
       risk_penalty_usd: 0.0002,
-      notes: 'Generic fallback for Gemini family across any channel/provider; override per channel only when needed.',
+      notes:
+        'Generic fallback for Gemini family across any channel/provider; override per channel only when needed.',
     },
     {
       id: 'generic-claude-family',
@@ -181,7 +182,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.02,
       latency_penalty_usd_per_second: 0.00008,
       risk_penalty_usd: 0.0005,
-      notes: 'Generic fallback for Claude family across any channel/provider; override per channel only when needed.',
+      notes:
+        'Generic fallback for Claude family across any channel/provider; override per channel only when needed.',
     },
     {
       id: 'generic-gpt-oss-family',
@@ -200,7 +202,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.003,
       latency_penalty_usd_per_second: 0.00003,
       risk_penalty_usd: 0.0001,
-      notes: 'Generic fallback for gpt-oss family across any channel/provider; override per channel only when needed.',
+      notes:
+        'Generic fallback for gpt-oss family across any channel/provider; override per channel only when needed.',
     },
     {
       id: 'generic-deepseek-family',
@@ -219,7 +222,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.004,
       latency_penalty_usd_per_second: 0.00003,
       risk_penalty_usd: 0.0002,
-      notes: 'Generic fallback for DeepSeek family across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for DeepSeek family across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-qwen-family',
@@ -238,7 +242,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.004,
       latency_penalty_usd_per_second: 0.00003,
       risk_penalty_usd: 0.0002,
-      notes: 'Generic fallback for Qwen family across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for Qwen family across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-kimi-family',
@@ -257,7 +262,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.006,
       latency_penalty_usd_per_second: 0.00004,
       risk_penalty_usd: 0.0003,
-      notes: 'Generic fallback for Kimi family across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for Kimi family across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-moonshot-family',
@@ -276,7 +282,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.006,
       latency_penalty_usd_per_second: 0.00004,
       risk_penalty_usd: 0.0003,
-      notes: 'Generic fallback for Moonshot family across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for Moonshot family across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-kiro-family',
@@ -295,7 +302,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.02,
       latency_penalty_usd_per_second: 0.00008,
       risk_penalty_usd: 0.0005,
-      notes: 'Generic fallback for Kiro-style CLI/OAuth models across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for Kiro-style CLI/OAuth models across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-grok-family',
@@ -314,7 +322,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.015,
       latency_penalty_usd_per_second: 0.00006,
       risk_penalty_usd: 0.0005,
-      notes: 'Generic fallback for Grok family across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for Grok family across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-mistral-family',
@@ -333,7 +342,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.004,
       latency_penalty_usd_per_second: 0.00003,
       risk_penalty_usd: 0.0002,
-      notes: 'Generic fallback for Mistral family across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for Mistral family across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-llama-family',
@@ -352,7 +362,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.003,
       latency_penalty_usd_per_second: 0.00003,
       risk_penalty_usd: 0.0001,
-      notes: 'Generic fallback for Llama family across any channel/provider; replace with exact upstream prices when available.',
+      notes:
+        'Generic fallback for Llama family across any channel/provider; replace with exact upstream prices when available.',
     },
     {
       id: 'generic-any-model',
@@ -371,7 +382,8 @@ const DEFAULT_PROFILES: ProfitCostProfiles = {
       failure_penalty_usd: 0.01,
       latency_penalty_usd_per_second: 0.00005,
       risk_penalty_usd: 0.001,
-      notes: 'Last-resort fallback for any model without a more specific cost profile; use only as an estimate and override exact high-volume channels.',
+      notes:
+        'Last-resort fallback for any model without a more specific cost profile; use only as an estimate and override exact high-volume channels.',
     },
   ],
 }
@@ -425,7 +437,8 @@ const SAMPLE_LONG_CONTEXT_POLICIES: ProfitLongContextPolicy[] = [
     model_name: '*',
     mode: 'observe',
     premium_group: 'premium',
-    notes: 'Observe only. Suggested revenue is not charged until billing expressions are changed.',
+    notes:
+      'Observe only. Suggested revenue is not charged until billing expressions are changed.',
     tiers: [
       {
         id: 'base',
@@ -501,23 +514,62 @@ function buildProfitSettingsSafetyWarnings(
   outputPolicies: ProfitOutputPolicy[]
 ) {
   const warnings: string[] = []
-  const unsafeGroups = observeGroups.filter((group) => group !== PROFIT_SAFE_GROUP)
+  const unsafeGroups = observeGroups.filter(
+    (group) => group !== PROFIT_SAFE_GROUP
+  )
   if (unsafeGroups.length > 0) {
     warnings.push(`收益观测分组当前只允许 ${PROFIT_SAFE_GROUP}`)
   }
   for (const policy of longContextPolicies) {
     if (!activeProfitPolicy(policy)) continue
     if ((policy.group || '').trim() !== PROFIT_SAFE_GROUP) {
-      warnings.push(`长上下文策略 ${policyLabel(policy)} 必须限定 group=${PROFIT_SAFE_GROUP}`)
+      warnings.push(
+        `长上下文策略 ${policyLabel(policy)} 必须限定 group=${PROFIT_SAFE_GROUP}`
+      )
     }
   }
   for (const policy of outputPolicies) {
     if (!activeProfitPolicy(policy)) continue
     if ((policy.group || '').trim() !== PROFIT_SAFE_GROUP) {
-      warnings.push(`输出策略 ${policyLabel(policy)} 必须限定 group=${PROFIT_SAFE_GROUP}`)
+      warnings.push(
+        `输出策略 ${policyLabel(policy)} 必须限定 group=${PROFIT_SAFE_GROUP}`
+      )
     }
   }
   return warnings
+}
+
+function normalizeOutputPolicyList(value: unknown): ProfitOutputPolicy[] {
+  if (Array.isArray(value)) return value as ProfitOutputPolicy[]
+  if (value && typeof value === 'object') return [value as ProfitOutputPolicy]
+  return []
+}
+
+function mergeOutputPolicyTemplate(
+  existingJson: string,
+  templateJson: string
+): string {
+  const existing = normalizeOutputPolicyList(
+    safeParseJson<unknown>(existingJson)
+  )
+  const template = normalizeOutputPolicyList(
+    safeParseJson<unknown>(templateJson)
+  )
+  const merged = [...existing]
+
+  for (const policy of template) {
+    const id = (policy.id || '').trim()
+    const index = id
+      ? merged.findIndex((item) => (item.id || '').trim() === id)
+      : -1
+    if (index >= 0) {
+      merged[index] = policy
+    } else {
+      merged.push(policy)
+    }
+  }
+
+  return formatJson(merged)
 }
 
 function formatUSD(value: number | null | undefined): string {
@@ -535,7 +587,9 @@ function formatPercent(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
-function formatOutputRecommendationConfidence(value: string | undefined): string {
+function formatOutputRecommendationConfidence(
+  value: string | undefined
+): string {
   switch (value) {
     case 'high':
       return '高'
@@ -803,21 +857,17 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     ],
     [
       '策略可信度',
-      formatOutputRecommendationConfidence(analytics?.profit_guardrail_confidence),
+      formatOutputRecommendationConfidence(
+        analytics?.profit_guardrail_confidence
+      ),
     ],
     ['策略建议模式', analytics?.profit_guardrail_output_mode || '-'],
     [
       '策略默认上限',
       formatNumber(analytics?.profit_guardrail_default_max_tokens),
     ],
-    [
-      '策略硬上限',
-      formatNumber(analytics?.profit_guardrail_hard_max_tokens),
-    ],
-    [
-      '长上下文观测',
-      formatNumber(analytics?.long_context_observed_count),
-    ],
+    ['策略硬上限', formatNumber(analytics?.profit_guardrail_hard_max_tokens)],
+    ['长上下文观测', formatNumber(analytics?.long_context_observed_count)],
     [
       '长上下文高级组',
       formatNumber(analytics?.long_context_premium_required_count),
@@ -891,7 +941,11 @@ function GuardrailPolicyTemplate({
               variant='outline'
               size='sm'
               onClick={() =>
-                copyText(templateJson, t('已复制策略模板'), t('复制策略模板失败'))
+                copyText(
+                  templateJson,
+                  t('已复制策略模板'),
+                  t('复制策略模板失败')
+                )
               }
             >
               <CopyIcon data-icon='inline-start' />
@@ -901,13 +955,10 @@ function GuardrailPolicyTemplate({
               type='button'
               variant='outline'
               size='sm'
-              onClick={() => {
-                onUseTemplate(templateJson)
-                toast.success(t('已填入输出策略，保存后生效'))
-              }}
+              onClick={() => onUseTemplate(templateJson)}
             >
               <CalculatorIcon data-icon='inline-start' />
-              <span>{t('填入输出策略')}</span>
+              <span>{t('合并模板')}</span>
             </Button>
           </div>
         </>
@@ -1009,9 +1060,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                           {t(event.profit_route_mode)}
                         </Badge>
                         {event.profit_route_would_prefer_different ? (
-                          <Badge variant='secondary'>
-                            {t('Would prefer')}
-                          </Badge>
+                          <Badge variant='secondary'>{t('Would prefer')}</Badge>
                         ) : null}
                       </div>
                       <span className='text-muted-foreground text-xs'>
@@ -1040,14 +1089,10 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                           {t(event.output_policy_mode)}
                         </Badge>
                         {event.output_policy_would_cap ? (
-                          <Badge variant='secondary'>
-                            {t('Would cap')}
-                          </Badge>
+                          <Badge variant='secondary'>{t('Would cap')}</Badge>
                         ) : null}
                         {event.output_policy_premium_required ? (
-                          <Badge variant='secondary'>
-                            {t('Premium')}
-                          </Badge>
+                          <Badge variant='secondary'>{t('Premium')}</Badge>
                         ) : null}
                       </div>
                       <span className='text-muted-foreground text-xs'>
@@ -1379,6 +1424,17 @@ export function ProfitCenterSection() {
     setOutputPolicyJson(formatJson(SAMPLE_OUTPUT_POLICIES))
   }
 
+  const useGuardrailPolicyTemplate = (templateJson: string) => {
+    try {
+      setOutputPolicyJson(
+        mergeOutputPolicyTemplate(outputPolicyJson, templateJson)
+      )
+      toast.success(t('已合并策略模板，保存后生效'))
+    } catch {
+      toast.error(t('策略模板合并失败，请检查输出策略 JSON'))
+    }
+  }
+
   const loadSampleLongContextPolicies = () => {
     setLongContextPolicyJson(formatJson(SAMPLE_LONG_CONTEXT_POLICIES))
   }
@@ -1662,9 +1718,7 @@ export function ProfitCenterSection() {
       <div className='min-w-0 space-y-3'>
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='min-w-0'>
-            <h4 className='text-sm font-semibold'>
-              {t('长上下文溢价策略')}
-            </h4>
+            <h4 className='text-sm font-semibold'>{t('长上下文溢价策略')}</h4>
             <p className='text-muted-foreground text-xs'>
               {t(
                 '仅记录长上下文阶梯、建议倍率和建议增收；不会改变当前用户扣费。'
@@ -1813,7 +1867,7 @@ export function ProfitCenterSection() {
         <StatGrid analytics={analytics} />
         <GuardrailPolicyTemplate
           analytics={analytics}
-          onUseTemplate={setOutputPolicyJson}
+          onUseTemplate={useGuardrailPolicyTemplate}
         />
         <ProfitEventsTable events={events} />
       </div>
