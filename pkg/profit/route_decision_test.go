@@ -157,6 +157,22 @@ func TestSelectPreferMarginRouteRespectsObserveOnly(t *testing.T) {
 	require.Equal(t, "observe_only", selection.Reason)
 }
 
+func TestInferRouteBypassReasonBackfillsObserveOnlyAndSingleCandidate(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = true
+	decision := &RouteDecision{
+		CandidateCount: 1,
+		BestChannelID:  1,
+		Candidates:     []RouteDecisionCandidate{{ChannelID: 1}},
+	}
+
+	require.Equal(t, "observe_only", InferRouteBypassReason(settings, decision))
+
+	settings.ObserveOnly = false
+	require.Equal(t, "single_candidate", InferRouteBypassReason(settings, decision))
+}
+
 func TestSelectPreferMarginRouteChoosesBestKnownMargin(t *testing.T) {
 	settings := DefaultSettings()
 	settings.CostRoutingMode = ModePreferMargin
@@ -269,6 +285,28 @@ func TestSelectPreferMarginRouteBypassesWhenBestSuccessRateIsLow(t *testing.T) {
 	require.Equal(t, 2, selection.Decision.BestChannelID)
 	require.Equal(t, "below_success_rate", selection.Decision.BypassReason)
 	require.Equal(t, "below_success_rate", selection.Decision.Candidates[1].HealthStatus)
+}
+
+func TestInferRouteBypassReasonBackfillsHealthGuardReasons(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = false
+	margin := 0.1
+	decision := &RouteDecision{
+		CandidateCount:        2,
+		BestChannelID:         2,
+		BestExpectedMarginUSD: &margin,
+		Candidates: []RouteDecisionCandidate{
+			{ChannelID: 1, HealthRequestCount: 20, HealthSuccessRate: 100},
+			{ChannelID: 2, HealthRequestCount: 3, HealthSuccessRate: 100},
+		},
+	}
+
+	require.Equal(t, "insufficient_health_samples", InferRouteBypassReason(settings, decision))
+
+	decision.Candidates[1].HealthRequestCount = 20
+	decision.Candidates[1].HealthSuccessRate = 80
+	require.Equal(t, "below_success_rate", InferRouteBypassReason(settings, decision))
 }
 
 func TestSelectPreferMarginRouteRequiresMultipleCandidates(t *testing.T) {

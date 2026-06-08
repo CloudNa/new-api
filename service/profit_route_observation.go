@@ -112,6 +112,9 @@ func buildProfitRouteDecision(ctx *gin.Context, input profitRouteDecisionInput) 
 	if decision != nil {
 		decision.LiveRoutingUsed = ctx.GetBool(profit.KeyRouteLiveRoutingUsed)
 		decision.BypassReason = ctx.GetString(profit.KeyRouteBypassReason)
+		if !decision.LiveRoutingUsed && decision.BypassReason == "" {
+			decision.BypassReason = profit.InferRouteBypassReason(settings, decision)
+		}
 	}
 	return decision
 }

@@ -270,6 +270,37 @@ func SelectPreferMarginRoute(settings Settings, input RouteDecisionInput) RouteS
 	}
 }
 
+func InferRouteBypassReason(settings Settings, decision *RouteDecision) string {
+	settings = settings.Normalize()
+	switch {
+	case decision == nil:
+		return "no_decision"
+	case !settings.Enabled:
+		return "disabled"
+	case settings.GlobalKillSwitch:
+		return "global_kill_switch"
+	case settings.CostRoutingMode != ModePreferMargin:
+		return "mode_not_prefer_margin"
+	case settings.ObserveOnly:
+		return "observe_only"
+	case decision.CandidateCount < 2:
+		return "single_candidate"
+	case decision.BestExpectedMarginUSD == nil:
+		return CostStatusMissingCostProfile
+	}
+	best := findRouteDecisionCandidate(decision.Candidates, decision.BestChannelID)
+	if best == nil {
+		return ""
+	}
+	if settings.CostRoutingMinSamples > 0 && best.HealthRequestCount < int64(settings.CostRoutingMinSamples) {
+		return "insufficient_health_samples"
+	}
+	if settings.CostRoutingMinSuccessRatePct > 0 && best.HealthSuccessRate < settings.CostRoutingMinSuccessRatePct {
+		return "below_success_rate"
+	}
+	return ""
+}
+
 func annotateRouteDecisionHealth(settings Settings, candidates []RouteDecisionCandidate) {
 	for idx := range candidates {
 		candidate := &candidates[idx]
