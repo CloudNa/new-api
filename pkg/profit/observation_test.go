@@ -33,8 +33,55 @@ func TestAppendObservationAddsProxyTestMetrics(t *testing.T) {
 	require.Nil(t, other["gross_margin_usd"])
 	require.Nil(t, other["gross_margin_pct"])
 	require.Equal(t, 20, other["compression_saved_tokens"])
+	require.Equal(t, 0, other["cache_read_tokens"])
+	require.Equal(t, 0, other["cache_write_tokens"])
 	require.Nil(t, other["cache_saved_usd"])
 	require.Nil(t, other["retry_cost_usd"])
+}
+
+func TestAppendObservationAddsCacheSavingsWhenObserved(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CacheMode = ModeObserve
+	settingsPayload, err := common.Marshal(settings.Normalize())
+	require.NoError(t, err)
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                     "cache-profile",
+			Name:                   "Cache profile",
+			Enabled:                true,
+			ChannelID:              9,
+			ModelName:              "cached-model",
+			InputUSDPerMillion:     10,
+			OutputUSDPerMillion:    20,
+			CacheReadUSDPerMillion: 1,
+		},
+	}}
+	profilesPayload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{
+		SettingsOptionKey:     string(settingsPayload),
+		CostProfilesOptionKey: string(profilesPayload),
+	})
+	other := map[string]interface{}{}
+
+	AppendObservation(other, ObservationInput{
+		Group:                          "proxy-test",
+		ChannelID:                      9,
+		ModelName:                      "cached-model",
+		BillablePromptTokens:           200000,
+		BillableCompletionTokens:       1000,
+		UpstreamActualPromptTokens:     100000,
+		UpstreamActualCompletionTokens: 1000,
+		CacheReadTokens:                100000,
+		CacheWriteTokens:               50000,
+		UserQuota:                      500000,
+	})
+
+	require.Equal(t, CostStatusConfigured, other[KeyCostStatus])
+	require.Equal(t, 100000, other[KeyCacheReadTokens])
+	require.Equal(t, 50000, other[KeyCacheWriteTokens])
+	require.NotNil(t, other[KeyCacheSavedUSD])
+	require.InDelta(t, 0.9, *(other[KeyCacheSavedUSD].(*float64)), 0.0000001)
 }
 
 func TestAppendObservationAddsRouteDecision(t *testing.T) {

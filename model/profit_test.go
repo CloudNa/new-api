@@ -135,6 +135,8 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyLongContextPremiumGroup:        "premium",
 		profit.KeyLongContextObserveOnly:         true,
 		profit.KeyLongContextLiveEnforced:        false,
+		profit.KeyCacheReadTokens:                120,
+		profit.KeyCacheWriteTokens:               30,
 		profit.KeyCacheSavedUSD:                  nil,
 		profit.KeyRetryCostUSD:                   nil,
 	})
@@ -222,6 +224,8 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.Equal(t, "premium", events[0].LongContextPremiumGroup)
 	require.True(t, events[0].LongContextObserveOnly)
 	require.False(t, events[0].LongContextLiveEnforced)
+	require.Equal(t, int64(120), events[0].CacheReadTokens)
+	require.Equal(t, int64(30), events[0].CacheWriteTokens)
 }
 
 func TestGetSatisfiedChannelCandidatesForProfitObservationDB(t *testing.T) {
@@ -320,6 +324,8 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 		profit.KeyLongContextTokens:            64000,
 		profit.KeyLongContextSuggestedExtraUSD: 0.2,
 		profit.KeyLongContextPremiumRequired:   true,
+		profit.KeyCacheReadTokens:              120,
+		profit.KeyCacheWriteTokens:             30,
 		profit.KeyCacheSavedUSD:                nil,
 		profit.KeyRetryCostUSD:                 nil,
 	})
@@ -341,6 +347,9 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 		profit.KeyEstimatedRevenueUSD:            0.5,
 		profit.KeyEstimatedUpstreamCostUSD:       0.2,
 		profit.KeyCompressionSavedTokens:         5,
+		profit.KeyCacheReadTokens:                80,
+		profit.KeyCacheWriteTokens:               20,
+		profit.KeyCacheSavedUSD:                  0.02,
 	})
 
 	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
@@ -377,7 +386,10 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 	require.Equal(t, int64(1), analytics.LongContextPremiumRequiredCount)
 	require.Equal(t, int64(64000), analytics.LongContextTokens)
 	require.InDelta(t, 0.2, analytics.LongContextSuggestedExtraUSD, 0.0001)
-	require.Nil(t, analytics.CacheSavedUSD)
+	require.Equal(t, int64(200), analytics.CacheReadTokens)
+	require.Equal(t, int64(50), analytics.CacheWriteTokens)
+	require.NotNil(t, analytics.CacheSavedUSD)
+	require.InDelta(t, 0.02, *analytics.CacheSavedUSD, 0.0001)
 	require.Nil(t, analytics.RetryCostUSD)
 }
 

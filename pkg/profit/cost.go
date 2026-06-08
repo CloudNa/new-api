@@ -68,6 +68,7 @@ type CostEstimate struct {
 	FailurePenaltyUSD        float64  `json:"failure_penalty_usd"`
 	LatencyPenaltyUSD        float64  `json:"latency_penalty_usd"`
 	RiskPenaltyUSD           float64  `json:"risk_penalty_usd"`
+	CacheSavedUSD            *float64 `json:"cache_saved_usd"`
 	ExpectedCostUSD          *float64 `json:"expected_cost_usd"`
 	GrossMarginUSD           *float64 `json:"gross_margin_usd"`
 	GrossMarginPct           *float64 `json:"gross_margin_pct"`
@@ -437,6 +438,7 @@ func EstimateCost(input CostInput, doc CostProfilesDocument) CostEstimate {
 	estimate.FailurePenaltyUSD = failurePenalty
 	estimate.LatencyPenaltyUSD = latencyPenalty
 	estimate.RiskPenaltyUSD = profile.RiskPenaltyUSD
+	estimate.CacheSavedUSD = estimateCacheSavedUSD(input, profile)
 	estimate.ExpectedCostUSD = floatPtr(expectedCost)
 	estimate.GrossMarginUSD = floatPtr(grossMargin)
 	estimate.ExpectedMarginUSD = floatPtr(expectedMargin)
@@ -445,6 +447,18 @@ func EstimateCost(input CostInput, doc CostProfilesDocument) CostEstimate {
 		estimate.ExpectedMarginPct = floatPtr(expectedMargin / input.RevenueUSD * 100)
 	}
 	return estimate
+}
+
+func estimateCacheSavedUSD(input CostInput, profile CostProfile) *float64 {
+	cacheReadTokens := maxInt(0, input.CacheReadTokens)
+	if cacheReadTokens <= 0 {
+		return nil
+	}
+	discountUSDPerMillion := profile.InputUSDPerMillion - profile.CacheReadUSDPerMillion
+	if discountUSDPerMillion <= 0 {
+		return nil
+	}
+	return floatPtr(costForMillionTokens(cacheReadTokens, discountUSDPerMillion))
 }
 
 func MatchCostProfile(doc CostProfilesDocument, input CostInput) (CostProfile, bool) {

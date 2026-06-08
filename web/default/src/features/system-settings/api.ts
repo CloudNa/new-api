@@ -670,6 +670,8 @@ export type ProfitAnalytics = {
   long_context_premium_required_count: number
   long_context_tokens: number
   long_context_suggested_extra_revenue_usd: number
+  cache_read_tokens: number
+  cache_write_tokens: number
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
   profit_retry_attempt_count?: number
@@ -808,6 +810,8 @@ export type ProfitEvent = {
   long_context_premium_group?: string
   long_context_observe_only?: boolean
   long_context_live_enforced?: boolean
+  cache_read_tokens?: number
+  cache_write_tokens?: number
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
   profit_retry_attempt_count?: number

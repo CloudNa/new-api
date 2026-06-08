@@ -150,6 +150,8 @@ type ProfitEvent struct {
 	LongContextPremiumGroup        string                               `json:"long_context_premium_group,omitempty"`
 	LongContextObserveOnly         bool                                 `json:"long_context_observe_only"`
 	LongContextLiveEnforced        bool                                 `json:"long_context_live_enforced"`
+	CacheReadTokens                int64                                `json:"cache_read_tokens"`
+	CacheWriteTokens               int64                                `json:"cache_write_tokens"`
 	CacheSavedUSD                  *float64                             `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64                             `json:"retry_cost_usd"`
 	RetryAttemptCount              int64                                `json:"profit_retry_attempt_count"`
@@ -209,6 +211,8 @@ type ProfitAnalytics struct {
 	LongContextPremiumRequiredCount      int64                           `json:"long_context_premium_required_count"`
 	LongContextTokens                    int64                           `json:"long_context_tokens"`
 	LongContextSuggestedExtraUSD         float64                         `json:"long_context_suggested_extra_revenue_usd"`
+	CacheReadTokens                      int64                           `json:"cache_read_tokens"`
+	CacheWriteTokens                     int64                           `json:"cache_write_tokens"`
 	CacheSavedUSD                        *float64                        `json:"cache_saved_usd"`
 	RetryCostUSD                         *float64                        `json:"retry_cost_usd"`
 	RetryAttemptCount                    int64                           `json:"profit_retry_attempt_count"`
@@ -298,6 +302,8 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 		analytics.UpstreamActualCompletionTokens += event.UpstreamActualCompletionTokens
 		analytics.EstimatedRevenueUSD += event.EstimatedRevenueUSD
 		analytics.CompressionSavedTokens += event.CompressionSavedTokens
+		analytics.CacheReadTokens += event.CacheReadTokens
+		analytics.CacheWriteTokens += event.CacheWriteTokens
 		if event.OutputPolicyMode != "" {
 			analytics.OutputPolicyObservedCount++
 			analytics.OutputPolicyCompletionTokens += event.OutputPolicyCompletionTokens
@@ -850,6 +856,8 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		LongContextPremiumGroup:        stringValue(other, profit.KeyLongContextPremiumGroup),
 		LongContextObserveOnly:         boolValue(other, profit.KeyLongContextObserveOnly),
 		LongContextLiveEnforced:        boolValue(other, profit.KeyLongContextLiveEnforced),
+		CacheReadTokens:                int64Value(other, profit.KeyCacheReadTokens),
+		CacheWriteTokens:               int64Value(other, profit.KeyCacheWriteTokens),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
 		RetryAttemptCount:              int64Value(other, profit.KeyRetryAttemptCount),

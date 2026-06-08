@@ -913,6 +913,9 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
       'Compression saved tokens',
       formatNumber(analytics?.compression_saved_tokens),
     ],
+    ['Cache read tokens', formatNumber(analytics?.cache_read_tokens)],
+    ['Cache write tokens', formatNumber(analytics?.cache_write_tokens)],
+    ['Cache saved USD', formatUSD(analytics?.cache_saved_usd)],
     [
       'Missing cost profiles',
       formatNumber(analytics?.missing_cost_profile_count),

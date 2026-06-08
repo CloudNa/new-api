@@ -34,6 +34,8 @@ const (
 	KeyCompressionValidationWarnings  = "compression_validation_warnings"
 	KeyCompressionValidationErrors    = "compression_validation_errors"
 	KeyCompressionEngineBreakdown     = "compression_engine_breakdown"
+	KeyCacheReadTokens                = "cache_read_tokens"
+	KeyCacheWriteTokens               = "cache_write_tokens"
 	KeyCacheSavedUSD                  = "cache_saved_usd"
 	KeyRetryCostUSD                   = "retry_cost_usd"
 	KeyRetryAttemptCount              = "profit_retry_attempt_count"
@@ -125,6 +127,8 @@ var userHiddenKeys = []string{
 	KeyCompressionValidationWarnings,
 	KeyCompressionValidationErrors,
 	KeyCompressionEngineBreakdown,
+	KeyCacheReadTokens,
+	KeyCacheWriteTokens,
 	KeyCacheSavedUSD,
 	KeyRetryCostUSD,
 	KeyRetryAttemptCount,
@@ -281,7 +285,13 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	other[KeyGrossMarginUSD] = costEstimate.GrossMarginUSD
 	other[KeyGrossMarginPct] = costEstimate.GrossMarginPct
 	other[KeyCompressionSavedTokens] = positiveInt(input.CompressionSavedTokens)
-	other[KeyCacheSavedUSD] = nil
+	other[KeyCacheReadTokens] = positiveInt(input.CacheReadTokens)
+	other[KeyCacheWriteTokens] = positiveInt(input.CacheWriteTokens)
+	if settings.CacheMode == ModeObserve {
+		other[KeyCacheSavedUSD] = costEstimate.CacheSavedUSD
+	} else {
+		other[KeyCacheSavedUSD] = nil
+	}
 	if input.RetryCostUSD != nil {
 		other[KeyRetryCostUSD] = input.RetryCostUSD
 	} else {
