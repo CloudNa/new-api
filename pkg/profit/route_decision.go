@@ -71,7 +71,7 @@ type RouteDecisionCandidate struct {
 
 func BuildRouteDecision(input RouteDecisionInput) *RouteDecision {
 	settings := CurrentSettings().Normalize()
-	if !settings.Enabled || settings.GlobalKillSwitch || settings.CostRoutingMode != ModeObserve || !EnabledForGroup(input.Group) {
+	if !settings.Enabled || settings.GlobalKillSwitch || !costRoutingDecisionEnabled(settings.CostRoutingMode) || !EnabledForGroup(input.Group) {
 		return nil
 	}
 
@@ -194,6 +194,10 @@ func BuildRouteDecision(input RouteDecisionInput) *RouteDecision {
 		WouldPreferDifferent:  selectedRank > 1 && best.ExpectedMarginUSD != nil && best.ChannelID != input.SelectedChannelID,
 		Candidates:            decisionCandidates,
 	}
+}
+
+func costRoutingDecisionEnabled(mode string) bool {
+	return mode == ModeObserve || mode == ModePreferMargin
 }
 
 func inheritRouteDecisionDefaults(input RouteDecisionInput, candidate RouteCandidateInput) RouteCandidateInput {

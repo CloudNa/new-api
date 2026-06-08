@@ -67,6 +67,61 @@ func TestBuildRouteDecisionRanksExpectedMargin(t *testing.T) {
 	require.InDelta(t, 0.8, *decision.BestExpectedMarginUSD, 0.0001)
 }
 
+func TestBuildRouteDecisionPreferMarginPreviewRanksExpectedMargin(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                  "expensive",
+			Name:                "Expensive channel",
+			Enabled:             true,
+			ChannelID:           1,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  10,
+			OutputUSDPerMillion: 10,
+		},
+		{
+			ID:                  "cheap",
+			Name:                "Cheap channel",
+			Enabled:             true,
+			ChannelID:           2,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  1,
+			OutputUSDPerMillion: 1,
+		},
+	}}
+	settingsPayload, err := common.Marshal(settings.Normalize())
+	require.NoError(t, err)
+	profilesPayload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{
+		SettingsOptionKey:     string(settingsPayload),
+		CostProfilesOptionKey: string(profilesPayload),
+	})
+
+	decision := BuildRouteDecision(RouteDecisionInput{
+		Group:                          DefaultObserveGroup,
+		SelectedChannelID:              1,
+		SelectedChannelName:            "expensive",
+		ModelName:                      "model-a",
+		BillablePromptTokens:           100000,
+		BillableCompletionTokens:       100000,
+		UpstreamActualPromptTokens:     100000,
+		UpstreamActualCompletionTokens: 100000,
+		UserQuota:                      500000,
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100},
+			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100},
+		},
+	})
+
+	require.NotNil(t, decision)
+	require.Equal(t, ModePreferMargin, decision.Mode)
+	require.Equal(t, 2, decision.BestChannelID)
+	require.True(t, decision.WouldPreferDifferent)
+	require.Equal(t, 2, decision.SelectedMarginRank)
+}
+
 func TestBuildRouteDecisionSkipsWhenCostRoutingOff(t *testing.T) {
 	settings := DefaultSettings()
 	settings.CostRoutingMode = ModeOff

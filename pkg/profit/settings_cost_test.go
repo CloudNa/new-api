@@ -75,6 +75,17 @@ func TestProfitSettingsValidateRiskThresholds(t *testing.T) {
 	require.NoError(t, settings.Validate())
 }
 
+func TestProfitSettingsAllowsPreferMarginCostRoutingPreview(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+
+	require.NoError(t, settings.Validate())
+
+	normalized := settings.Normalize()
+	require.Equal(t, ModePreferMargin, normalized.CostRoutingMode)
+	require.True(t, normalized.ObserveOnly)
+}
+
 func TestProfitSettingsValidateLimitsObserveScopeToProxyTest(t *testing.T) {
 	settings := DefaultSettings()
 	settings.ObserveGroups = []string{"default"}
@@ -279,6 +290,46 @@ func TestPreviewRouteIsObserveOnlyAndSelectsBestMargin(t *testing.T) {
 	require.False(t, preview.LiveRoutingUsed)
 	require.Equal(t, 1, preview.SelectedIndex)
 	require.False(t, preview.Candidates[0].WouldPrefer)
+	require.True(t, preview.Candidates[1].WouldPrefer)
+}
+
+func TestPreviewRoutePreferMarginRemainsObserveOnly(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	doc := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                  "expensive",
+			Enabled:             true,
+			ChannelID:           1,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  10,
+			OutputUSDPerMillion: 10,
+		},
+		{
+			ID:                  "cheap",
+			Enabled:             true,
+			ChannelID:           2,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  1,
+			OutputUSDPerMillion: 1,
+		},
+	}}
+
+	preview := PreviewRoute(settings, doc, RoutePreviewRequest{
+		Group:      DefaultObserveGroup,
+		ModelName:  "model-a",
+		RevenueUSD: 1,
+		Candidates: []CostInput{
+			{ChannelID: 1, ModelName: "model-a", UpstreamPromptTokens: 100000, UpstreamCompletionTokens: 100000, RevenueUSD: 1},
+			{ChannelID: 2, ModelName: "model-a", UpstreamPromptTokens: 100000, UpstreamCompletionTokens: 100000, RevenueUSD: 1},
+		},
+	})
+
+	require.True(t, preview.ObserveOnly)
+	require.False(t, preview.LiveRoutingUsed)
+	require.Equal(t, ModePreferMargin, preview.RoutingMode)
+	require.Contains(t, preview.Message, "prefer_margin preview")
+	require.Equal(t, 1, preview.SelectedIndex)
 	require.True(t, preview.Candidates[1].WouldPrefer)
 }
 

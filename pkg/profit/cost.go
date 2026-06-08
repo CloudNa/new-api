@@ -501,6 +501,9 @@ func PreviewRoute(settings Settings, doc CostProfilesDocument, req RoutePreviewR
 		SelectedIndex:   -1,
 		Message:         "observe-only preview; live routing is unchanged",
 	}
+	if settings.CostRoutingMode == ModePreferMargin {
+		response.Message = "prefer_margin preview; live routing is unchanged while observe_only is enforced"
+	}
 
 	bestIdx := -1
 	var bestMargin float64

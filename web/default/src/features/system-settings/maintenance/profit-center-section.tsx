@@ -57,6 +57,7 @@ import {
   updateProfitCostProfiles,
   updateProfitSettings,
   type ProfitAnalytics,
+  type ProfitCostRoutingMode,
   type ProfitCostProfiles,
   type ProfitEventsPage,
   type ProfitLongContextPolicy,
@@ -84,6 +85,15 @@ import { SettingsSection } from '../components/settings-section'
 const MODE_OPTIONS: Array<{ value: ProfitMode; label: string }> = [
   { value: 'off', label: 'Off' },
   { value: 'observe', label: 'Observe' },
+]
+
+const COST_ROUTING_OPTIONS: Array<{
+  value: ProfitCostRoutingMode
+  label: string
+}> = [
+  { value: 'off', label: 'Off' },
+  { value: 'observe', label: 'Observe' },
+  { value: 'prefer_margin', label: '毛利优先预演' },
 ]
 
 const PROFIT_SAFE_GROUP = 'proxy-test'
@@ -617,6 +627,19 @@ function formatOutputRecommendationReason(value: string | undefined): string {
   }
 }
 
+function formatCostRoutingMode(value: string | undefined): string {
+  switch (value) {
+    case 'prefer_margin':
+      return '毛利优先预演'
+    case 'observe':
+      return '观测'
+    case 'off':
+      return '关闭'
+    default:
+      return value || '-'
+  }
+}
+
 function formatProfitGuardrailAction(value: string | undefined): string {
   switch (value) {
     case 'none':
@@ -689,6 +712,39 @@ function ModeSelect(props: {
       <SelectContent alignItemWithTrigger={false}>
         <SelectGroup>
           {MODE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {t(option.label)}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+}
+
+function CostRoutingModeSelect(props: {
+  value: ProfitCostRoutingMode
+  label: string
+  onChange: (value: ProfitCostRoutingMode) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Select
+      items={COST_ROUTING_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.label),
+      }))}
+      value={props.value}
+      onValueChange={(value) =>
+        value !== null && props.onChange(value as ProfitCostRoutingMode)
+      }
+    >
+      <SelectTrigger className='w-full' aria-label={t(props.label)}>
+        <SelectValue placeholder={t('Select mode')} />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        <SelectGroup>
+          {COST_ROUTING_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {t(option.label)}
             </SelectItem>
@@ -1057,7 +1113,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                     <div className='flex min-w-0 flex-col gap-1'>
                       <div className='flex flex-wrap items-center gap-1'>
                         <Badge variant='outline'>
-                          {t(event.profit_route_mode)}
+                          {formatCostRoutingMode(event.profit_route_mode)}
                         </Badge>
                         {event.profit_route_would_prefer_different ? (
                           <Badge variant='secondary'>{t('Would prefer')}</Badge>
@@ -1193,7 +1249,9 @@ function RoutePreviewResult({
         <Badge variant='secondary'>
           {result.observe_only ? t('Observe only') : t('Live routing')}
         </Badge>
-        <Badge variant='outline'>{t(result.routing_mode)}</Badge>
+        <Badge variant='outline'>
+          {formatCostRoutingMode(result.routing_mode)}
+        </Badge>
         <span className='text-muted-foreground text-xs'>{result.message}</span>
       </div>
       <div className='overflow-x-auto rounded-lg border'>
@@ -1528,13 +1586,20 @@ export function ProfitCenterSection() {
               {t('Cost routing mode')}
             </Label>
             <div className='mt-1.5'>
-              <ModeSelect
+              <CostRoutingModeSelect
                 value={settings.cost_routing_mode}
                 label='Cost routing mode'
                 onChange={(cost_routing_mode) =>
                   setSettings((current) => ({ ...current, cost_routing_mode }))
                 }
               />
+              {settings.cost_routing_mode === 'prefer_margin' ? (
+                <p className='text-muted-foreground mt-1 text-xs'>
+                  {t(
+                    'prefer_margin 当前仅在 proxy-test 预演，不会改变真实路由。'
+                  )}
+                </p>
+              ) : null}
             </div>
           </SettingsFormGridItem>
           <SettingsFormGridItem>

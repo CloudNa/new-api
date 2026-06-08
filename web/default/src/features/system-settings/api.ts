@@ -494,6 +494,7 @@ export type RtkFiltersResponse = {
 }
 
 export type ProfitMode = 'off' | 'observe'
+export type ProfitCostRoutingMode = ProfitMode | 'prefer_margin'
 export type ProfitOutputCapMode = 'off' | 'observe' | 'cap' | 'premium_required'
 export type ProfitRiskMode = 'off' | 'alert'
 
@@ -545,7 +546,7 @@ export type ProfitSettings = {
   observe_only: boolean
   observe_groups: string[]
   global_kill_switch: boolean
-  cost_routing_mode: ProfitMode
+  cost_routing_mode: ProfitCostRoutingMode
   cache_mode: ProfitMode
   long_context_mode: ProfitMode
   output_cap_mode: ProfitOutputCapMode
@@ -833,7 +834,7 @@ export type ProfitRoutePreviewCandidate = {
 export type ProfitRoutePreviewResponse = {
   observe_only: boolean
   live_routing_used: boolean
-  routing_mode: ProfitMode
+  routing_mode: ProfitCostRoutingMode
   selected_index: number
   message: string
   candidates: ProfitRoutePreviewCandidate[]

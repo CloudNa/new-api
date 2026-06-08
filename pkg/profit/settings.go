@@ -14,6 +14,7 @@ const (
 
 	ModeOff             = "off"
 	ModeObserve         = "observe"
+	ModePreferMargin    = "prefer_margin"
 	ModeCap             = "cap"
 	ModePremiumRequired = "premium_required"
 
@@ -135,7 +136,7 @@ func (s Settings) Normalize() Settings {
 		s.ObserveGroups = defaults.ObserveGroups
 	}
 	s.ObserveGroups = cleanStringSlice(s.ObserveGroups)
-	if !validOffObserveMode(s.CostRoutingMode) {
+	if !validCostRoutingMode(s.CostRoutingMode) {
 		s.CostRoutingMode = defaults.CostRoutingMode
 	}
 	if !validOffObserveMode(s.CacheMode) {
@@ -160,7 +161,7 @@ func (s Settings) Normalize() Settings {
 }
 
 func (s Settings) Validate() error {
-	if s.CostRoutingMode != "" && !validOffObserveMode(s.CostRoutingMode) {
+	if s.CostRoutingMode != "" && !validCostRoutingMode(s.CostRoutingMode) {
 		return errors.New("invalid cost_routing_mode")
 	}
 	if s.CacheMode != "" && !validOffObserveMode(s.CacheMode) {
@@ -261,6 +262,10 @@ func (s Settings) validateObserveOnlyScope() error {
 
 func validOffObserveMode(mode string) bool {
 	return mode == ModeOff || mode == ModeObserve
+}
+
+func validCostRoutingMode(mode string) bool {
+	return mode == ModeOff || mode == ModeObserve || mode == ModePreferMargin
 }
 
 func validOutputCapMode(mode string) bool {

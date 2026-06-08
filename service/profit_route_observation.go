@@ -29,7 +29,7 @@ func buildProfitRouteDecision(ctx *gin.Context, input profitRouteDecisionInput) 
 		return nil
 	}
 	settings := profit.CurrentSettings()
-	if settings.CostRoutingMode != profit.ModeObserve {
+	if settings.CostRoutingMode != profit.ModeObserve && settings.CostRoutingMode != profit.ModePreferMargin {
 		return nil
 	}
 
