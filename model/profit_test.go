@@ -380,3 +380,47 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 	require.Nil(t, analytics.CacheSavedUSD)
 	require.Nil(t, analytics.RetryCostUSD)
 }
+
+func TestGetProfitAnalyticsOutputPolicyPercentiles(t *testing.T) {
+	resetProfitTestData(t)
+
+	for i := 1; i <= 20; i++ {
+		insertProfitTestLog(t, &Log{
+			CreatedAt:        int64(100 + i),
+			Username:         "alice",
+			ModelName:        "gpt-5.5",
+			Group:            profit.DefaultObserveGroup,
+			PromptTokens:     10,
+			CompletionTokens: i * 100,
+			Quota:            1000,
+		}, map[string]interface{}{
+			profit.KeyObserveVersion:               profit.ObservationVersion,
+			profit.KeyOutputPolicyMode:             profit.ModeCap,
+			profit.KeyOutputPolicyCompletionTokens: i * 100,
+		})
+	}
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        200,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     10,
+		CompletionTokens: 0,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:               profit.ObservationVersion,
+		profit.KeyOutputPolicyMode:             profit.ModeCap,
+		profit.KeyOutputPolicyCompletionTokens: 0,
+	})
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(21), analytics.OutputPolicyObservedCount)
+	require.Equal(t, int64(20), analytics.OutputPolicyCompletionSampleCount)
+	require.Equal(t, int64(21000), analytics.OutputPolicyCompletionTokens)
+	require.InDelta(t, 1050, analytics.OutputPolicyCompletionAvgTokens, 0.0001)
+	require.Equal(t, int64(1900), analytics.OutputPolicyCompletionP95Tokens)
+	require.Equal(t, int64(2000), analytics.OutputPolicyCompletionP99Tokens)
+	require.Equal(t, int64(2000), analytics.OutputPolicyCompletionMaxTokens)
+}

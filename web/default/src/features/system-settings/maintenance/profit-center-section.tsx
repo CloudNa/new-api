@@ -615,6 +615,26 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
       formatNumber(analytics?.output_policy_observed_count),
     ],
     [
+      '输出样本数',
+      formatNumber(analytics?.output_policy_completion_sample_count),
+    ],
+    [
+      '输出平均 token',
+      formatNumber(analytics?.output_policy_completion_avg_tokens),
+    ],
+    [
+      '输出 P95 token',
+      formatNumber(analytics?.output_policy_completion_p95_tokens),
+    ],
+    [
+      '输出 P99 token',
+      formatNumber(analytics?.output_policy_completion_p99_tokens),
+    ],
+    [
+      '输出最大 token',
+      formatNumber(analytics?.output_policy_completion_max_tokens),
+    ],
+    [
       'Output would cap',
       formatNumber(analytics?.output_policy_would_cap_count),
     ],

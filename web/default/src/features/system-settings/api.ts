@@ -622,6 +622,11 @@ export type ProfitAnalytics = {
   output_policy_would_cap_count: number
   output_policy_premium_required_count: number
   output_policy_completion_tokens: number
+  output_policy_completion_sample_count: number
+  output_policy_completion_avg_tokens: number
+  output_policy_completion_p95_tokens: number
+  output_policy_completion_p99_tokens: number
+  output_policy_completion_max_tokens: number
   profit_risk_observed_count: number
   profit_risk_alert_count: number
   profit_risk_loss_making_count: number

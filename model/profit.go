@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -122,42 +123,47 @@ type ProfitEvent struct {
 }
 
 type ProfitAnalytics struct {
-	RequestCount                     int64    `json:"request_count"`
-	ScannedEvents                    int64    `json:"scanned_events"`
-	TotalMatchingLogs                int64    `json:"total_matching_logs"`
-	IsPartial                        bool     `json:"is_partial"`
-	ScanLimit                        int      `json:"scan_limit"`
-	CostKnownCount                   int64    `json:"cost_known_count"`
-	MissingCostProfileCount          int64    `json:"missing_cost_profile_count"`
-	BillablePromptTokens             int64    `json:"billable_prompt_tokens"`
-	BillableCompletionTokens         int64    `json:"billable_completion_tokens"`
-	UpstreamActualPromptTokens       int64    `json:"upstream_actual_prompt_tokens"`
-	UpstreamActualCompletionTokens   int64    `json:"upstream_actual_completion_tokens"`
-	EstimatedRevenueUSD              float64  `json:"estimated_revenue_usd"`
-	EstimatedUpstreamCostUSD         *float64 `json:"estimated_upstream_cost_usd"`
-	GrossMarginUSD                   *float64 `json:"gross_margin_usd"`
-	GrossMarginPct                   *float64 `json:"gross_margin_pct"`
-	ExpectedCostUSD                  *float64 `json:"expected_cost_usd"`
-	ExpectedMarginUSD                *float64 `json:"expected_margin_usd"`
-	ExpectedMarginPct                *float64 `json:"expected_margin_pct"`
-	CompressionSavedTokens           int64    `json:"compression_saved_tokens"`
-	OutputPolicyObservedCount        int64    `json:"output_policy_observed_count"`
-	OutputPolicyExceededDefaultCount int64    `json:"output_policy_exceeded_default_count"`
-	OutputPolicyExceededHardCount    int64    `json:"output_policy_exceeded_hard_count"`
-	OutputPolicyWouldCapCount        int64    `json:"output_policy_would_cap_count"`
-	OutputPolicyPremiumRequiredCount int64    `json:"output_policy_premium_required_count"`
-	OutputPolicyCompletionTokens     int64    `json:"output_policy_completion_tokens"`
-	RiskObservedCount                int64    `json:"profit_risk_observed_count"`
-	RiskAlertCount                   int64    `json:"profit_risk_alert_count"`
-	RiskLossMakingCount              int64    `json:"profit_risk_loss_making_count"`
-	RiskLowGrossMarginCount          int64    `json:"profit_risk_low_gross_margin_count"`
-	RiskLowExpectedMarginCount       int64    `json:"profit_risk_low_expected_margin_count"`
-	LongContextObservedCount         int64    `json:"long_context_observed_count"`
-	LongContextPremiumRequiredCount  int64    `json:"long_context_premium_required_count"`
-	LongContextTokens                int64    `json:"long_context_tokens"`
-	LongContextSuggestedExtraUSD     float64  `json:"long_context_suggested_extra_revenue_usd"`
-	CacheSavedUSD                    *float64 `json:"cache_saved_usd"`
-	RetryCostUSD                     *float64 `json:"retry_cost_usd"`
+	RequestCount                      int64    `json:"request_count"`
+	ScannedEvents                     int64    `json:"scanned_events"`
+	TotalMatchingLogs                 int64    `json:"total_matching_logs"`
+	IsPartial                         bool     `json:"is_partial"`
+	ScanLimit                         int      `json:"scan_limit"`
+	CostKnownCount                    int64    `json:"cost_known_count"`
+	MissingCostProfileCount           int64    `json:"missing_cost_profile_count"`
+	BillablePromptTokens              int64    `json:"billable_prompt_tokens"`
+	BillableCompletionTokens          int64    `json:"billable_completion_tokens"`
+	UpstreamActualPromptTokens        int64    `json:"upstream_actual_prompt_tokens"`
+	UpstreamActualCompletionTokens    int64    `json:"upstream_actual_completion_tokens"`
+	EstimatedRevenueUSD               float64  `json:"estimated_revenue_usd"`
+	EstimatedUpstreamCostUSD          *float64 `json:"estimated_upstream_cost_usd"`
+	GrossMarginUSD                    *float64 `json:"gross_margin_usd"`
+	GrossMarginPct                    *float64 `json:"gross_margin_pct"`
+	ExpectedCostUSD                   *float64 `json:"expected_cost_usd"`
+	ExpectedMarginUSD                 *float64 `json:"expected_margin_usd"`
+	ExpectedMarginPct                 *float64 `json:"expected_margin_pct"`
+	CompressionSavedTokens            int64    `json:"compression_saved_tokens"`
+	OutputPolicyObservedCount         int64    `json:"output_policy_observed_count"`
+	OutputPolicyExceededDefaultCount  int64    `json:"output_policy_exceeded_default_count"`
+	OutputPolicyExceededHardCount     int64    `json:"output_policy_exceeded_hard_count"`
+	OutputPolicyWouldCapCount         int64    `json:"output_policy_would_cap_count"`
+	OutputPolicyPremiumRequiredCount  int64    `json:"output_policy_premium_required_count"`
+	OutputPolicyCompletionTokens      int64    `json:"output_policy_completion_tokens"`
+	OutputPolicyCompletionSampleCount int64    `json:"output_policy_completion_sample_count"`
+	OutputPolicyCompletionAvgTokens   float64  `json:"output_policy_completion_avg_tokens"`
+	OutputPolicyCompletionP95Tokens   int64    `json:"output_policy_completion_p95_tokens"`
+	OutputPolicyCompletionP99Tokens   int64    `json:"output_policy_completion_p99_tokens"`
+	OutputPolicyCompletionMaxTokens   int64    `json:"output_policy_completion_max_tokens"`
+	RiskObservedCount                 int64    `json:"profit_risk_observed_count"`
+	RiskAlertCount                    int64    `json:"profit_risk_alert_count"`
+	RiskLossMakingCount               int64    `json:"profit_risk_loss_making_count"`
+	RiskLowGrossMarginCount           int64    `json:"profit_risk_low_gross_margin_count"`
+	RiskLowExpectedMarginCount        int64    `json:"profit_risk_low_expected_margin_count"`
+	LongContextObservedCount          int64    `json:"long_context_observed_count"`
+	LongContextPremiumRequiredCount   int64    `json:"long_context_premium_required_count"`
+	LongContextTokens                 int64    `json:"long_context_tokens"`
+	LongContextSuggestedExtraUSD      float64  `json:"long_context_suggested_extra_revenue_usd"`
+	CacheSavedUSD                     *float64 `json:"cache_saved_usd"`
+	RetryCostUSD                      *float64 `json:"retry_cost_usd"`
 }
 
 func GetProfitEvents(filter ProfitLogFilter, startIdx int, num int) (events []*ProfitEvent, total int64, err error) {
@@ -215,6 +221,7 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 	var hasExpectedCost bool
 	var hasCacheSaved bool
 	var hasRetryCost bool
+	var outputCompletionSamples []int64
 
 	for _, log := range logs {
 		event, ok := profitEventFromLog(log)
@@ -231,6 +238,9 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 		if event.OutputPolicyMode != "" {
 			analytics.OutputPolicyObservedCount++
 			analytics.OutputPolicyCompletionTokens += event.OutputPolicyCompletionTokens
+			if event.OutputPolicyCompletionTokens > 0 {
+				outputCompletionSamples = append(outputCompletionSamples, event.OutputPolicyCompletionTokens)
+			}
 			if event.OutputPolicyExceededDefault {
 				analytics.OutputPolicyExceededDefaultCount++
 			}
@@ -320,8 +330,32 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 	if hasRetryCost {
 		analytics.RetryCostUSD = floatPtr(retryCostSum)
 	}
+	if len(outputCompletionSamples) > 0 {
+		sort.Slice(outputCompletionSamples, func(i, j int) bool {
+			return outputCompletionSamples[i] < outputCompletionSamples[j]
+		})
+		analytics.OutputPolicyCompletionSampleCount = int64(len(outputCompletionSamples))
+		analytics.OutputPolicyCompletionAvgTokens = float64(analytics.OutputPolicyCompletionTokens) / float64(len(outputCompletionSamples))
+		analytics.OutputPolicyCompletionP95Tokens = nearestRankPercentile(outputCompletionSamples, 95)
+		analytics.OutputPolicyCompletionP99Tokens = nearestRankPercentile(outputCompletionSamples, 99)
+		analytics.OutputPolicyCompletionMaxTokens = outputCompletionSamples[len(outputCompletionSamples)-1]
+	}
 
 	return analytics, nil
+}
+
+func nearestRankPercentile(sortedValues []int64, percentile int) int64 {
+	if len(sortedValues) == 0 {
+		return 0
+	}
+	if percentile <= 0 {
+		return sortedValues[0]
+	}
+	if percentile >= 100 {
+		return sortedValues[len(sortedValues)-1]
+	}
+	rank := (percentile*len(sortedValues) + 99) / 100
+	return sortedValues[rank-1]
 }
 
 func buildProfitLogQuery(filter ProfitLogFilter) (*gorm.DB, error) {
