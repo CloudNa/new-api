@@ -467,6 +467,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		upstreamCompletionTokens = originUsage.CompletionTokens
 	}
 	compressionSavedTokens := injectPromptCompressionOther(other, relayInfo)
+	retryCostUSD, retryAttemptCount, retryAttempts := ProfitRetryObservationFromContext(ctx)
 	routeDecision := buildProfitRouteDecision(ctx, profitRouteDecisionInput{
 		Group:                          relayInfo.UsingGroup,
 		Provider:                       ctx.GetString("channel_name"),
@@ -506,6 +507,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		LatencyMs:                      int(summary.UseTimeSeconds * 1000),
 		RouteDecision:                  routeDecision,
 		OutputPolicyDecision:           outputPolicyDecision,
+		RetryCostUSD:                   retryCostUSD,
+		RetryAttemptCount:              retryAttemptCount,
+		RetryAttempts:                  retryAttempts,
 	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

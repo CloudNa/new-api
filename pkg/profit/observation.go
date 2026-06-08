@@ -36,6 +36,8 @@ const (
 	KeyCompressionEngineBreakdown     = "compression_engine_breakdown"
 	KeyCacheSavedUSD                  = "cache_saved_usd"
 	KeyRetryCostUSD                   = "retry_cost_usd"
+	KeyRetryAttemptCount              = "profit_retry_attempt_count"
+	KeyRetryAttempts                  = "profit_retry_attempts"
 	KeyLongContextMode                = "long_context_mode"
 	KeyLongContextPolicyID            = "long_context_policy_id"
 	KeyLongContextPolicyName          = "long_context_policy_name"
@@ -125,6 +127,8 @@ var userHiddenKeys = []string{
 	KeyCompressionEngineBreakdown,
 	KeyCacheSavedUSD,
 	KeyRetryCostUSD,
+	KeyRetryAttemptCount,
+	KeyRetryAttempts,
 	KeyLongContextMode,
 	KeyLongContextPolicyID,
 	KeyLongContextPolicyName,
@@ -201,6 +205,9 @@ type ObservationInput struct {
 	RouteDecision                  *RouteDecision
 	OutputPolicyDecision           *OutputPolicyDecision
 	LongContextDecision            *LongContextDecision
+	RetryCostUSD                   *float64
+	RetryAttemptCount              int
+	RetryAttempts                  []RetryAttemptObservation
 }
 
 func EnabledForGroup(group string) bool {
@@ -275,7 +282,17 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	other[KeyGrossMarginPct] = costEstimate.GrossMarginPct
 	other[KeyCompressionSavedTokens] = positiveInt(input.CompressionSavedTokens)
 	other[KeyCacheSavedUSD] = nil
-	other[KeyRetryCostUSD] = nil
+	if input.RetryCostUSD != nil {
+		other[KeyRetryCostUSD] = input.RetryCostUSD
+	} else {
+		other[KeyRetryCostUSD] = nil
+	}
+	if input.RetryAttemptCount > 0 {
+		other[KeyRetryAttemptCount] = positiveInt(input.RetryAttemptCount)
+	}
+	if len(input.RetryAttempts) > 0 {
+		other[KeyRetryAttempts] = input.RetryAttempts
+	}
 	appendLongContextDecision(other, longContextDecision)
 	other[KeyExpectedCostUSD] = costEstimate.ExpectedCostUSD
 	other[KeyExpectedMarginUSD] = costEstimate.ExpectedMarginUSD

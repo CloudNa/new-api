@@ -230,7 +230,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
-		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+		willRetry := shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
+		service.RecordProfitRetryAttempt(c, relayInfo, channel, newAPIError, willRetry)
+		if !willRetry {
 			break
 		}
 	}

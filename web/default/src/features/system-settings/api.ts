@@ -654,6 +654,27 @@ export type ProfitAnalytics = {
   long_context_suggested_extra_revenue_usd: number
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
+  profit_retry_attempt_count?: number
+}
+
+export type ProfitRetryAttempt = {
+  index: number
+  channel_id: number
+  channel_name?: string
+  model_name?: string
+  prompt_tokens?: number
+  completion_tokens?: number
+  status_code?: number
+  error_type?: string
+  error_code?: string
+  cost_known: boolean
+  profit_cost_status: string
+  cost_profile_id?: string
+  cost_profile_name?: string
+  estimated_upstream_cost_usd?: number | null
+  expected_retry_cost_usd?: number | null
+  will_retry: boolean
+  platform_borne: boolean
 }
 
 export type ProfitEvent = {
@@ -758,6 +779,8 @@ export type ProfitEvent = {
   long_context_live_enforced?: boolean
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
+  profit_retry_attempt_count?: number
+  profit_retry_attempts?: ProfitRetryAttempt[]
 }
 
 export type ProfitRouteDecisionCandidate = {

@@ -144,6 +144,8 @@ type ProfitEvent struct {
 	LongContextLiveEnforced        bool                                 `json:"long_context_live_enforced"`
 	CacheSavedUSD                  *float64                             `json:"cache_saved_usd"`
 	RetryCostUSD                   *float64                             `json:"retry_cost_usd"`
+	RetryAttemptCount              int64                                `json:"profit_retry_attempt_count"`
+	RetryAttempts                  []profit.RetryAttemptObservation     `json:"profit_retry_attempts,omitempty"`
 }
 
 type ProfitAnalytics struct {
@@ -200,6 +202,7 @@ type ProfitAnalytics struct {
 	LongContextSuggestedExtraUSD         float64              `json:"long_context_suggested_extra_revenue_usd"`
 	CacheSavedUSD                        *float64             `json:"cache_saved_usd"`
 	RetryCostUSD                         *float64             `json:"retry_cost_usd"`
+	RetryAttemptCount                    int64                `json:"profit_retry_attempt_count"`
 }
 
 func GetProfitEvents(filter ProfitLogFilter, startIdx int, num int) (events []*ProfitEvent, total int64, err error) {
@@ -344,6 +347,7 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 			hasRetryCost = true
 			retryCostSum += *event.RetryCostUSD
 		}
+		analytics.RetryAttemptCount += event.RetryAttemptCount
 	}
 
 	if analytics.CostKnownCount > 0 {
@@ -679,6 +683,8 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		LongContextLiveEnforced:        boolValue(other, profit.KeyLongContextLiveEnforced),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
 		RetryCostUSD:                   optionalFloat(other, profit.KeyRetryCostUSD),
+		RetryAttemptCount:              int64Value(other, profit.KeyRetryAttemptCount),
+		RetryAttempts:                  retryAttemptsValue(other, profit.KeyRetryAttempts),
 	}
 	return event, true
 }
@@ -794,6 +800,25 @@ func routeCandidatesValue(data map[string]interface{}, key string) []profit.Rout
 		return nil
 	}
 	return candidates
+}
+
+func retryAttemptsValue(data map[string]interface{}, key string) []profit.RetryAttemptObservation {
+	value, ok := data[key]
+	if !ok || value == nil {
+		return nil
+	}
+	if attempts, ok := value.([]profit.RetryAttemptObservation); ok {
+		return attempts
+	}
+	payload, err := common.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var attempts []profit.RetryAttemptObservation
+	if err = common.Unmarshal(payload, &attempts); err != nil {
+		return nil
+	}
+	return attempts
 }
 
 func compressionEngineBreakdownValue(data map[string]interface{}, key string) []promptcompress.EngineBreakdownItem {

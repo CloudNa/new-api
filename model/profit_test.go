@@ -429,6 +429,44 @@ func TestGetProfitAnalyticsOutputPolicyPercentiles(t *testing.T) {
 	require.Equal(t, "p95_p99_observed", analytics.OutputPolicyRecommendationReason)
 }
 
+func TestGetProfitAnalyticsAggregatesRetryCost(t *testing.T) {
+	resetProfitTestData(t)
+
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        100,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     1000,
+		CompletionTokens: 10,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:    profit.ObservationVersion,
+		profit.KeyRetryCostUSD:      0.015,
+		profit.KeyRetryAttemptCount: 2,
+	})
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        110,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     1000,
+		CompletionTokens: 10,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:    profit.ObservationVersion,
+		profit.KeyRetryCostUSD:      0.005,
+		profit.KeyRetryAttemptCount: 1,
+	})
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+
+	require.NoError(t, err)
+	require.NotNil(t, analytics.RetryCostUSD)
+	require.InDelta(t, 0.02, *analytics.RetryCostUSD, 0.0001)
+	require.Equal(t, int64(3), analytics.RetryAttemptCount)
+}
+
 func TestGetProfitAnalyticsOutputPolicyRecommendationNeedsSamples(t *testing.T) {
 	resetProfitTestData(t)
 

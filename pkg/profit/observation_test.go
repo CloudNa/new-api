@@ -190,6 +190,39 @@ func TestAppendObservationAddsLowMarginRiskDecision(t *testing.T) {
 	require.Equal(t, false, other[KeyRiskLiveEnforced])
 }
 
+func TestAppendObservationAddsRetryObservation(t *testing.T) {
+	other := map[string]interface{}{}
+	retryCost := 0.0123
+
+	AppendObservation(other, ObservationInput{
+		Group:             "proxy-test",
+		UserQuota:         500000,
+		RetryCostUSD:      &retryCost,
+		RetryAttemptCount: 1,
+		RetryAttempts: []RetryAttemptObservation{
+			{
+				Index:                1,
+				ChannelID:            7,
+				ChannelName:          "retry-channel",
+				ModelName:            "gpt-test",
+				PromptTokens:         1200,
+				StatusCode:           502,
+				ErrorType:            "upstream_error",
+				ErrorCode:            "bad_response",
+				CostKnown:            true,
+				CostStatus:           CostStatusConfigured,
+				ExpectedRetryCostUSD: &retryCost,
+				WillRetry:            true,
+				PlatformBorne:        true,
+			},
+		},
+	})
+
+	require.Equal(t, &retryCost, other[KeyRetryCostUSD])
+	require.Equal(t, 1, other[KeyRetryAttemptCount])
+	require.Len(t, other[KeyRetryAttempts], 1)
+}
+
 func TestAppendObservationSkipsNonProxyTestGroup(t *testing.T) {
 	other := map[string]interface{}{}
 
@@ -242,6 +275,9 @@ func TestStripUserVisibleFields(t *testing.T) {
 		"profit_risk_reasons":                      []string{RiskReasonLossMakingRequest},
 		"long_context_mode":                        "observe",
 		"long_context_suggested_extra_revenue_usd": 0.2,
+		"retry_cost_usd":                           0.01,
+		"profit_retry_attempt_count":               1,
+		"profit_retry_attempts":                    []RetryAttemptObservation{{ChannelID: 1}},
 		"model_ratio":                              1.5,
 	}
 
@@ -264,5 +300,8 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "profit_risk_reasons")
 	require.NotContains(t, other, "long_context_mode")
 	require.NotContains(t, other, "long_context_suggested_extra_revenue_usd")
+	require.NotContains(t, other, "retry_cost_usd")
+	require.NotContains(t, other, "profit_retry_attempt_count")
+	require.NotContains(t, other, "profit_retry_attempts")
 	require.Equal(t, 1.5, other["model_ratio"])
 }

@@ -836,6 +836,8 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     ['Gross margin', formatUSD(analytics?.gross_margin_usd)],
     ['Gross margin percent', formatPercent(analytics?.gross_margin_pct)],
     ['Expected margin', formatUSD(analytics?.expected_margin_usd)],
+    ['重试尝试', formatNumber(analytics?.profit_retry_attempt_count)],
+    ['重试成本', formatUSD(analytics?.retry_cost_usd)],
     [
       'Compression saved tokens',
       formatNumber(analytics?.compression_saved_tokens),
@@ -1235,9 +1237,20 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={event.cost_known ? 'default' : 'secondary'}>
-                    {t(event.profit_cost_status || 'unknown')}
-                  </Badge>
+                  <div className='flex min-w-0 flex-col gap-1'>
+                    <Badge
+                      className='w-fit'
+                      variant={event.cost_known ? 'default' : 'secondary'}
+                    >
+                      {t(event.profit_cost_status || 'unknown')}
+                    </Badge>
+                    {event.profit_retry_attempt_count ? (
+                      <span className='text-muted-foreground max-w-36 truncate text-xs'>
+                        {t('重试')}: {event.profit_retry_attempt_count} /{' '}
+                        {formatUSD(event.retry_cost_usd)}
+                      </span>
+                    ) : null}
+                  </div>
                 </TableCell>
               </TableRow>
             ))
