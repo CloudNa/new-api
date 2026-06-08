@@ -496,6 +496,7 @@ export type RtkFiltersResponse = {
 export type ProfitMode = 'off' | 'observe'
 export type ProfitCostRoutingMode = ProfitMode | 'prefer_margin'
 export type ProfitOutputCapMode = 'off' | 'observe' | 'cap' | 'premium_required'
+export type ProfitRetryBudgetMode = ProfitMode | 'enforce'
 export type ProfitRiskMode = 'off' | 'alert'
 
 export type ProfitLongContextTier = {
@@ -553,6 +554,9 @@ export type ProfitSettings = {
   cache_mode: ProfitMode
   long_context_mode: ProfitMode
   output_cap_mode: ProfitOutputCapMode
+  retry_budget_mode: ProfitRetryBudgetMode
+  max_retry_cost_usd?: number
+  retry_low_margin_skip?: boolean
   risk_enforcement: ProfitRiskMode
   risk_min_gross_margin_usd?: number
   risk_min_gross_margin_pct?: number
@@ -669,6 +673,8 @@ export type ProfitAnalytics = {
   cache_saved_usd?: number | null
   retry_cost_usd?: number | null
   profit_retry_attempt_count?: number
+  profit_retry_budget_would_skip_count?: number
+  profit_retry_budget_live_enforced_count?: number
 }
 
 export type ProfitRetryAttempt = {
@@ -687,8 +693,19 @@ export type ProfitRetryAttempt = {
   cost_profile_name?: string
   estimated_upstream_cost_usd?: number | null
   expected_retry_cost_usd?: number | null
+  base_will_retry?: boolean
   will_retry: boolean
   platform_borne: boolean
+  retry_budget_mode?: ProfitRetryBudgetMode
+  max_retry_cost_usd?: number
+  current_retry_cost_usd?: number
+  retry_budget_exceeded?: boolean
+  retry_budget_low_margin?: boolean
+  retry_budget_would_skip?: boolean
+  retry_budget_observe_only?: boolean
+  retry_budget_live_enforced?: boolean
+  retry_budget_bypass_reason?: string
+  retry_budget_reason?: string
 }
 
 export type ProfitEvent = {

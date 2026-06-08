@@ -444,6 +444,18 @@ func TestGetProfitAnalyticsAggregatesRetryCost(t *testing.T) {
 		profit.KeyObserveVersion:    profit.ObservationVersion,
 		profit.KeyRetryCostUSD:      0.015,
 		profit.KeyRetryAttemptCount: 2,
+		profit.KeyRetryAttempts: []profit.RetryAttemptObservation{
+			{
+				Index:                   1,
+				RetryBudgetWouldSkip:    true,
+				RetryBudgetLiveEnforced: false,
+			},
+			{
+				Index:                   2,
+				RetryBudgetWouldSkip:    true,
+				RetryBudgetLiveEnforced: true,
+			},
+		},
 	})
 	insertProfitTestLog(t, &Log{
 		CreatedAt:        110,
@@ -465,6 +477,8 @@ func TestGetProfitAnalyticsAggregatesRetryCost(t *testing.T) {
 	require.NotNil(t, analytics.RetryCostUSD)
 	require.InDelta(t, 0.02, *analytics.RetryCostUSD, 0.0001)
 	require.Equal(t, int64(3), analytics.RetryAttemptCount)
+	require.Equal(t, int64(2), analytics.RetryBudgetWouldSkipCount)
+	require.Equal(t, int64(1), analytics.RetryBudgetLiveEnforcedCount)
 }
 
 func TestGetProfitAnalyticsOutputPolicyRecommendationNeedsSamples(t *testing.T) {

@@ -212,6 +212,8 @@ type ProfitAnalytics struct {
 	CacheSavedUSD                        *float64                        `json:"cache_saved_usd"`
 	RetryCostUSD                         *float64                        `json:"retry_cost_usd"`
 	RetryAttemptCount                    int64                           `json:"profit_retry_attempt_count"`
+	RetryBudgetWouldSkipCount            int64                           `json:"profit_retry_budget_would_skip_count"`
+	RetryBudgetLiveEnforcedCount         int64                           `json:"profit_retry_budget_live_enforced_count"`
 }
 
 type ProfitGuardrailRecommendation struct {
@@ -370,6 +372,14 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 			retryCostSum += *event.RetryCostUSD
 		}
 		analytics.RetryAttemptCount += event.RetryAttemptCount
+		for _, attempt := range event.RetryAttempts {
+			if attempt.RetryBudgetWouldSkip {
+				analytics.RetryBudgetWouldSkipCount++
+			}
+			if attempt.RetryBudgetLiveEnforced {
+				analytics.RetryBudgetLiveEnforcedCount++
+			}
+		}
 	}
 
 	if analytics.CostKnownCount > 0 {

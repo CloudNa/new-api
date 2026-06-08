@@ -18,13 +18,21 @@ import (
 
 func withProfitRetryOptionMap(t *testing.T, profiles profit.CostProfilesDocument) {
 	t.Helper()
-	payload, err := common.Marshal(profiles.Normalize())
+	withProfitRetrySettingsOptionMap(t, profit.DefaultSettings(), profiles)
+}
+
+func withProfitRetrySettingsOptionMap(t *testing.T, settings profit.Settings, profiles profit.CostProfilesDocument) {
+	t.Helper()
+	settingsPayload, err := common.Marshal(settings.Normalize())
+	require.NoError(t, err)
+	profilesPayload, err := common.Marshal(profiles.Normalize())
 	require.NoError(t, err)
 
 	common.OptionMapRWMutex.Lock()
 	original := common.OptionMap
 	common.OptionMap = map[string]string{
-		profit.CostProfilesOptionKey: string(payload),
+		profit.SettingsOptionKey:     string(settingsPayload),
+		profit.CostProfilesOptionKey: string(profilesPayload),
 	}
 	common.OptionMapRWMutex.Unlock()
 	t.Cleanup(func() {
@@ -66,6 +74,7 @@ func TestRecordProfitRetryAttemptUsesCompressedPromptTokens(t *testing.T) {
 	require.Equal(t, 100, attempts[0].PromptTokens)
 	require.Equal(t, http.StatusBadGateway, attempts[0].StatusCode)
 	require.Equal(t, "bad_response", attempts[0].ErrorCode)
+	require.True(t, attempts[0].BaseWillRetry)
 	require.True(t, attempts[0].WillRetry)
 	require.True(t, attempts[0].PlatformBorne)
 	require.NotNil(t, attempts[0].EstimatedUpstreamCostUSD)
@@ -74,4 +83,76 @@ func TestRecordProfitRetryAttemptUsesCompressedPromptTokens(t *testing.T) {
 	require.InDelta(t, 0.011, *attempts[0].ExpectedRetryCostUSD, 0.000001)
 	require.NotNil(t, retryCostUSD)
 	require.InDelta(t, 0.011, *retryCostUSD, 0.000001)
+}
+
+func TestRecordProfitRetryAttemptBudgetObserveDoesNotStopRetry(t *testing.T) {
+	settings := profit.DefaultSettings()
+	settings.RetryBudgetMode = profit.ModeObserve
+	settings.MaxRetryCostUSD = 0.005
+	withProfitRetrySettingsOptionMap(t, settings, profit.CostProfilesDocument{Items: []profit.CostProfile{
+		{
+			ID:                 "retry-profile",
+			Name:               "Retry profile",
+			Enabled:            true,
+			ChannelID:          7,
+			ModelName:          "retry-model",
+			InputUSDPerMillion: 10,
+			FailurePenaltyUSD:  0.01,
+		},
+	}})
+	c, _ := gin.CreateTestContext(nil)
+	info := &relaycommon.RelayInfo{
+		UsingGroup:      profit.DefaultObserveGroup,
+		OriginModelName: "retry-model",
+	}
+	info.SetEstimatePromptTokens(1000)
+	err := types.NewErrorWithStatusCode(fmt.Errorf("upstream failed"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+
+	finalWillRetry := RecordProfitRetryAttempt(c, info, &model.Channel{Id: 7, Name: "retry-channel"}, err, true)
+	_, _, attempts := ProfitRetryObservationFromContext(c)
+
+	require.True(t, finalWillRetry)
+	require.Len(t, attempts, 1)
+	require.True(t, attempts[0].RetryBudgetExceeded)
+	require.True(t, attempts[0].RetryBudgetWouldSkip)
+	require.True(t, attempts[0].RetryBudgetObserveOnly)
+	require.False(t, attempts[0].RetryBudgetLiveEnforced)
+	require.True(t, attempts[0].WillRetry)
+	require.Equal(t, profit.RetryBudgetReasonBudgetExceeded, attempts[0].RetryBudgetReason)
+}
+
+func TestRecordProfitRetryAttemptBudgetEnforceStopsRetryWhenObserveOnlyDisabled(t *testing.T) {
+	settings := profit.DefaultSettings()
+	settings.ObserveOnly = false
+	settings.RetryBudgetMode = profit.ModeEnforce
+	settings.MaxRetryCostUSD = 0.005
+	withProfitRetrySettingsOptionMap(t, settings, profit.CostProfilesDocument{Items: []profit.CostProfile{
+		{
+			ID:                 "retry-profile",
+			Name:               "Retry profile",
+			Enabled:            true,
+			ChannelID:          7,
+			ModelName:          "retry-model",
+			InputUSDPerMillion: 10,
+			FailurePenaltyUSD:  0.01,
+		},
+	}})
+	c, _ := gin.CreateTestContext(nil)
+	info := &relaycommon.RelayInfo{
+		UsingGroup:      profit.DefaultObserveGroup,
+		OriginModelName: "retry-model",
+	}
+	info.SetEstimatePromptTokens(1000)
+	err := types.NewErrorWithStatusCode(fmt.Errorf("upstream failed"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+
+	finalWillRetry := RecordProfitRetryAttempt(c, info, &model.Channel{Id: 7, Name: "retry-channel"}, err, true)
+	_, _, attempts := ProfitRetryObservationFromContext(c)
+
+	require.False(t, finalWillRetry)
+	require.Len(t, attempts, 1)
+	require.True(t, attempts[0].RetryBudgetExceeded)
+	require.True(t, attempts[0].RetryBudgetWouldSkip)
+	require.False(t, attempts[0].RetryBudgetObserveOnly)
+	require.True(t, attempts[0].RetryBudgetLiveEnforced)
+	require.False(t, attempts[0].WillRetry)
 }

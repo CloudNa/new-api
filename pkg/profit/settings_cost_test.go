@@ -30,6 +30,9 @@ func TestProfitSettingsDefaultsObserveProxyTest(t *testing.T) {
 	require.Equal(t, DefaultCostRoutingMinSamples, settings.CostRoutingMinSamples)
 	require.Equal(t, float64(DefaultCostRoutingMinSuccessRatePct), settings.CostRoutingMinSuccessRatePct)
 	require.Equal(t, DefaultCostRoutingHealthWindowHours, settings.CostRoutingHealthWindowHours)
+	require.Equal(t, ModeOff, settings.RetryBudgetMode)
+	require.Zero(t, settings.MaxRetryCostUSD)
+	require.False(t, settings.RetryLowMarginSkip)
 	require.True(t, EnabledForGroup(DefaultObserveGroup))
 	require.False(t, EnabledForGroup("default"))
 }
@@ -76,6 +79,27 @@ func TestProfitSettingsValidateRiskThresholds(t *testing.T) {
 	settings.RiskMinGrossUSD = 0
 	settings.RiskMinExpectPct = 10
 	require.NoError(t, settings.Validate())
+}
+
+func TestProfitSettingsValidateRetryBudget(t *testing.T) {
+	settings := DefaultSettings()
+	settings.RetryBudgetMode = ModeEnforce
+	settings.MaxRetryCostUSD = 0.02
+	settings.RetryLowMarginSkip = true
+
+	require.NoError(t, settings.Validate())
+
+	normalized := settings.Normalize()
+	require.Equal(t, ModeEnforce, normalized.RetryBudgetMode)
+	require.InDelta(t, 0.02, normalized.MaxRetryCostUSD, 0.000001)
+	require.True(t, normalized.RetryLowMarginSkip)
+
+	settings.RetryBudgetMode = "bad"
+	require.ErrorContains(t, settings.Validate(), "retry_budget_mode")
+
+	settings = DefaultSettings()
+	settings.MaxRetryCostUSD = -1
+	require.ErrorContains(t, settings.Validate(), "max_retry_cost_usd")
 }
 
 func TestProfitSettingsValidateCostRoutingHealthThresholds(t *testing.T) {

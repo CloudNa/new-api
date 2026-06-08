@@ -65,6 +65,7 @@ import {
   type ProfitMode,
   type ProfitOutputCapMode,
   type ProfitOutputPolicy,
+  type ProfitRetryBudgetMode,
   type ProfitRiskMode,
   type ProfitRoutePreviewRequest,
   type ProfitRoutePreviewResponse,
@@ -107,6 +108,15 @@ const OUTPUT_CAP_OPTIONS: Array<{ value: ProfitOutputCapMode; label: string }> =
     { value: 'premium_required', label: 'Premium required' },
   ]
 
+const RETRY_BUDGET_OPTIONS: Array<{
+  value: ProfitRetryBudgetMode
+  label: string
+}> = [
+  { value: 'off', label: 'Off' },
+  { value: 'observe', label: 'Observe' },
+  { value: 'enforce', label: 'Enforce' },
+]
+
 const RISK_OPTIONS: Array<{ value: ProfitRiskMode; label: string }> = [
   { value: 'off', label: 'Off' },
   { value: 'alert', label: 'Alert' },
@@ -125,6 +135,9 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   cache_mode: 'off',
   long_context_mode: 'off',
   output_cap_mode: 'off',
+  retry_budget_mode: 'off',
+  max_retry_cost_usd: 0,
+  retry_low_margin_skip: false,
   risk_enforcement: 'off',
   risk_min_gross_margin_usd: 0,
   risk_min_gross_margin_pct: 0,
@@ -841,6 +854,39 @@ function OutputCapModeSelect(props: {
   )
 }
 
+function RetryBudgetModeSelect(props: {
+  value: ProfitRetryBudgetMode
+  label: string
+  onChange: (value: ProfitRetryBudgetMode) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Select
+      items={RETRY_BUDGET_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.label),
+      }))}
+      value={props.value}
+      onValueChange={(value) =>
+        value !== null && props.onChange(value as ProfitRetryBudgetMode)
+      }
+    >
+      <SelectTrigger className='w-full' aria-label={t(props.label)}>
+        <SelectValue placeholder={t('Select retry budget mode')} />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        <SelectGroup>
+          {RETRY_BUDGET_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {t(option.label)}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+}
+
 function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
   const { t } = useTranslation()
   const stats = [
@@ -855,6 +901,14 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     ['Expected margin', formatUSD(analytics?.expected_margin_usd)],
     ['重试尝试', formatNumber(analytics?.profit_retry_attempt_count)],
     ['重试成本', formatUSD(analytics?.retry_cost_usd)],
+    [
+      '重试预算本应跳过',
+      formatNumber(analytics?.profit_retry_budget_would_skip_count),
+    ],
+    [
+      '重试预算真实拦截',
+      formatNumber(analytics?.profit_retry_budget_live_enforced_count),
+    ],
     [
       'Compression saved tokens',
       formatNumber(analytics?.compression_saved_tokens),
@@ -1159,8 +1213,17 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
               </TableCell>
             </TableRow>
           ) : (
-            rows.slice(0, 8).map((event) => (
-              <TableRow key={event.id}>
+            rows.slice(0, 8).map((event) => {
+              const retryBudgetWouldSkipCount =
+                event.profit_retry_attempts?.filter(
+                  (attempt) => attempt.retry_budget_would_skip
+                ).length ?? 0
+              const retryBudgetLiveEnforcedCount =
+                event.profit_retry_attempts?.filter(
+                  (attempt) => attempt.retry_budget_live_enforced
+                ).length ?? 0
+              return (
+                <TableRow key={event.id}>
                 <TableCell className='max-w-52 truncate font-medium'>
                   {event.model_name || '-'}
                 </TableCell>
@@ -1344,10 +1407,19 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                         {formatUSD(event.retry_cost_usd)}
                       </span>
                     ) : null}
+                    {retryBudgetWouldSkipCount ? (
+                      <span className='text-muted-foreground max-w-36 truncate text-xs'>
+                        {t('预算')}: {retryBudgetWouldSkipCount}
+                        {retryBudgetLiveEnforcedCount
+                          ? ` / ${retryBudgetLiveEnforcedCount}`
+                          : ''}
+                      </span>
+                    ) : null}
                   </div>
                 </TableCell>
               </TableRow>
-            ))
+              )
+            })
           )}
         </TableBody>
       </Table>
@@ -1764,6 +1836,66 @@ export function ProfitCenterSection() {
                 }
               />
             </div>
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label className='text-sm font-medium'>
+              {t('重试预算模式')}
+            </Label>
+            <div className='mt-1.5'>
+              <RetryBudgetModeSelect
+                value={settings.retry_budget_mode}
+                label='重试预算模式'
+                onChange={(retry_budget_mode) =>
+                  setSettings((current) => ({
+                    ...current,
+                    retry_budget_mode,
+                  }))
+                }
+              />
+              {settings.retry_budget_mode === 'enforce' ? (
+                <p className='text-muted-foreground mt-1 text-xs'>
+                  {t('全局 observe_only 开启时仍只记录，不会真实拦截重试。')}
+                </p>
+              ) : null}
+            </div>
+          </SettingsFormGridItem>
+          <SettingsFormGridItem>
+            <Label
+              htmlFor='profit-max-retry-cost-usd'
+              className='text-sm font-medium'
+            >
+              {t('单请求重试预算 USD')}
+            </Label>
+            <Input
+              id='profit-max-retry-cost-usd'
+              name='profit-max-retry-cost-usd'
+              type='number'
+              min='0'
+              step='0.000001'
+              className='mt-1.5'
+              value={settings.max_retry_cost_usd ?? 0}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  max_retry_cost_usd: parseNumberInput(event.target.value),
+                }))
+              }
+            />
+          </SettingsFormGridItem>
+          <SettingsFormGridItem span='full'>
+            <SettingsSwitchField
+              label={t('低毛利重试保护')}
+              description={t(
+                '记录低毛利请求本应停止重试的次数；observe_only 关闭前不会真实拦截。'
+              )}
+              checked={settings.retry_low_margin_skip ?? false}
+              onCheckedChange={(retry_low_margin_skip) =>
+                setSettings((current) => ({
+                  ...current,
+                  retry_low_margin_skip,
+                }))
+              }
+            />
           </SettingsFormGridItem>
           <SettingsFormGridItem>
             <Label className='text-sm font-medium'>

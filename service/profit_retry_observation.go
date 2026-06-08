@@ -11,11 +11,12 @@ import (
 
 const profitRetryAttemptsContextKey = "glart_profit_retry_attempts"
 
-func RecordProfitRetryAttempt(c *gin.Context, info *relaycommon.RelayInfo, channel *model.Channel, err *types.NewAPIError, willRetry bool) {
+func RecordProfitRetryAttempt(c *gin.Context, info *relaycommon.RelayInfo, channel *model.Channel, err *types.NewAPIError, willRetry bool) bool {
 	if c == nil || info == nil || channel == nil || err == nil || !profit.EnabledForGroup(info.UsingGroup) {
-		return
+		return willRetry
 	}
 	promptTokens := retryAttemptPromptTokens(info)
+	settings := profit.CurrentSettings()
 	estimate := profit.EstimateCost(profit.CostInput{
 		Group:                    info.UsingGroup,
 		Provider:                 channel.Name,
@@ -29,6 +30,14 @@ func RecordProfitRetryAttempt(c *gin.Context, info *relaycommon.RelayInfo, chann
 		FailureRate:              1,
 	}, profit.CurrentCostProfiles())
 	attempts := profitRetryAttemptsFromContext(c)
+	retryCost := retryAttemptCost(&estimate)
+	decision := profit.BuildRetryBudgetDecisionWithSettings(profit.RetryBudgetInput{
+		BaseWillRetry:       willRetry,
+		CurrentRetryCostUSD: currentRetryCostUSD(attempts),
+		NextRetryCostUSD:    retryCost,
+		CostEstimate:        estimate,
+	}, settings)
+	finalWillRetry := decision.FinalWillRetry(willRetry)
 	attempt := profit.RetryAttemptObservation{
 		Index:                    len(attempts) + 1,
 		ChannelID:                channel.Id,
@@ -44,12 +53,24 @@ func RecordProfitRetryAttempt(c *gin.Context, info *relaycommon.RelayInfo, chann
 		CostProfileID:            estimate.CostProfileID,
 		CostProfileName:          estimate.CostProfileName,
 		EstimatedUpstreamCostUSD: estimate.EstimatedUpstreamCostUSD,
-		ExpectedRetryCostUSD:     retryAttemptCost(&estimate),
-		WillRetry:                willRetry,
+		ExpectedRetryCostUSD:     retryCost,
+		BaseWillRetry:            willRetry,
+		WillRetry:                finalWillRetry,
 		PlatformBorne:            true,
+		RetryBudgetMode:          decision.Mode,
+		MaxRetryCostUSD:          decision.MaxRetryCostUSD,
+		CurrentRetryCostUSD:      decision.CurrentRetryCostUSD,
+		RetryBudgetExceeded:      decision.BudgetExceeded,
+		RetryBudgetLowMargin:     decision.LowMargin,
+		RetryBudgetWouldSkip:     decision.WouldSkipRetry,
+		RetryBudgetObserveOnly:   decision.ObserveOnly,
+		RetryBudgetLiveEnforced:  decision.LiveEnforced,
+		RetryBudgetBypassReason:  decision.BypassReason,
+		RetryBudgetReason:        decision.Reason,
 	}
 	attempts = append(attempts, attempt)
 	c.Set(profitRetryAttemptsContextKey, attempts)
+	return finalWillRetry
 }
 
 func ProfitRetryObservationFromContext(c *gin.Context) (*float64, int, []profit.RetryAttemptObservation) {
@@ -95,6 +116,17 @@ func retryAttemptCost(estimate *profit.CostEstimate) *float64 {
 		return estimate.ExpectedCostUSD
 	}
 	return estimate.EstimatedUpstreamCostUSD
+}
+
+func currentRetryCostUSD(attempts []profit.RetryAttemptObservation) float64 {
+	var total float64
+	for _, attempt := range attempts {
+		if attempt.ExpectedRetryCostUSD == nil {
+			continue
+		}
+		total += *attempt.ExpectedRetryCostUSD
+	}
+	return total
 }
 
 func retryAttemptPromptTokens(info *relaycommon.RelayInfo) int {

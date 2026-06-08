@@ -17,6 +17,7 @@ const (
 	ModePreferMargin    = "prefer_margin"
 	ModeCap             = "cap"
 	ModePremiumRequired = "premium_required"
+	ModeEnforce         = "enforce"
 
 	RiskModeAlert = "alert"
 
@@ -38,6 +39,9 @@ type Settings struct {
 	CacheMode                    string              `json:"cache_mode"`
 	LongContextMode              string              `json:"long_context_mode"`
 	OutputCapMode                string              `json:"output_cap_mode"`
+	RetryBudgetMode              string              `json:"retry_budget_mode"`
+	MaxRetryCostUSD              float64             `json:"max_retry_cost_usd,omitempty"`
+	RetryLowMarginSkip           bool                `json:"retry_low_margin_skip,omitempty"`
 	RiskEnforcement              string              `json:"risk_enforcement"`
 	RiskMinGrossUSD              float64             `json:"risk_min_gross_margin_usd,omitempty"`
 	RiskMinGrossPct              float64             `json:"risk_min_gross_margin_pct,omitempty"`
@@ -105,6 +109,9 @@ func DefaultSettings() Settings {
 		CacheMode:                    ModeOff,
 		LongContextMode:              ModeOff,
 		OutputCapMode:                ModeOff,
+		RetryBudgetMode:              ModeOff,
+		MaxRetryCostUSD:              0,
+		RetryLowMarginSkip:           false,
 		RiskEnforcement:              ModeOff,
 		SettingsWritable:             true,
 		CostProfilesUsed:             true,
@@ -171,6 +178,10 @@ func (s Settings) Normalize() Settings {
 		s.OutputCapMode = defaults.OutputCapMode
 	}
 	s.OutputPolicies = normalizeOutputPolicies(s.OutputPolicies)
+	if !validRetryBudgetMode(s.RetryBudgetMode) {
+		s.RetryBudgetMode = defaults.RetryBudgetMode
+	}
+	s.MaxRetryCostUSD = normalizeNonNegativeFloat(s.MaxRetryCostUSD)
 	if s.RiskEnforcement != ModeOff && s.RiskEnforcement != RiskModeAlert {
 		s.RiskEnforcement = defaults.RiskEnforcement
 	}
@@ -222,6 +233,12 @@ func (s Settings) Validate() error {
 	}
 	if s.OutputCapMode != "" && !validOutputCapMode(s.OutputCapMode) {
 		return errors.New("invalid output_cap_mode")
+	}
+	if s.RetryBudgetMode != "" && !validRetryBudgetMode(s.RetryBudgetMode) {
+		return errors.New("invalid retry_budget_mode")
+	}
+	if s.MaxRetryCostUSD < 0 || math.IsNaN(s.MaxRetryCostUSD) || math.IsInf(s.MaxRetryCostUSD, 0) {
+		return errors.New("max_retry_cost_usd must be non-negative")
 	}
 	for _, policy := range s.OutputPolicies {
 		mode := strings.TrimSpace(policy.Mode)
@@ -300,6 +317,10 @@ func validCostRoutingMode(mode string) bool {
 
 func validOutputCapMode(mode string) bool {
 	return mode == ModeOff || mode == ModeObserve || mode == ModeCap || mode == ModePremiumRequired
+}
+
+func validRetryBudgetMode(mode string) bool {
+	return mode == ModeOff || mode == ModeObserve || mode == ModeEnforce
 }
 
 func normalizeNonNegativeFloat(value float64) float64 {
