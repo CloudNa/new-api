@@ -154,6 +154,17 @@ type ProfitEvent struct {
 	CacheReadTokens                int64                                `json:"cache_read_tokens"`
 	CacheWriteTokens               int64                                `json:"cache_write_tokens"`
 	CacheSavedUSD                  *float64                             `json:"cache_saved_usd"`
+	ResponseCacheMode              string                               `json:"response_cache_mode,omitempty"`
+	ResponseCacheEligible          bool                                 `json:"response_cache_eligible"`
+	ResponseCacheHit               bool                                 `json:"response_cache_hit"`
+	ResponseCacheWouldHit          bool                                 `json:"response_cache_would_hit"`
+	ResponseCacheLiveServed        bool                                 `json:"response_cache_live_served"`
+	ResponseCacheStored            bool                                 `json:"response_cache_stored"`
+	ResponseCacheRuleID            string                               `json:"response_cache_rule_id,omitempty"`
+	ResponseCacheRuleName          string                               `json:"response_cache_rule_name,omitempty"`
+	ResponseCacheKeyHash           string                               `json:"response_cache_key_hash,omitempty"`
+	ResponseCacheScope             string                               `json:"response_cache_scope,omitempty"`
+	ResponseCacheSavedUSD          *float64                             `json:"response_cache_saved_usd"`
 	ModelAliasApplied              bool                                 `json:"sku_alias_applied"`
 	ModelAliasMode                 string                               `json:"sku_alias_mode,omitempty"`
 	ModelAliasID                   string                               `json:"sku_alias_id,omitempty"`
@@ -225,6 +236,12 @@ type ProfitAnalytics struct {
 	CacheReadTokens                      int64                           `json:"cache_read_tokens"`
 	CacheWriteTokens                     int64                           `json:"cache_write_tokens"`
 	CacheSavedUSD                        *float64                        `json:"cache_saved_usd"`
+	ResponseCacheObservedCount           int64                           `json:"response_cache_observed_count"`
+	ResponseCacheHitCount                int64                           `json:"response_cache_hit_count"`
+	ResponseCacheWouldHitCount           int64                           `json:"response_cache_would_hit_count"`
+	ResponseCacheLiveServedCount         int64                           `json:"response_cache_live_served_count"`
+	ResponseCacheStoredCount             int64                           `json:"response_cache_stored_count"`
+	ResponseCacheSavedUSD                *float64                        `json:"response_cache_saved_usd"`
 	ModelAliasObservedCount              int64                           `json:"sku_alias_observed_count"`
 	RetryCostUSD                         *float64                        `json:"retry_cost_usd"`
 	RetryAttemptCount                    int64                           `json:"profit_retry_attempt_count"`
@@ -334,9 +351,11 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 	var expectedMarginSum float64
 	var expectedMarginRevenueBase float64
 	var cacheSavedSum float64
+	var responseCacheSavedSum float64
 	var retryCostSum float64
 	var hasExpectedCost bool
 	var hasCacheSaved bool
+	var hasResponseCacheSaved bool
 	var hasRetryCost bool
 	var outputCompletionSamples []int64
 
@@ -426,6 +445,25 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 			hasCacheSaved = true
 			cacheSavedSum += *event.CacheSavedUSD
 		}
+		if event.ResponseCacheMode != "" {
+			analytics.ResponseCacheObservedCount++
+			if event.ResponseCacheHit {
+				analytics.ResponseCacheHitCount++
+			}
+			if event.ResponseCacheWouldHit {
+				analytics.ResponseCacheWouldHitCount++
+			}
+			if event.ResponseCacheLiveServed {
+				analytics.ResponseCacheLiveServedCount++
+			}
+			if event.ResponseCacheStored {
+				analytics.ResponseCacheStoredCount++
+			}
+		}
+		if event.ResponseCacheSavedUSD != nil {
+			hasResponseCacheSaved = true
+			responseCacheSavedSum += *event.ResponseCacheSavedUSD
+		}
 		if event.RetryCostUSD != nil {
 			hasRetryCost = true
 			retryCostSum += *event.RetryCostUSD
@@ -457,6 +495,9 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 	}
 	if hasCacheSaved {
 		analytics.CacheSavedUSD = floatPtr(cacheSavedSum)
+	}
+	if hasResponseCacheSaved {
+		analytics.ResponseCacheSavedUSD = floatPtr(responseCacheSavedSum)
 	}
 	if hasRetryCost {
 		analytics.RetryCostUSD = floatPtr(retryCostSum)
@@ -1056,6 +1097,17 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		CacheReadTokens:                int64Value(other, profit.KeyCacheReadTokens),
 		CacheWriteTokens:               int64Value(other, profit.KeyCacheWriteTokens),
 		CacheSavedUSD:                  optionalFloat(other, profit.KeyCacheSavedUSD),
+		ResponseCacheMode:              stringValue(other, profit.KeyResponseCacheMode),
+		ResponseCacheEligible:          boolValue(other, profit.KeyResponseCacheEligible),
+		ResponseCacheHit:               boolValue(other, profit.KeyResponseCacheHit),
+		ResponseCacheWouldHit:          boolValue(other, profit.KeyResponseCacheWouldHit),
+		ResponseCacheLiveServed:        boolValue(other, profit.KeyResponseCacheLiveServed),
+		ResponseCacheStored:            boolValue(other, profit.KeyResponseCacheStored),
+		ResponseCacheRuleID:            stringValue(other, profit.KeyResponseCacheRuleID),
+		ResponseCacheRuleName:          stringValue(other, profit.KeyResponseCacheRuleName),
+		ResponseCacheKeyHash:           stringValue(other, profit.KeyResponseCacheKeyHash),
+		ResponseCacheScope:             stringValue(other, profit.KeyResponseCacheScope),
+		ResponseCacheSavedUSD:          optionalFloat(other, profit.KeyResponseCacheSavedUSD),
 		ModelAliasApplied:              boolValue(other, profit.KeyModelAliasApplied),
 		ModelAliasMode:                 stringValue(other, profit.KeyModelAliasMode),
 		ModelAliasID:                   stringValue(other, profit.KeyModelAliasID),

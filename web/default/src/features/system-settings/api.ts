@@ -494,6 +494,7 @@ export type RtkFiltersResponse = {
 }
 
 export type ProfitMode = 'off' | 'observe'
+export type ProfitResponseCacheMode = ProfitMode | 'enforce'
 export type ProfitCostRoutingMode = ProfitMode | 'prefer_margin'
 export type ProfitOutputCapMode = 'off' | 'observe' | 'cap' | 'premium_required'
 export type ProfitRetryBudgetMode = ProfitMode | 'enforce'
@@ -562,6 +563,23 @@ export type ProfitModelAlias = {
   notes?: string
 }
 
+export type ProfitResponseCacheRule = {
+  id: string
+  name?: string
+  enabled: boolean
+  priority?: number
+  group?: string
+  model_name?: string
+  channel_id?: number
+  channel_name?: string
+  mode?: ProfitResponseCacheMode
+  scope?: 'global' | 'user' | 'session'
+  ttl_seconds?: number
+  max_body_bytes?: number
+  public_static?: boolean
+  notes?: string
+}
+
 export type ProfitSettings = {
   version: number
   enabled: boolean
@@ -572,7 +590,7 @@ export type ProfitSettings = {
   cost_routing_min_samples?: number
   cost_routing_min_success_rate_pct?: number
   cost_routing_health_window_hours?: number
-  cache_mode: ProfitMode
+  cache_mode: ProfitResponseCacheMode
   long_context_mode: ProfitMode
   output_cap_mode: ProfitOutputCapMode
   model_alias_mode: ProfitMode
@@ -589,6 +607,7 @@ export type ProfitSettings = {
   long_context_policies?: ProfitLongContextPolicy[]
   output_policies?: ProfitOutputPolicy[]
   model_aliases?: ProfitModelAlias[]
+  response_cache_rules?: ProfitResponseCacheRule[]
 }
 
 export type ProfitCostProfile = {
@@ -712,6 +731,12 @@ export type ProfitAnalytics = {
   cache_read_tokens: number
   cache_write_tokens: number
   cache_saved_usd?: number | null
+  response_cache_observed_count?: number
+  response_cache_hit_count?: number
+  response_cache_would_hit_count?: number
+  response_cache_live_served_count?: number
+  response_cache_stored_count?: number
+  response_cache_saved_usd?: number | null
   sku_alias_observed_count?: number
   retry_cost_usd?: number | null
   profit_retry_attempt_count?: number
@@ -863,6 +888,17 @@ export type ProfitEvent = {
   cache_read_tokens?: number
   cache_write_tokens?: number
   cache_saved_usd?: number | null
+  response_cache_mode?: string
+  response_cache_eligible?: boolean
+  response_cache_hit?: boolean
+  response_cache_would_hit?: boolean
+  response_cache_live_served?: boolean
+  response_cache_stored?: boolean
+  response_cache_rule_id?: string
+  response_cache_rule_name?: string
+  response_cache_key_hash?: string
+  response_cache_scope?: string
+  response_cache_saved_usd?: number | null
   sku_alias_applied?: boolean
   sku_alias_mode?: ProfitMode
   sku_alias_id?: string

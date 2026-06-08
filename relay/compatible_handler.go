@@ -131,6 +131,16 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		return nil
 	}
 
+	cacheDecision, cacheEntry := service.PrepareResponseCacheForRelay(c, info, request, passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled)
+	if cacheDecision != nil && cacheEntry != nil {
+		usage := service.ServeResponseCacheHit(c, cacheEntry)
+		if usage == nil {
+			return types.NewError(fmt.Errorf("invalid response cache entry"), types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+		}
+		service.PostTextConsumeQuota(c, info, usage, []string{"response cache hit"})
+		return nil
+	}
+
 	var requestBody io.Reader
 
 	if passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled {
@@ -253,6 +263,8 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
+
+	service.StoreResponseCacheForRelay(c, info, request, usage.(*dto.Usage))
 
 	if containAudioTokens && containsAudioRatios {
 		service.PostAudioConsumeQuota(c, info, usage.(*dto.Usage), "")

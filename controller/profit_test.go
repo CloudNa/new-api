@@ -42,6 +42,14 @@ func TestUpdateProfitSettingsRejectsNonProxyTestScopeWithoutMutatingStoredSettin
 		DefaultMaxTokens: 1024,
 		HardMaxTokens:    2048,
 	}}
+	valid.ResponseCacheRules = []profit.ResponseCacheRule{{
+		ID:           "proxy-test-response-cache",
+		Enabled:      true,
+		Group:        profit.DefaultObserveGroup,
+		Mode:         profit.ModeObserve,
+		Scope:        profit.ResponseCacheScopeGlobal,
+		PublicStatic: true,
+	}}
 
 	validResponse := performProfitSettingsUpdate(t, valid)
 	require.Equal(t, http.StatusOK, validResponse.Code)
@@ -80,6 +88,24 @@ func TestUpdateProfitSettingsRejectsNonProxyTestScopeWithoutMutatingStoredSettin
 	require.Equal(t, []string{profit.DefaultObserveGroup}, storedAfterOutputReject.ObserveGroups)
 	require.Equal(t, "proxy-test-output-cap", storedAfterOutputReject.OutputPolicies[0].ID)
 	require.Equal(t, profit.DefaultObserveGroup, storedAfterOutputReject.OutputPolicies[0].Group)
+
+	invalidResponseCacheRule := valid
+	invalidResponseCacheRule.ResponseCacheRules = []profit.ResponseCacheRule{{
+		ID:      "private-cache",
+		Enabled: true,
+		Group:   profit.DefaultObserveGroup,
+		Mode:    profit.ModeObserve,
+		Scope:   profit.ResponseCacheScopeGlobal,
+	}}
+	invalidResponseCacheResponse := performProfitSettingsUpdate(t, invalidResponseCacheRule)
+	require.Equal(t, http.StatusOK, invalidResponseCacheResponse.Code)
+	require.Contains(t, invalidResponseCacheResponse.Body.String(), `"success":false`)
+	require.Contains(t, invalidResponseCacheResponse.Body.String(), "public_static")
+
+	storedAfterResponseCacheReject := loadStoredProfitSettings(t)
+	require.Equal(t, "proxy-test-response-cache", storedAfterResponseCacheReject.ResponseCacheRules[0].ID)
+	require.Equal(t, profit.DefaultObserveGroup, storedAfterResponseCacheReject.ResponseCacheRules[0].Group)
+	require.True(t, storedAfterResponseCacheReject.ResponseCacheRules[0].PublicStatic)
 }
 
 func setupProfitControllerDB(t *testing.T) *gorm.DB {

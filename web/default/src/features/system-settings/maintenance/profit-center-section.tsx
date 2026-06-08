@@ -67,6 +67,8 @@ import {
   type ProfitMode,
   type ProfitOutputCapMode,
   type ProfitOutputPolicy,
+  type ProfitResponseCacheMode,
+  type ProfitResponseCacheRule,
   type ProfitRetryBudgetMode,
   type ProfitRiskMode,
   type ProfitRoutePreviewRequest,
@@ -89,6 +91,15 @@ import { SettingsSection } from '../components/settings-section'
 const MODE_OPTIONS: Array<{ value: ProfitMode; label: string }> = [
   { value: 'off', label: 'Off' },
   { value: 'observe', label: 'Observe' },
+]
+
+const RESPONSE_CACHE_MODE_OPTIONS: Array<{
+  value: ProfitResponseCacheMode
+  label: string
+}> = [
+  { value: 'off', label: 'Off' },
+  { value: 'observe', label: 'Observe' },
+  { value: 'enforce', label: 'Enforce' },
 ]
 
 const COST_ROUTING_OPTIONS: Array<{
@@ -151,6 +162,7 @@ const DEFAULT_SETTINGS: ProfitSettings = {
   long_context_policies: [],
   output_policies: [],
   model_aliases: [],
+  response_cache_rules: [],
 }
 
 const DEFAULT_PROFILES: ProfitCostProfiles = {
@@ -561,6 +573,24 @@ const SAMPLE_MODEL_ALIASES: ProfitModelAlias[] = [
   },
 ]
 
+const SAMPLE_RESPONSE_CACHE_RULES: ProfitResponseCacheRule[] = [
+  {
+    id: 'proxy-test-public-static-help',
+    name: 'proxy-test public static help',
+    enabled: false,
+    priority: 100,
+    group: PROFIT_SAFE_GROUP,
+    model_name: 'gpt-5.5',
+    mode: 'observe',
+    scope: 'session',
+    ttl_seconds: 600,
+    max_body_bytes: 1048576,
+    public_static: true,
+    notes:
+      '只用于 root 明确标记的公共、静态、可复用场景；session scope 需要请求带 prompt_cache_key 或 X-Glart-Cache-Session。',
+  },
+]
+
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
@@ -601,7 +631,8 @@ function buildProfitSettingsSafetyWarnings(
   observeGroups: string[],
   longContextPolicies: ProfitLongContextPolicy[],
   outputPolicies: ProfitOutputPolicy[],
-  modelAliases: ProfitModelAlias[]
+  modelAliases: ProfitModelAlias[],
+  responseCacheRules: ProfitResponseCacheRule[]
 ) {
   const warnings: string[] = []
   const unsafeGroups = observeGroups.filter(
@@ -638,6 +669,19 @@ function buildProfitSettingsSafetyWarnings(
     }
     if (!Array.isArray(alias.targets) || alias.targets.length === 0) {
       warnings.push(`SKU alias ${policyLabel(alias)} 必须至少配置一个上游模型`)
+    }
+  }
+  for (const rule of responseCacheRules) {
+    if (!activeProfitPolicy(rule)) continue
+    if ((rule.group || '').trim() !== PROFIT_SAFE_GROUP) {
+      warnings.push(
+        `响应缓存规则 ${policyLabel(rule)} 必须限定 group=${PROFIT_SAFE_GROUP}`
+      )
+    }
+    if (rule.public_static !== true) {
+      warnings.push(
+        `响应缓存规则 ${policyLabel(rule)} 必须明确 public_static=true`
+      )
     }
   }
   return warnings
@@ -837,6 +881,39 @@ function ModeSelect(props: {
   )
 }
 
+function ResponseCacheModeSelect(props: {
+  value: ProfitResponseCacheMode
+  label: string
+  onChange: (value: ProfitResponseCacheMode) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Select
+      items={RESPONSE_CACHE_MODE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.label),
+      }))}
+      value={props.value}
+      onValueChange={(value) =>
+        value !== null && props.onChange(value as ProfitResponseCacheMode)
+      }
+    >
+      <SelectTrigger className='w-full' aria-label={t(props.label)}>
+        <SelectValue placeholder={t('Select mode')} />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        <SelectGroup>
+          {RESPONSE_CACHE_MODE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {t(option.label)}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+}
+
 function CostRoutingModeSelect(props: {
   value: ProfitCostRoutingMode
   label: string
@@ -998,6 +1075,20 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     ['Cache read tokens', formatNumber(analytics?.cache_read_tokens)],
     ['Cache write tokens', formatNumber(analytics?.cache_write_tokens)],
     ['Cache saved USD', formatUSD(analytics?.cache_saved_usd)],
+    [
+      '响应缓存观测',
+      formatNumber(analytics?.response_cache_observed_count),
+    ],
+    ['响应缓存命中', formatNumber(analytics?.response_cache_hit_count)],
+    [
+      '响应缓存真实返回',
+      formatNumber(analytics?.response_cache_live_served_count),
+    ],
+    ['响应缓存写入', formatNumber(analytics?.response_cache_stored_count)],
+    [
+      '响应缓存节省 USD',
+      formatUSD(analytics?.response_cache_saved_usd),
+    ],
     ['SKU alias observed', formatNumber(analytics?.sku_alias_observed_count)],
     [
       'Missing cost profiles',
@@ -1389,6 +1480,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
             <TableHead>{t('Margin')}</TableHead>
             <TableHead>{t('Compression')}</TableHead>
             <TableHead>{t('Savings')}</TableHead>
+            <TableHead>{t('响应缓存')}</TableHead>
             <TableHead>{t('Route')}</TableHead>
             <TableHead>{t('Output policy')}</TableHead>
             <TableHead>{t('长上下文')}</TableHead>
@@ -1400,7 +1492,7 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
           {rows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={12}
+                colSpan={13}
                 className='text-muted-foreground h-20 text-center text-sm'
               >
                 {t('No profit events yet')}
@@ -1471,6 +1563,32 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                       {formatPercent(event.compression_savings_percent)}
                     </span>
                   </div>
+                </TableCell>
+                <TableCell className='min-w-36'>
+                  {event.response_cache_mode ? (
+                    <div className='flex min-w-0 flex-col gap-1'>
+                      <div className='flex flex-wrap items-center gap-1'>
+                        <Badge variant='outline'>
+                          {t(event.response_cache_mode)}
+                        </Badge>
+                        {event.response_cache_live_served ? (
+                          <Badge variant='secondary'>{t('Hit')}</Badge>
+                        ) : event.response_cache_stored ? (
+                          <Badge variant='secondary'>{t('Stored')}</Badge>
+                        ) : event.response_cache_would_hit ? (
+                          <Badge variant='secondary'>{t('Would hit')}</Badge>
+                        ) : null}
+                      </div>
+                      <span className='text-muted-foreground max-w-36 truncate text-xs'>
+                        {event.response_cache_rule_id || '-'}
+                      </span>
+                      <span className='text-muted-foreground text-xs'>
+                        {formatUSD(event.response_cache_saved_usd)}
+                      </span>
+                    </div>
+                  ) : (
+                    '-'
+                  )}
                 </TableCell>
                 <TableCell className='min-w-44'>
                   {event.profit_route_mode ? (
@@ -1719,6 +1837,9 @@ export function ProfitCenterSection() {
   const [modelAliasJson, setModelAliasJson] = useState(
     formatJson(DEFAULT_SETTINGS.model_aliases ?? SAMPLE_MODEL_ALIASES)
   )
+  const [responseCacheRuleJson, setResponseCacheRuleJson] = useState(
+    formatJson(DEFAULT_SETTINGS.response_cache_rules ?? [])
+  )
   const [profileJson, setProfileJson] = useState(formatJson(DEFAULT_PROFILES))
   const [analyticsGroup, setAnalyticsGroup] = useState('proxy-test')
   const [analyticsModel, setAnalyticsModel] = useState('')
@@ -1775,6 +1896,7 @@ export function ProfitCenterSection() {
         setModelAliasJson(
           formatJson(next.model_aliases ?? SAMPLE_MODEL_ALIASES)
         )
+        setResponseCacheRuleJson(formatJson(next.response_cache_rules ?? []))
       } else {
         toast.error(settingsRes.message || t('Failed to load profit settings'))
       }
@@ -1812,6 +1934,9 @@ export function ProfitCenterSection() {
     setModelAliasJson(
       formatJson(initialSettings.model_aliases ?? SAMPLE_MODEL_ALIASES)
     )
+    setResponseCacheRuleJson(
+      formatJson(initialSettings.response_cache_rules ?? [])
+    )
   }
 
   const handleSave = async () => {
@@ -1824,12 +1949,16 @@ export function ProfitCenterSection() {
       const outputPolicies =
         safeParseJson<ProfitOutputPolicy[]>(outputPolicyJson)
       const modelAliases = safeParseJson<ProfitModelAlias[]>(modelAliasJson)
+      const responseCacheRules = safeParseJson<ProfitResponseCacheRule[]>(
+        responseCacheRuleJson
+      )
       const parsedObserveGroups = parseCsv(observeGroups)
       const warnings = buildProfitSettingsSafetyWarnings(
         parsedObserveGroups,
         longContextPolicies,
         outputPolicies,
-        modelAliases
+        modelAliases,
+        responseCacheRules
       )
       setSafetyWarnings(warnings)
       if (warnings.length > 0) {
@@ -1843,6 +1972,7 @@ export function ProfitCenterSection() {
         long_context_policies: longContextPolicies,
         output_policies: outputPolicies,
         model_aliases: modelAliases,
+        response_cache_rules: responseCacheRules,
       }
       const [settingsRes, profilesRes] = await Promise.all([
         updateProfitSettings(payload),
@@ -1865,6 +1995,9 @@ export function ProfitCenterSection() {
       setOutputPolicyJson(formatJson(settingsRes.data.output_policies ?? []))
       setModelAliasJson(
         formatJson(settingsRes.data.model_aliases ?? SAMPLE_MODEL_ALIASES)
+      )
+      setResponseCacheRuleJson(
+        formatJson(settingsRes.data.response_cache_rules ?? [])
       )
       setProfileJson(formatJson(profilesRes.data))
       setSafetyWarnings([])
@@ -1908,6 +2041,10 @@ export function ProfitCenterSection() {
 
   const loadSampleModelAliases = () => {
     setModelAliasJson(formatJson(SAMPLE_MODEL_ALIASES))
+  }
+
+  const loadSampleResponseCacheRules = () => {
+    setResponseCacheRuleJson(formatJson(SAMPLE_RESPONSE_CACHE_RULES))
   }
 
   const runRoutePreview = async () => {
@@ -2018,7 +2155,7 @@ export function ProfitCenterSection() {
           <SettingsFormGridItem>
             <Label className='text-sm font-medium'>{t('Cache mode')}</Label>
             <div className='mt-1.5'>
-              <ModeSelect
+              <ResponseCacheModeSelect
                 value={settings.cache_mode}
                 label='Cache mode'
                 onChange={(cache_mode) =>
@@ -2302,6 +2439,41 @@ export function ProfitCenterSection() {
           rows={11}
           value={longContextPolicyJson}
           onChange={(event) => setLongContextPolicyJson(event.target.value)}
+          className='font-mono text-xs'
+        />
+      </div>
+
+      <Separator />
+
+      <div className='min-w-0 space-y-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div className='min-w-0'>
+            <h4 className='text-sm font-semibold'>{t('响应缓存规则')}</h4>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                '仅用于 root 明确标记的公共静态请求；默认关闭，proxy-test 灰度后再考虑 enforce。'
+              )}
+            </p>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={loadSampleResponseCacheRules}
+          >
+            <CalculatorIcon data-icon='inline-start' />
+            <span>{t('加载缓存示例')}</span>
+          </Button>
+        </div>
+        <Label htmlFor='profit-response-cache-rules-json' className='sr-only'>
+          {t('响应缓存规则')}
+        </Label>
+        <Textarea
+          id='profit-response-cache-rules-json'
+          name='profit-response-cache-rules-json'
+          rows={9}
+          value={responseCacheRuleJson}
+          onChange={(event) => setResponseCacheRuleJson(event.target.value)}
           className='font-mono text-xs'
         />
       </div>

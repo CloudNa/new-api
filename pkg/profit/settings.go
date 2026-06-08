@@ -53,6 +53,7 @@ type Settings struct {
 	LongContextPolicies          []LongContextPolicy `json:"long_context_policies,omitempty"`
 	OutputPolicies               []OutputPolicy      `json:"output_policies,omitempty"`
 	ModelAliases                 []ModelAlias        `json:"model_aliases,omitempty"`
+	ResponseCacheRules           []ResponseCacheRule `json:"response_cache_rules,omitempty"`
 }
 
 type LongContextPolicy struct {
@@ -116,6 +117,23 @@ type ModelAliasTarget struct {
 	Priority    int    `json:"priority,omitempty"`
 	Weight      int    `json:"weight,omitempty"`
 	Notes       string `json:"notes,omitempty"`
+}
+
+type ResponseCacheRule struct {
+	ID           string `json:"id"`
+	Name         string `json:"name,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	Priority     int    `json:"priority,omitempty"`
+	Group        string `json:"group,omitempty"`
+	ModelName    string `json:"model_name,omitempty"`
+	ChannelID    int    `json:"channel_id,omitempty"`
+	ChannelName  string `json:"channel_name,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	TTLSeconds   int    `json:"ttl_seconds,omitempty"`
+	MaxBodyBytes int    `json:"max_body_bytes,omitempty"`
+	PublicStatic bool   `json:"public_static,omitempty"`
+	Notes        string `json:"notes,omitempty"`
 }
 
 func DefaultSettings() Settings {
@@ -192,7 +210,7 @@ func (s Settings) Normalize() Settings {
 	if s.CostRoutingHealthWindowHours <= 0 {
 		s.CostRoutingHealthWindowHours = defaults.CostRoutingHealthWindowHours
 	}
-	if !validOffObserveMode(s.CacheMode) {
+	if !validResponseCacheMode(s.CacheMode) {
 		s.CacheMode = defaults.CacheMode
 	}
 	if !validOffObserveMode(s.LongContextMode) {
@@ -210,6 +228,7 @@ func (s Settings) Normalize() Settings {
 		s.ModelAliases = defaults.ModelAliases
 	}
 	s.ModelAliases = normalizeModelAliases(s.ModelAliases)
+	s.ResponseCacheRules = normalizeResponseCacheRules(s.ResponseCacheRules)
 	if !validRetryBudgetMode(s.RetryBudgetMode) {
 		s.RetryBudgetMode = defaults.RetryBudgetMode
 	}
@@ -237,7 +256,7 @@ func (s Settings) Validate() error {
 	if s.CostRoutingHealthWindowHours < 0 {
 		return errors.New("cost_routing_health_window_hours must be non-negative")
 	}
-	if s.CacheMode != "" && !validOffObserveMode(s.CacheMode) {
+	if s.CacheMode != "" && !validResponseCacheMode(s.CacheMode) {
 		return errors.New("invalid cache_mode")
 	}
 	if s.LongContextMode != "" && !validOffObserveMode(s.LongContextMode) {
@@ -276,6 +295,25 @@ func (s Settings) Validate() error {
 		}
 		if alias.ChannelIDLessThanZero() {
 			return errors.New("model alias target channel_id cannot be negative")
+		}
+	}
+	for _, rule := range s.ResponseCacheRules {
+		mode := strings.TrimSpace(rule.Mode)
+		if mode != "" && !validResponseCacheMode(mode) {
+			return errors.New("invalid response cache rule mode")
+		}
+		if rule.ChannelID < 0 {
+			return errors.New("response cache rule channel_id cannot be negative")
+		}
+		if rule.TTLSeconds < 0 {
+			return errors.New("response cache rule ttl_seconds cannot be negative")
+		}
+		if rule.MaxBodyBytes < 0 {
+			return errors.New("response cache rule max_body_bytes cannot be negative")
+		}
+		scope := strings.TrimSpace(rule.Scope)
+		if scope != "" && !validResponseCacheScope(scope) {
+			return errors.New("invalid response cache rule scope")
 		}
 	}
 	if s.RetryBudgetMode != "" && !validRetryBudgetMode(s.RetryBudgetMode) {
@@ -330,6 +368,24 @@ func (s Settings) Validate() error {
 			return errors.New("model alias must have at least one target")
 		}
 	}
+	for _, rule := range s.ResponseCacheRules {
+		if !rule.Enabled {
+			continue
+		}
+		mode := strings.TrimSpace(rule.Mode)
+		if mode == "" {
+			mode = ModeObserve
+		}
+		if mode == ModeOff {
+			continue
+		}
+		if strings.TrimSpace(rule.Group) != DefaultObserveGroup {
+			return errors.New("response cache rules must target proxy-test group")
+		}
+		if !rule.PublicStatic {
+			return errors.New("response cache rules must be marked public_static")
+		}
+	}
 	return nil
 }
 
@@ -369,11 +425,34 @@ func (s Settings) validateObserveOnlyScope() error {
 			return errors.New("output policies must target proxy-test group")
 		}
 	}
+	for _, rule := range s.ResponseCacheRules {
+		if !rule.Enabled {
+			continue
+		}
+		mode := strings.TrimSpace(rule.Mode)
+		if mode == "" {
+			mode = ModeObserve
+		}
+		if mode == ModeOff {
+			continue
+		}
+		if strings.TrimSpace(rule.Group) != DefaultObserveGroup {
+			return errors.New("response cache rules must target proxy-test")
+		}
+	}
 	return nil
 }
 
 func validOffObserveMode(mode string) bool {
 	return mode == ModeOff || mode == ModeObserve
+}
+
+func validResponseCacheMode(mode string) bool {
+	return mode == ModeOff || mode == ModeObserve || mode == ModeEnforce
+}
+
+func validResponseCacheScope(scope string) bool {
+	return scope == ResponseCacheScopeGlobal || scope == ResponseCacheScopeUser || scope == ResponseCacheScopeSession
 }
 
 func validCostRoutingMode(mode string) bool {
@@ -575,4 +654,44 @@ func (alias ModelAlias) ChannelIDLessThanZero() bool {
 		}
 	}
 	return false
+}
+
+func normalizeResponseCacheRules(rules []ResponseCacheRule) []ResponseCacheRule {
+	out := make([]ResponseCacheRule, 0, len(rules))
+	for _, rule := range rules {
+		rule.ID = strings.TrimSpace(rule.ID)
+		rule.Name = strings.TrimSpace(rule.Name)
+		rule.Group = strings.TrimSpace(rule.Group)
+		rule.ModelName = strings.TrimSpace(rule.ModelName)
+		rule.ChannelName = strings.TrimSpace(rule.ChannelName)
+		rule.Mode = strings.TrimSpace(rule.Mode)
+		rule.Scope = strings.TrimSpace(rule.Scope)
+		rule.Notes = strings.TrimSpace(rule.Notes)
+		if rule.Mode == "" {
+			rule.Mode = ModeObserve
+		}
+		if !validResponseCacheMode(rule.Mode) {
+			rule.Mode = ModeObserve
+		}
+		if rule.Scope == "" {
+			rule.Scope = ResponseCacheScopeSession
+		}
+		if !validResponseCacheScope(rule.Scope) {
+			rule.Scope = ResponseCacheScopeSession
+		}
+		if rule.ChannelID < 0 {
+			rule.ChannelID = 0
+		}
+		if rule.TTLSeconds < 0 {
+			rule.TTLSeconds = 0
+		}
+		if rule.MaxBodyBytes < 0 {
+			rule.MaxBodyBytes = 0
+		}
+		if rule.ID == "" && rule.Group == "" && rule.ModelName == "" && rule.ChannelID == 0 && rule.ChannelName == "" {
+			continue
+		}
+		out = append(out, rule)
+	}
+	return out
 }

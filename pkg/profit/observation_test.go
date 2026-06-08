@@ -84,6 +84,63 @@ func TestAppendObservationAddsCacheSavingsWhenObserved(t *testing.T) {
 	require.InDelta(t, 0.9, *(other[KeyCacheSavedUSD].(*float64)), 0.0000001)
 }
 
+func TestAppendObservationAddsResponseCacheSavingsWithZeroActualUsage(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CacheMode = ModeEnforce
+	settings.ObserveOnly = false
+	settingsPayload, err := common.Marshal(settings.Normalize())
+	require.NoError(t, err)
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                  "response-cache-profile",
+			Name:                "Response cache profile",
+			Enabled:             true,
+			ChannelID:           9,
+			ModelName:           "cached-model",
+			InputUSDPerMillion:  10,
+			OutputUSDPerMillion: 20,
+			FixedRequestUSD:     0.3,
+		},
+	}}
+	profilesPayload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{
+		SettingsOptionKey:     string(settingsPayload),
+		CostProfilesOptionKey: string(profilesPayload),
+	})
+	other := map[string]interface{}{}
+
+	AppendObservation(other, ObservationInput{
+		Group:                    "proxy-test",
+		ChannelID:                9,
+		ModelName:                "cached-model",
+		BillablePromptTokens:     100000,
+		BillableCompletionTokens: 10000,
+		UserQuota:                500000,
+		ResponseCacheDecision: &ResponseCacheDecision{
+			Mode:       ModeEnforce,
+			Eligible:   true,
+			Hit:        true,
+			WouldHit:   true,
+			LiveServed: true,
+			RuleID:     "public-help",
+			KeyHash:    "abc123",
+			Scope:      ResponseCacheScopeGlobal,
+		},
+	})
+
+	require.Equal(t, CostStatusConfigured, other[KeyCostStatus])
+	require.Equal(t, 0, other[KeyUpstreamActualPromptTokens])
+	require.Equal(t, 0, other[KeyUpstreamActualCompletionTokens])
+	require.Equal(t, true, other[KeyResponseCacheHit])
+	require.Equal(t, true, other[KeyResponseCacheLiveServed])
+	require.Equal(t, "public-help", other[KeyResponseCacheRuleID])
+	require.NotNil(t, other[KeyEstimatedUpstreamCostUSD])
+	require.InDelta(t, 0, *(other[KeyEstimatedUpstreamCostUSD].(*float64)), 0.0000001)
+	require.NotNil(t, other[KeyResponseCacheSavedUSD])
+	require.InDelta(t, 1.5, *(other[KeyResponseCacheSavedUSD].(*float64)), 0.0000001)
+}
+
 func TestAppendObservationAddsModelAliasDecision(t *testing.T) {
 	withProfitOptionMap(t, map[string]string{})
 	other := map[string]interface{}{}
@@ -358,6 +415,9 @@ func TestStripUserVisibleFields(t *testing.T) {
 		"retry_cost_usd":                           0.01,
 		"profit_retry_attempt_count":               1,
 		"profit_retry_attempts":                    []RetryAttemptObservation{{ChannelID: 1}},
+		"response_cache_mode":                      "enforce",
+		"response_cache_hit":                       true,
+		"response_cache_saved_usd":                 0.12,
 		"model_ratio":                              1.5,
 	}
 
@@ -383,5 +443,8 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "retry_cost_usd")
 	require.NotContains(t, other, "profit_retry_attempt_count")
 	require.NotContains(t, other, "profit_retry_attempts")
+	require.NotContains(t, other, "response_cache_mode")
+	require.NotContains(t, other, "response_cache_hit")
+	require.NotContains(t, other, "response_cache_saved_usd")
 	require.Equal(t, 1.5, other["model_ratio"])
 }

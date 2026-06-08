@@ -54,6 +54,8 @@ type CostInput struct {
 	RevenueUSD               float64 `json:"estimated_revenue_usd"`
 	LatencyMs                int     `json:"latency_ms"`
 	FailureRate              float64 `json:"failure_rate"`
+	ActualUsageKnown         bool    `json:"actual_usage_known,omitempty"`
+	NoUpstreamRequest        bool    `json:"no_upstream_request,omitempty"`
 }
 
 type CostEstimate struct {
@@ -421,10 +423,18 @@ func EstimateCost(input CostInput, doc CostProfilesDocument) CostEstimate {
 		costForMillionTokens(input.UpstreamCompletionTokens, profile.OutputUSDPerMillion) +
 		costForMillionTokens(input.CacheReadTokens, profile.CacheReadUSDPerMillion) +
 		costForMillionTokens(input.CacheWriteTokens, profile.CacheWriteUSDPerMillion)
-	upstreamCost := tokenCost + profile.FixedRequestUSD
+	fixedRequestUSD := profile.FixedRequestUSD
 	failurePenalty := clamp01(input.FailureRate) * profile.FailurePenaltyUSD
 	latencyPenalty := float64(maxInt(0, input.LatencyMs)) / 1000 * profile.LatencyPenaltyUSDPerSecond
-	expectedCost := upstreamCost + failurePenalty + latencyPenalty + profile.RiskPenaltyUSD
+	riskPenalty := profile.RiskPenaltyUSD
+	if input.NoUpstreamRequest {
+		fixedRequestUSD = 0
+		failurePenalty = 0
+		latencyPenalty = 0
+		riskPenalty = 0
+	}
+	upstreamCost := tokenCost + fixedRequestUSD
+	expectedCost := upstreamCost + failurePenalty + latencyPenalty + riskPenalty
 	grossMargin := input.RevenueUSD - upstreamCost
 	expectedMargin := input.RevenueUSD - expectedCost
 
@@ -434,10 +444,10 @@ func EstimateCost(input CostInput, doc CostProfilesDocument) CostEstimate {
 	estimate.CostProfileName = profile.Name
 	estimate.EstimatedUpstreamCostUSD = floatPtr(upstreamCost)
 	estimate.TokenCostUSD = floatPtr(tokenCost)
-	estimate.FixedRequestUSD = profile.FixedRequestUSD
+	estimate.FixedRequestUSD = fixedRequestUSD
 	estimate.FailurePenaltyUSD = failurePenalty
 	estimate.LatencyPenaltyUSD = latencyPenalty
-	estimate.RiskPenaltyUSD = profile.RiskPenaltyUSD
+	estimate.RiskPenaltyUSD = riskPenalty
 	estimate.CacheSavedUSD = estimateCacheSavedUSD(input, profile)
 	estimate.ExpectedCostUSD = floatPtr(expectedCost)
 	estimate.GrossMarginUSD = floatPtr(grossMargin)
@@ -611,10 +621,10 @@ func normalizeCostInput(input CostInput) CostInput {
 	input.UpstreamCompletionTokens = maxInt(0, input.UpstreamCompletionTokens)
 	input.CacheReadTokens = maxInt(0, input.CacheReadTokens)
 	input.CacheWriteTokens = maxInt(0, input.CacheWriteTokens)
-	if input.UpstreamPromptTokens == 0 {
+	if !input.ActualUsageKnown && input.UpstreamPromptTokens == 0 {
 		input.UpstreamPromptTokens = input.BillablePromptTokens
 	}
-	if input.UpstreamCompletionTokens == 0 {
+	if !input.ActualUsageKnown && input.UpstreamCompletionTokens == 0 {
 		input.UpstreamCompletionTokens = input.BillableCompletionTokens
 	}
 	if input.RevenueUSD < 0 || math.IsNaN(input.RevenueUSD) || math.IsInf(input.RevenueUSD, 0) {

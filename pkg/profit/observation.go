@@ -37,6 +37,20 @@ const (
 	KeyCacheReadTokens                = "cache_read_tokens"
 	KeyCacheWriteTokens               = "cache_write_tokens"
 	KeyCacheSavedUSD                  = "cache_saved_usd"
+	KeyResponseCacheMode              = "response_cache_mode"
+	KeyResponseCacheEligible          = "response_cache_eligible"
+	KeyResponseCacheHit               = "response_cache_hit"
+	KeyResponseCacheWouldHit          = "response_cache_would_hit"
+	KeyResponseCacheLiveServed        = "response_cache_live_served"
+	KeyResponseCacheStored            = "response_cache_stored"
+	KeyResponseCacheRuleID            = "response_cache_rule_id"
+	KeyResponseCacheRuleName          = "response_cache_rule_name"
+	KeyResponseCacheKeyHash           = "response_cache_key_hash"
+	KeyResponseCacheScope             = "response_cache_scope"
+	KeyResponseCacheTTLSeconds        = "response_cache_ttl_seconds"
+	KeyResponseCacheBypassReason      = "response_cache_bypass_reason"
+	KeyResponseCacheObserveOnly       = "response_cache_observe_only"
+	KeyResponseCacheSavedUSD          = "response_cache_saved_usd"
 	KeyRetryCostUSD                   = "retry_cost_usd"
 	KeyRetryAttemptCount              = "profit_retry_attempt_count"
 	KeyRetryAttempts                  = "profit_retry_attempts"
@@ -140,6 +154,20 @@ var userHiddenKeys = []string{
 	KeyCacheReadTokens,
 	KeyCacheWriteTokens,
 	KeyCacheSavedUSD,
+	KeyResponseCacheMode,
+	KeyResponseCacheEligible,
+	KeyResponseCacheHit,
+	KeyResponseCacheWouldHit,
+	KeyResponseCacheLiveServed,
+	KeyResponseCacheStored,
+	KeyResponseCacheRuleID,
+	KeyResponseCacheRuleName,
+	KeyResponseCacheKeyHash,
+	KeyResponseCacheScope,
+	KeyResponseCacheTTLSeconds,
+	KeyResponseCacheBypassReason,
+	KeyResponseCacheObserveOnly,
+	KeyResponseCacheSavedUSD,
 	KeyRetryCostUSD,
 	KeyRetryAttemptCount,
 	KeyRetryAttempts,
@@ -233,6 +261,7 @@ type ObservationInput struct {
 	RetryAttemptCount              int
 	RetryAttempts                  []RetryAttemptObservation
 	ModelAliasDecision             *ModelAliasDecision
+	ResponseCacheDecision          *ResponseCacheDecision
 }
 
 func EnabledForGroup(group string) bool {
@@ -264,6 +293,7 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	if input.ModelAliasDecision != nil && input.ModelAliasDecision.Applied && input.ModelAliasDecision.UpstreamModelName != "" {
 		costModelName = input.ModelAliasDecision.UpstreamModelName
 	}
+	responseCacheLiveServed := input.ResponseCacheDecision != nil && input.ResponseCacheDecision.LiveServed
 	costEstimate := EstimateCost(CostInput{
 		Group:                    input.Group,
 		Provider:                 input.Provider,
@@ -278,6 +308,8 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 		CacheWriteTokens:         input.CacheWriteTokens,
 		RevenueUSD:               revenueUSD,
 		LatencyMs:                input.LatencyMs,
+		ActualUsageKnown:         responseCacheLiveServed,
+		NoUpstreamRequest:        responseCacheLiveServed,
 	}, CurrentCostProfiles())
 	riskDecision := BuildRiskDecision(settings, costEstimate)
 	longContextDecision := input.LongContextDecision
@@ -317,6 +349,7 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	} else {
 		other[KeyCacheSavedUSD] = nil
 	}
+	appendResponseCacheDecision(other, input, costEstimate)
 	if input.RetryCostUSD != nil {
 		other[KeyRetryCostUSD] = input.RetryCostUSD
 	} else {
@@ -336,6 +369,63 @@ func AppendObservation(other map[string]interface{}, input ObservationInput) {
 	appendRouteDecision(other, input.RouteDecision)
 	appendOutputPolicyDecision(other, input.OutputPolicyDecision)
 	appendRiskDecision(other, riskDecision)
+}
+
+func appendResponseCacheDecision(other map[string]interface{}, input ObservationInput, costEstimate CostEstimate) {
+	if other == nil || input.ResponseCacheDecision == nil {
+		return
+	}
+	decision := input.ResponseCacheDecision
+	other[KeyResponseCacheMode] = decision.Mode
+	other[KeyResponseCacheEligible] = decision.Eligible
+	other[KeyResponseCacheHit] = decision.Hit
+	other[KeyResponseCacheWouldHit] = decision.WouldHit
+	other[KeyResponseCacheLiveServed] = decision.LiveServed
+	other[KeyResponseCacheStored] = decision.Stored
+	if decision.RuleID != "" {
+		other[KeyResponseCacheRuleID] = decision.RuleID
+	}
+	if decision.RuleName != "" {
+		other[KeyResponseCacheRuleName] = decision.RuleName
+	}
+	if decision.KeyHash != "" {
+		other[KeyResponseCacheKeyHash] = decision.KeyHash
+	}
+	if decision.Scope != "" {
+		other[KeyResponseCacheScope] = decision.Scope
+	}
+	if decision.TTLSeconds > 0 {
+		other[KeyResponseCacheTTLSeconds] = decision.TTLSeconds
+	}
+	if decision.BypassReason != "" {
+		other[KeyResponseCacheBypassReason] = decision.BypassReason
+	}
+	other[KeyResponseCacheObserveOnly] = decision.ObserveOnly
+	if !decision.LiveServed {
+		return
+	}
+	withoutCacheEstimate := EstimateCost(CostInput{
+		Group:                    input.Group,
+		Provider:                 input.Provider,
+		ChannelID:                input.ChannelID,
+		ChannelName:              input.ChannelName,
+		ModelName:                input.ModelName,
+		BillablePromptTokens:     input.BillablePromptTokens,
+		BillableCompletionTokens: input.BillableCompletionTokens,
+		UpstreamPromptTokens:     input.BillablePromptTokens,
+		UpstreamCompletionTokens: input.BillableCompletionTokens,
+		RevenueUSD:               costEstimate.EstimatedRevenueUSD,
+		LatencyMs:                input.LatencyMs,
+		ActualUsageKnown:         true,
+	}, CurrentCostProfiles())
+	if withoutCacheEstimate.EstimatedUpstreamCostUSD == nil || costEstimate.EstimatedUpstreamCostUSD == nil {
+		return
+	}
+	savedUSD := *withoutCacheEstimate.EstimatedUpstreamCostUSD - *costEstimate.EstimatedUpstreamCostUSD
+	if savedUSD < 0 {
+		savedUSD = 0
+	}
+	other[KeyResponseCacheSavedUSD] = &savedUSD
 }
 
 func appendModelAliasDecision(other map[string]interface{}, decision *ModelAliasDecision) {

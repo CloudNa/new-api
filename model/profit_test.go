@@ -497,6 +497,62 @@ func TestGetProfitAnalyticsAggregatesRetryCost(t *testing.T) {
 	require.Equal(t, int64(1), analytics.RetryBudgetLiveEnforcedCount)
 }
 
+func TestGetProfitAnalyticsAggregatesResponseCacheSavings(t *testing.T) {
+	resetProfitTestData(t)
+
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        100,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     1000,
+		CompletionTokens: 100,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:             profit.ObservationVersion,
+		profit.KeyResponseCacheMode:          profit.ModeEnforce,
+		profit.KeyResponseCacheEligible:      true,
+		profit.KeyResponseCacheHit:           true,
+		profit.KeyResponseCacheWouldHit:      true,
+		profit.KeyResponseCacheLiveServed:    true,
+		profit.KeyResponseCacheStored:        false,
+		profit.KeyResponseCacheRuleID:        "public-help",
+		profit.KeyResponseCacheScope:         profit.ResponseCacheScopeGlobal,
+		profit.KeyResponseCacheSavedUSD:      0.012,
+		profit.KeyUpstreamActualPromptTokens: 0,
+	})
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        110,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     1000,
+		CompletionTokens: 100,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:          profit.ObservationVersion,
+		profit.KeyResponseCacheMode:       profit.ModeObserve,
+		profit.KeyResponseCacheEligible:   true,
+		profit.KeyResponseCacheHit:        false,
+		profit.KeyResponseCacheWouldHit:   false,
+		profit.KeyResponseCacheLiveServed: false,
+		profit.KeyResponseCacheStored:     true,
+		profit.KeyResponseCacheRuleID:     "public-help",
+		profit.KeyResponseCacheScope:      profit.ResponseCacheScopeGlobal,
+	})
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(2), analytics.ResponseCacheObservedCount)
+	require.Equal(t, int64(1), analytics.ResponseCacheHitCount)
+	require.Equal(t, int64(1), analytics.ResponseCacheWouldHitCount)
+	require.Equal(t, int64(1), analytics.ResponseCacheLiveServedCount)
+	require.Equal(t, int64(1), analytics.ResponseCacheStoredCount)
+	require.NotNil(t, analytics.ResponseCacheSavedUSD)
+	require.InDelta(t, 0.012, *analytics.ResponseCacheSavedUSD, 0.0001)
+}
+
 func TestGetProfitAnalyticsOutputPolicyRecommendationNeedsSamples(t *testing.T) {
 	resetProfitTestData(t)
 

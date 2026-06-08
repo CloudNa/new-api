@@ -466,6 +466,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		upstreamPromptTokens = originUsage.PromptTokens
 		upstreamCompletionTokens = originUsage.CompletionTokens
 	}
+	responseCacheDecision := ProfitResponseCacheObservationFromContext(ctx)
+	if responseCacheDecision != nil && responseCacheDecision.LiveServed {
+		upstreamPromptTokens = 0
+		upstreamCompletionTokens = 0
+	}
 	aliasDecision := profitModelAliasDecision(relayInfo)
 	profitRouteModel := profitRoutingModelName(relayInfo, summary.ModelName)
 	compressionSavedTokens := injectPromptCompressionOther(other, relayInfo)
@@ -513,6 +518,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		RetryAttemptCount:              retryAttemptCount,
 		RetryAttempts:                  retryAttempts,
 		ModelAliasDecision:             aliasDecision,
+		ResponseCacheDecision:          responseCacheDecision,
 	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
