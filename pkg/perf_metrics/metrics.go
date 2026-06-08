@@ -15,6 +15,7 @@ import (
 )
 
 var hotBuckets sync.Map
+var hotChannelBuckets sync.Map
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -42,9 +43,14 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
+	channelID := 0
+	if info.ChannelMeta != nil {
+		channelID = info.ChannelId
+	}
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
+		ChannelID:    channelID,
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
@@ -73,6 +79,16 @@ func Record(sample Sample) {
 	}
 	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
 	actual.(*atomicBucket).add(sample)
+	if sample.ChannelID > 0 {
+		channelKey := channelBucketKey{
+			model:     sample.Model,
+			group:     sample.Group,
+			channelID: sample.ChannelID,
+			bucketTs:  key.bucketTs,
+		}
+		channelActual, _ := hotChannelBuckets.LoadOrStore(channelKey, &atomicBucket{})
+		channelActual.(*atomicBucket).add(sample)
+	}
 	recordRedis(key, sample)
 }
 
@@ -199,6 +215,79 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 	return SummaryAllResult{Models: models}, nil
 }
 
+func QueryChannelHealth(params ChannelHealthParams) (map[int]ChannelHealth, error) {
+	if params.Hours <= 0 {
+		params.Hours = 24
+	}
+	if params.Hours > 24*30 {
+		params.Hours = 24 * 30
+	}
+	if params.Model == "" || params.Group == "" || len(params.ChannelIDs) == 0 {
+		return map[int]ChannelHealth{}, nil
+	}
+	allowedChannels := channelIDSet(params.ChannelIDs)
+	endTs := time.Now().Unix()
+	startTs := endTs - int64(params.Hours)*3600
+	merged := map[int]counters{}
+
+	rows, err := model.GetChannelPerfMetricSummaries(params.Model, params.Group, params.ChannelIDs, startTs, endTs)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		current := merged[row.ChannelID]
+		current.requestCount += row.RequestCount
+		current.successCount += row.SuccessCount
+		current.totalLatencyMs += row.TotalLatencyMs
+		current.outputTokens += row.OutputTokens
+		current.generationMs += row.GenerationMs
+		merged[row.ChannelID] = current
+	}
+
+	hotChannelBuckets.Range(func(key, value any) bool {
+		k := key.(channelBucketKey)
+		if k.model != params.Model || k.group != params.Group || k.bucketTs < startTs || k.bucketTs > endTs {
+			return true
+		}
+		if _, ok := allowedChannels[k.channelID]; !ok {
+			return true
+		}
+		snap := value.(*atomicBucket).snapshot()
+		if snap.requestCount == 0 {
+			return true
+		}
+		current := merged[k.channelID]
+		current.requestCount += snap.requestCount
+		current.successCount += snap.successCount
+		current.totalLatencyMs += snap.totalLatencyMs
+		current.outputTokens += snap.outputTokens
+		current.generationMs += snap.generationMs
+		merged[k.channelID] = current
+		return true
+	})
+
+	health := make(map[int]ChannelHealth, len(merged))
+	for channelID, value := range merged {
+		if value.requestCount == 0 {
+			continue
+		}
+		successRate := float64(value.successCount) / float64(value.requestCount) * 100
+		avgLatency := int64(0)
+		if value.totalLatencyMs > 0 {
+			avgLatency = value.totalLatencyMs / value.requestCount
+		}
+		health[channelID] = ChannelHealth{
+			ChannelID:    channelID,
+			RequestCount: value.requestCount,
+			SuccessCount: value.successCount,
+			SuccessRate:  math.Round(successRate*100) / 100,
+			FailureRate:  math.Round((100-successRate)*100) / 100,
+			AvgLatencyMs: avgLatency,
+		}
+	}
+	return health, nil
+}
+
 func allowedGroupSet(groups []string) map[string]struct{} {
 	if groups == nil {
 		return nil
@@ -206,6 +295,16 @@ func allowedGroupSet(groups []string) map[string]struct{} {
 	allowed := make(map[string]struct{}, len(groups))
 	for _, group := range groups {
 		allowed[group] = struct{}{}
+	}
+	return allowed
+}
+
+func channelIDSet(channelIDs []int) map[int]struct{} {
+	allowed := make(map[int]struct{}, len(channelIDs))
+	for _, channelID := range channelIDs {
+		if channelID > 0 {
+			allowed[channelID] = struct{}{}
+		}
 	}
 	return allowed
 }

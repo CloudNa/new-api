@@ -10,6 +10,7 @@ type Store interface {
 type Sample struct {
 	Model        string
 	Group        string
+	ChannelID    int
 	LatencyMs    int64
 	TtftMs       int64
 	HasTtft      bool
@@ -59,10 +60,33 @@ type SummaryAllResult struct {
 	Models []ModelSummary `json:"models"`
 }
 
+type ChannelHealthParams struct {
+	Model      string
+	Group      string
+	ChannelIDs []int
+	Hours      int
+}
+
+type ChannelHealth struct {
+	ChannelID    int     `json:"channel_id"`
+	RequestCount int64   `json:"request_count"`
+	SuccessCount int64   `json:"success_count"`
+	SuccessRate  float64 `json:"success_rate"`
+	FailureRate  float64 `json:"failure_rate"`
+	AvgLatencyMs int64   `json:"avg_latency_ms"`
+}
+
 type bucketKey struct {
 	model    string
 	group    string
 	bucketTs int64
+}
+
+type channelBucketKey struct {
+	model     string
+	group     string
+	channelID int
+	bucketTs  int64
 }
 
 type counters struct {

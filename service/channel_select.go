@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/pkg/profit"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
@@ -178,10 +179,35 @@ func CacheGetProfitPreferredChannel(param *RetryParam, promptTokens int, complet
 	}
 
 	usedChannels := usedChannelSet(param.Ctx.GetStringSlice("use_channel"))
+	channelIDs := make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, used := usedChannels[candidate.ChannelID]; used {
+			continue
+		}
+		channelIDs = append(channelIDs, candidate.ChannelID)
+	}
+	channelHealth, healthErr := perfmetrics.QueryChannelHealth(perfmetrics.ChannelHealthParams{
+		Model:      param.ModelName,
+		Group:      param.TokenGroup,
+		ChannelIDs: channelIDs,
+		Hours:      24,
+	})
+	if healthErr != nil {
+		logger.LogWarn(param.Ctx, "profit channel health skipped: "+healthErr.Error())
+		channelHealth = nil
+	}
 	routeCandidates := make([]profit.RouteCandidateInput, 0, len(candidates))
 	for _, candidate := range candidates {
 		if _, used := usedChannels[candidate.ChannelID]; used {
 			continue
+		}
+		latencyMs := candidate.ResponseTime
+		failureRate := 0.0
+		if health, ok := channelHealth[candidate.ChannelID]; ok && health.RequestCount > 0 {
+			failureRate = health.FailureRate / 100
+			if health.AvgLatencyMs > 0 {
+				latencyMs = int(health.AvgLatencyMs)
+			}
 		}
 		routeCandidates = append(routeCandidates, profit.RouteCandidateInput{
 			Provider:                       candidate.ChannelName,
@@ -193,7 +219,8 @@ func CacheGetProfitPreferredChannel(param *RetryParam, promptTokens int, complet
 			UpstreamActualPromptTokens:     promptTokens,
 			UpstreamActualCompletionTokens: completionTokens,
 			UserQuota:                      userQuota,
-			LatencyMs:                      candidate.ResponseTime,
+			LatencyMs:                      latencyMs,
+			FailureRate:                    failureRate,
 			Priority:                       candidate.Priority,
 			Weight:                         candidate.Weight,
 		})

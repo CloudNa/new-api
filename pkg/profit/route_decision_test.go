@@ -217,3 +217,53 @@ func TestSelectPreferMarginRouteRequiresMultipleCandidates(t *testing.T) {
 	require.False(t, selection.LiveRoutingUsed)
 	require.Equal(t, "single_candidate", selection.Reason)
 }
+
+func TestBuildRouteDecisionUsesFailureRatePenalty(t *testing.T) {
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                         "same-cost-a",
+			Enabled:                    true,
+			ChannelID:                  1,
+			ModelName:                  "model-a",
+			InputUSDPerMillion:         1,
+			OutputUSDPerMillion:        1,
+			FailurePenaltyUSD:          0.1,
+			LatencyPenaltyUSDPerSecond: 0,
+			RiskPenaltyUSD:             0,
+		},
+		{
+			ID:                         "same-cost-b",
+			Enabled:                    true,
+			ChannelID:                  2,
+			ModelName:                  "model-a",
+			InputUSDPerMillion:         1,
+			OutputUSDPerMillion:        1,
+			FailurePenaltyUSD:          0.1,
+			LatencyPenaltyUSDPerSecond: 0,
+			RiskPenaltyUSD:             0,
+		},
+	}}
+	payload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{CostProfilesOptionKey: string(payload)})
+
+	decision := BuildRouteDecision(RouteDecisionInput{
+		Group:                          DefaultObserveGroup,
+		SelectedChannelID:              1,
+		ModelName:                      "model-a",
+		BillablePromptTokens:           1000,
+		BillableCompletionTokens:       0,
+		UpstreamActualPromptTokens:     1000,
+		UpstreamActualCompletionTokens: 0,
+		UserQuota:                      500000,
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, ChannelName: "flaky", FailureRate: 0.9},
+			{ChannelID: 2, ChannelName: "healthy", FailureRate: 0.0},
+		},
+	})
+
+	require.NotNil(t, decision)
+	require.Equal(t, 2, decision.BestChannelID)
+	require.True(t, decision.WouldPreferDifferent)
+	require.Equal(t, 0.9, decision.Candidates[0].FailureRate)
+}

@@ -67,6 +67,7 @@ type RouteDecisionCandidate struct {
 	MarginRank        int      `json:"margin_rank"`
 	Priority          int64    `json:"priority,omitempty"`
 	Weight            int      `json:"weight,omitempty"`
+	FailureRate       float64  `json:"failure_rate,omitempty"`
 }
 
 type RouteSelection struct {
@@ -139,6 +140,7 @@ func BuildRouteDecisionWithSettings(settings Settings, input RouteDecisionInput)
 			Selected:          candidate.ChannelID == input.SelectedChannelID,
 			Priority:          candidate.Priority,
 			Weight:            candidate.Weight,
+			FailureRate:       candidate.FailureRate,
 		})
 	}
 	if len(decisionCandidates) == 0 {
@@ -177,6 +179,7 @@ func BuildRouteDecisionWithSettings(settings Settings, input RouteDecisionInput)
 			ExpectedMarginUSD: estimate.ExpectedMarginUSD,
 			ExpectedMarginPct: estimate.ExpectedMarginPct,
 			Selected:          true,
+			FailureRate:       selected.FailureRate,
 		})
 	}
 
