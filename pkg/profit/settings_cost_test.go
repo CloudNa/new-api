@@ -75,6 +75,46 @@ func TestProfitSettingsValidateRiskThresholds(t *testing.T) {
 	require.NoError(t, settings.Validate())
 }
 
+func TestProfitSettingsValidateLimitsObserveScopeToProxyTest(t *testing.T) {
+	settings := DefaultSettings()
+	settings.ObserveGroups = []string{"default"}
+	require.ErrorContains(t, settings.Validate(), "observe_groups")
+
+	settings = DefaultSettings()
+	settings.LongContextPolicies = []LongContextPolicy{{
+		ID:      "default-long-context",
+		Enabled: true,
+		Group:   "default",
+		Mode:    ModeObserve,
+		Tiers: []LongContextTier{{
+			ID:              "32k",
+			InputMultiplier: 1.25,
+		}},
+	}}
+	require.ErrorContains(t, settings.Validate(), "long context policies")
+
+	settings = DefaultSettings()
+	settings.OutputPolicies = []OutputPolicy{{
+		ID:               "global-output-cap",
+		Enabled:          true,
+		Mode:             ModeCap,
+		DefaultMaxTokens: 1024,
+		HardMaxTokens:    2048,
+	}}
+	require.ErrorContains(t, settings.Validate(), "output policies")
+
+	settings = DefaultSettings()
+	settings.OutputPolicies = []OutputPolicy{{
+		ID:               "disabled-default-output-cap",
+		Enabled:          false,
+		Group:            "default",
+		Mode:             ModeCap,
+		DefaultMaxTokens: 1024,
+		HardMaxTokens:    2048,
+	}}
+	require.NoError(t, settings.Validate())
+}
+
 func TestEstimateCostUsesMatchingProfile(t *testing.T) {
 	doc := CostProfilesDocument{Items: []CostProfile{
 		{

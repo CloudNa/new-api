@@ -204,6 +204,9 @@ func (s Settings) Validate() error {
 	if s.RiskEnforcement != "" && s.RiskEnforcement != ModeOff && s.RiskEnforcement != RiskModeAlert {
 		return errors.New("invalid risk_enforcement")
 	}
+	if err := s.validateObserveOnlyScope(); err != nil {
+		return err
+	}
 	for name, value := range map[string]float64{
 		"risk_min_gross_margin_usd":    s.RiskMinGrossUSD,
 		"risk_min_gross_margin_pct":    s.RiskMinGrossPct,
@@ -212,6 +215,45 @@ func (s Settings) Validate() error {
 	} {
 		if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
 			return errors.New(name + " must be non-negative")
+		}
+	}
+	return nil
+}
+
+func (s Settings) validateObserveOnlyScope() error {
+	for _, group := range cleanStringSlice(s.ObserveGroups) {
+		if group != DefaultObserveGroup {
+			return errors.New("profit observe_groups are limited to proxy-test")
+		}
+	}
+	for _, policy := range s.LongContextPolicies {
+		if !policy.Enabled {
+			continue
+		}
+		mode := strings.TrimSpace(policy.Mode)
+		if mode == "" {
+			mode = ModeObserve
+		}
+		if mode == ModeOff {
+			continue
+		}
+		if strings.TrimSpace(policy.Group) != DefaultObserveGroup {
+			return errors.New("long context policies must target proxy-test group")
+		}
+	}
+	for _, policy := range s.OutputPolicies {
+		if !policy.Enabled {
+			continue
+		}
+		mode := strings.TrimSpace(policy.Mode)
+		if mode == "" {
+			mode = ModeObserve
+		}
+		if mode == ModeOff {
+			continue
+		}
+		if strings.TrimSpace(policy.Group) != DefaultObserveGroup {
+			return errors.New("output policies must target proxy-test group")
 		}
 	}
 	return nil

@@ -86,6 +86,8 @@ const MODE_OPTIONS: Array<{ value: ProfitMode; label: string }> = [
   { value: 'observe', label: 'Observe' },
 ]
 
+const PROFIT_SAFE_GROUP = 'proxy-test'
+
 const OUTPUT_CAP_OPTIONS: Array<{ value: ProfitOutputCapMode; label: string }> =
   [
     { value: 'off', label: 'Off' },
@@ -482,6 +484,40 @@ function parseCsv(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function activeProfitPolicy(policy: { enabled?: boolean; mode?: string }) {
+  const mode = (policy.mode || 'observe').trim()
+  return policy.enabled === true && mode !== 'off'
+}
+
+function policyLabel(policy: { id?: string; name?: string }) {
+  return policy.id || policy.name || '未命名策略'
+}
+
+function buildProfitSettingsSafetyWarnings(
+  observeGroups: string[],
+  longContextPolicies: ProfitLongContextPolicy[],
+  outputPolicies: ProfitOutputPolicy[]
+) {
+  const warnings: string[] = []
+  const unsafeGroups = observeGroups.filter((group) => group !== PROFIT_SAFE_GROUP)
+  if (unsafeGroups.length > 0) {
+    warnings.push(`收益观测分组当前只允许 ${PROFIT_SAFE_GROUP}`)
+  }
+  for (const policy of longContextPolicies) {
+    if (!activeProfitPolicy(policy)) continue
+    if ((policy.group || '').trim() !== PROFIT_SAFE_GROUP) {
+      warnings.push(`长上下文策略 ${policyLabel(policy)} 必须限定 group=${PROFIT_SAFE_GROUP}`)
+    }
+  }
+  for (const policy of outputPolicies) {
+    if (!activeProfitPolicy(policy)) continue
+    if ((policy.group || '').trim() !== PROFIT_SAFE_GROUP) {
+      warnings.push(`输出策略 ${policyLabel(policy)} 必须限定 group=${PROFIT_SAFE_GROUP}`)
+    }
+  }
+  return warnings
 }
 
 function formatUSD(value: number | null | undefined): string {
@@ -1191,6 +1227,7 @@ export function ProfitCenterSection() {
   const [previewJson, setPreviewJson] = useState(formatJson(SAMPLE_PREVIEW))
   const [previewResult, setPreviewResult] =
     useState<ProfitRoutePreviewResponse | null>(null)
+  const [safetyWarnings, setSafetyWarnings] = useState<string[]>([])
 
   const isActive = settings.enabled && !settings.global_kill_switch
 
@@ -1261,6 +1298,7 @@ export function ProfitCenterSection() {
 
   const handleReset = () => {
     setSettings(initialSettings)
+    setSafetyWarnings([])
     setObserveGroups(
       (initialSettings.observe_groups ?? ['proxy-test']).join(', ')
     )
@@ -1279,9 +1317,20 @@ export function ProfitCenterSection() {
       )
       const outputPolicies =
         safeParseJson<ProfitOutputPolicy[]>(outputPolicyJson)
+      const parsedObserveGroups = parseCsv(observeGroups)
+      const warnings = buildProfitSettingsSafetyWarnings(
+        parsedObserveGroups,
+        longContextPolicies,
+        outputPolicies
+      )
+      setSafetyWarnings(warnings)
+      if (warnings.length > 0) {
+        toast.error(warnings[0])
+        return
+      }
       const payload: ProfitSettings = {
         ...settings,
-        observe_groups: parseCsv(observeGroups),
+        observe_groups: parsedObserveGroups,
         observe_only: true,
         long_context_policies: longContextPolicies,
         output_policies: outputPolicies,
@@ -1306,6 +1355,7 @@ export function ProfitCenterSection() {
       )
       setOutputPolicyJson(formatJson(settingsRes.data.output_policies ?? []))
       setProfileJson(formatJson(profilesRes.data))
+      setSafetyWarnings([])
       toast.success(t('Profit settings saved.'))
       await loadAnalytics()
     } catch (error) {
@@ -1404,6 +1454,17 @@ export function ProfitCenterSection() {
             }
           />
         </SettingsControlGroup>
+
+        {safetyWarnings.length > 0 ? (
+          <div className='border-destructive/40 bg-destructive/5 text-destructive min-w-0 rounded-lg border p-3 text-sm'>
+            <div className='font-medium'>{t('保存前保护')}</div>
+            <div className='mt-1 space-y-1 text-xs'>
+              {safetyWarnings.map((warning) => (
+                <div key={warning}>{warning}</div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <SettingsFormGrid>
           <SettingsFormGridItem>
