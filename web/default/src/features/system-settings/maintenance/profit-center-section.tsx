@@ -510,6 +510,46 @@ function formatOutputRecommendationReason(value: string | undefined): string {
   }
 }
 
+function formatProfitGuardrailAction(value: string | undefined): string {
+  switch (value) {
+    case 'none':
+      return '无动作'
+    case 'keep_observing':
+      return '继续观测'
+    case 'keep_observing_output_tail':
+      return '继续观测输出长尾'
+    case 'collect_more_output_samples':
+      return '继续采集输出样本'
+    case 'enable_output_cap_observe':
+      return '建议灰度输出上限'
+    case 'review_pricing_or_cost':
+      return '复核定价或成本'
+    default:
+      return value || '-'
+  }
+}
+
+function formatProfitGuardrailReason(value: string | undefined): string {
+  switch (value) {
+    case 'no_requests':
+      return '暂无请求'
+    case 'no_margin_risk':
+      return '暂无毛利风险'
+    case 'output_tail_without_margin_risk':
+      return '输出长尾但毛利正常'
+    case 'loss_with_output_tail':
+      return '亏损且存在输出长尾'
+    case 'low_margin_with_output_tail':
+      return '低毛利且存在输出长尾'
+    case 'margin_risk_with_insufficient_output_samples':
+      return '毛利风险但输出样本不足'
+    case 'margin_risk_without_output_samples':
+      return '毛利风险但暂无输出样本'
+    default:
+      return value || '-'
+  }
+}
+
 function safeParseJson<T>(value: string): T {
   return JSON.parse(value) as T
 }
@@ -699,6 +739,27 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     [
       '低毛利请求',
       formatNumber(analytics?.profit_risk_low_expected_margin_count),
+    ],
+    [
+      '策略建议',
+      formatProfitGuardrailAction(analytics?.profit_guardrail_action),
+    ],
+    [
+      '策略依据',
+      formatProfitGuardrailReason(analytics?.profit_guardrail_reason),
+    ],
+    [
+      '策略可信度',
+      formatOutputRecommendationConfidence(analytics?.profit_guardrail_confidence),
+    ],
+    ['策略建议模式', analytics?.profit_guardrail_output_mode || '-'],
+    [
+      '策略默认上限',
+      formatNumber(analytics?.profit_guardrail_default_max_tokens),
+    ],
+    [
+      '策略硬上限',
+      formatNumber(analytics?.profit_guardrail_hard_max_tokens),
     ],
     [
       '长上下文观测',

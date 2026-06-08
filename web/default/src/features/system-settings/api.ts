@@ -631,6 +631,12 @@ export type ProfitAnalytics = {
   output_policy_recommended_hard_max_tokens: number
   output_policy_recommendation_confidence: string
   output_policy_recommendation_reason: string
+  profit_guardrail_action: string
+  profit_guardrail_reason: string
+  profit_guardrail_confidence: string
+  profit_guardrail_output_mode: ProfitOutputCapMode | ''
+  profit_guardrail_default_max_tokens: number
+  profit_guardrail_hard_max_tokens: number
   profit_risk_observed_count: number
   profit_risk_alert_count: number
   profit_risk_loss_making_count: number

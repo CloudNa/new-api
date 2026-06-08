@@ -455,3 +455,73 @@ func TestGetProfitAnalyticsOutputPolicyRecommendationNeedsSamples(t *testing.T) 
 	require.Equal(t, "low", analytics.OutputPolicyRecommendationConfidence)
 	require.Equal(t, "insufficient_samples", analytics.OutputPolicyRecommendationReason)
 }
+
+func TestGetProfitAnalyticsGuardrailSuggestsOutputCapForMarginRisk(t *testing.T) {
+	resetProfitTestData(t)
+
+	for i := 1; i <= 20; i++ {
+		insertProfitTestLog(t, &Log{
+			CreatedAt:        int64(100 + i),
+			Username:         "alice",
+			ModelName:        "gpt-5.5",
+			Group:            profit.DefaultObserveGroup,
+			PromptTokens:     10,
+			CompletionTokens: i * 100,
+			Quota:            1000,
+		}, map[string]interface{}{
+			profit.KeyObserveVersion:               profit.ObservationVersion,
+			profit.KeyOutputPolicyMode:             profit.ModeCap,
+			profit.KeyOutputPolicyCompletionTokens: i * 100,
+			profit.KeyRiskMode:                     profit.RiskModeAlert,
+			profit.KeyRiskAlert:                    true,
+			profit.KeyRiskReasons: []string{
+				profit.RiskReasonExpectedMarginBelowMinimum,
+			},
+		})
+	}
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(20), analytics.RiskLowExpectedMarginCount)
+	require.Equal(t, "enable_output_cap_observe", analytics.ProfitGuardrailAction)
+	require.Equal(t, "low_margin_with_output_tail", analytics.ProfitGuardrailReason)
+	require.Equal(t, "medium", analytics.ProfitGuardrailConfidence)
+	require.Equal(t, profit.ModeCap, analytics.ProfitGuardrailOutputMode)
+	require.Equal(t, int64(1920), analytics.ProfitGuardrailDefaultMaxTokens)
+	require.Equal(t, int64(2048), analytics.ProfitGuardrailHardMaxTokens)
+}
+
+func TestGetProfitAnalyticsGuardrailCollectsSamplesBeforeCap(t *testing.T) {
+	resetProfitTestData(t)
+
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        100,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     10,
+		CompletionTokens: 200,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:               profit.ObservationVersion,
+		profit.KeyOutputPolicyMode:             profit.ModeCap,
+		profit.KeyOutputPolicyCompletionTokens: 200,
+		profit.KeyRiskMode:                     profit.RiskModeAlert,
+		profit.KeyRiskAlert:                    true,
+		profit.KeyRiskReasons: []string{
+			profit.RiskReasonLossMakingRequest,
+		},
+	})
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), analytics.RiskLossMakingCount)
+	require.Equal(t, "collect_more_output_samples", analytics.ProfitGuardrailAction)
+	require.Equal(t, "margin_risk_with_insufficient_output_samples", analytics.ProfitGuardrailReason)
+	require.Equal(t, "low", analytics.ProfitGuardrailConfidence)
+	require.Empty(t, analytics.ProfitGuardrailOutputMode)
+	require.Zero(t, analytics.ProfitGuardrailDefaultMaxTokens)
+	require.Zero(t, analytics.ProfitGuardrailHardMaxTokens)
+}

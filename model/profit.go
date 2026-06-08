@@ -15,6 +15,23 @@ const profitAnalyticsScanLimit = 20000
 const outputPolicyRecommendationMinSamples = 20
 const outputPolicyRecommendationTokenStep int64 = 64
 
+const (
+	profitGuardrailActionNone                 = "none"
+	profitGuardrailActionKeepObserving        = "keep_observing"
+	profitGuardrailActionKeepObservingOutput  = "keep_observing_output_tail"
+	profitGuardrailActionCollectOutputSamples = "collect_more_output_samples"
+	profitGuardrailActionEnableOutputCap      = "enable_output_cap_observe"
+	profitGuardrailActionReviewPricingOrCost  = "review_pricing_or_cost"
+
+	profitGuardrailReasonNoRequests                        = "no_requests"
+	profitGuardrailReasonNoMarginRisk                      = "no_margin_risk"
+	profitGuardrailReasonOutputTailWithoutMarginRisk       = "output_tail_without_margin_risk"
+	profitGuardrailReasonLossWithOutputTail                = "loss_with_output_tail"
+	profitGuardrailReasonLowMarginWithOutputTail           = "low_margin_with_output_tail"
+	profitGuardrailReasonMarginRiskWithInsufficientSamples = "margin_risk_with_insufficient_output_samples"
+	profitGuardrailReasonMarginRiskWithoutOutputSamples    = "margin_risk_without_output_samples"
+)
+
 type ProfitLogFilter struct {
 	StartTimestamp int64
 	EndTimestamp   int64
@@ -159,6 +176,12 @@ type ProfitAnalytics struct {
 	OutputPolicyRecommendedHardMax       int64    `json:"output_policy_recommended_hard_max_tokens"`
 	OutputPolicyRecommendationConfidence string   `json:"output_policy_recommendation_confidence"`
 	OutputPolicyRecommendationReason     string   `json:"output_policy_recommendation_reason"`
+	ProfitGuardrailAction                string   `json:"profit_guardrail_action"`
+	ProfitGuardrailReason                string   `json:"profit_guardrail_reason"`
+	ProfitGuardrailConfidence            string   `json:"profit_guardrail_confidence"`
+	ProfitGuardrailOutputMode            string   `json:"profit_guardrail_output_mode"`
+	ProfitGuardrailDefaultMaxTokens      int64    `json:"profit_guardrail_default_max_tokens"`
+	ProfitGuardrailHardMaxTokens         int64    `json:"profit_guardrail_hard_max_tokens"`
 	RiskObservedCount                    int64    `json:"profit_risk_observed_count"`
 	RiskAlertCount                       int64    `json:"profit_risk_alert_count"`
 	RiskLossMakingCount                  int64    `json:"profit_risk_loss_making_count"`
@@ -364,8 +387,57 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 		analytics.OutputPolicyRecommendationConfidence = "none"
 		analytics.OutputPolicyRecommendationReason = "no_samples"
 	}
+	applyProfitGuardrailRecommendation(&analytics)
 
 	return analytics, nil
+}
+
+func applyProfitGuardrailRecommendation(analytics *ProfitAnalytics) {
+	if analytics == nil {
+		return
+	}
+	analytics.ProfitGuardrailAction = profitGuardrailActionKeepObserving
+	analytics.ProfitGuardrailReason = profitGuardrailReasonNoMarginRisk
+	analytics.ProfitGuardrailConfidence = "none"
+	if analytics.RequestCount == 0 {
+		analytics.ProfitGuardrailAction = profitGuardrailActionNone
+		analytics.ProfitGuardrailReason = profitGuardrailReasonNoRequests
+		return
+	}
+	hasMarginRisk := analytics.RiskLossMakingCount > 0 ||
+		analytics.RiskLowGrossMarginCount > 0 ||
+		analytics.RiskLowExpectedMarginCount > 0
+	if !hasMarginRisk {
+		if analytics.OutputPolicyWouldCapCount > 0 {
+			analytics.ProfitGuardrailAction = profitGuardrailActionKeepObservingOutput
+			analytics.ProfitGuardrailReason = profitGuardrailReasonOutputTailWithoutMarginRisk
+			analytics.ProfitGuardrailConfidence = analytics.OutputPolicyRecommendationConfidence
+		}
+		return
+	}
+	if analytics.OutputPolicyCompletionSampleCount >= outputPolicyRecommendationMinSamples &&
+		analytics.OutputPolicyRecommendedHardMax > 0 {
+		analytics.ProfitGuardrailAction = profitGuardrailActionEnableOutputCap
+		if analytics.RiskLossMakingCount > 0 {
+			analytics.ProfitGuardrailReason = profitGuardrailReasonLossWithOutputTail
+		} else {
+			analytics.ProfitGuardrailReason = profitGuardrailReasonLowMarginWithOutputTail
+		}
+		analytics.ProfitGuardrailConfidence = analytics.OutputPolicyRecommendationConfidence
+		analytics.ProfitGuardrailOutputMode = profit.ModeCap
+		analytics.ProfitGuardrailDefaultMaxTokens = analytics.OutputPolicyRecommendedDefaultMax
+		analytics.ProfitGuardrailHardMaxTokens = analytics.OutputPolicyRecommendedHardMax
+		return
+	}
+	if analytics.OutputPolicyCompletionSampleCount > 0 {
+		analytics.ProfitGuardrailAction = profitGuardrailActionCollectOutputSamples
+		analytics.ProfitGuardrailReason = profitGuardrailReasonMarginRiskWithInsufficientSamples
+		analytics.ProfitGuardrailConfidence = analytics.OutputPolicyRecommendationConfidence
+		return
+	}
+	analytics.ProfitGuardrailAction = profitGuardrailActionReviewPricingOrCost
+	analytics.ProfitGuardrailReason = profitGuardrailReasonMarginRiskWithoutOutputSamples
+	analytics.ProfitGuardrailConfidence = "low"
 }
 
 func nearestRankPercentile(sortedValues []int64, percentile int) int64 {
