@@ -482,6 +482,34 @@ function formatPercent(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
+function formatOutputRecommendationConfidence(value: string | undefined): string {
+  switch (value) {
+    case 'high':
+      return '高'
+    case 'medium':
+      return '中'
+    case 'low':
+      return '低'
+    case 'none':
+      return '无样本'
+    default:
+      return value || '-'
+  }
+}
+
+function formatOutputRecommendationReason(value: string | undefined): string {
+  switch (value) {
+    case 'p95_p99_observed':
+      return '基于 P95/P99'
+    case 'insufficient_samples':
+      return '样本不足'
+    case 'no_samples':
+      return '暂无样本'
+    default:
+      return value || '-'
+  }
+}
+
 function safeParseJson<T>(value: string): T {
   return JSON.parse(value) as T
 }
@@ -633,6 +661,26 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
     [
       '输出最大 token',
       formatNumber(analytics?.output_policy_completion_max_tokens),
+    ],
+    [
+      '建议默认上限',
+      formatNumber(analytics?.output_policy_recommended_default_max_tokens),
+    ],
+    [
+      '建议硬上限',
+      formatNumber(analytics?.output_policy_recommended_hard_max_tokens),
+    ],
+    [
+      '建议可信度',
+      formatOutputRecommendationConfidence(
+        analytics?.output_policy_recommendation_confidence
+      ),
+    ],
+    [
+      '建议依据',
+      formatOutputRecommendationReason(
+        analytics?.output_policy_recommendation_reason
+      ),
     ],
     [
       'Output would cap',

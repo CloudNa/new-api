@@ -423,4 +423,35 @@ func TestGetProfitAnalyticsOutputPolicyPercentiles(t *testing.T) {
 	require.Equal(t, int64(1900), analytics.OutputPolicyCompletionP95Tokens)
 	require.Equal(t, int64(2000), analytics.OutputPolicyCompletionP99Tokens)
 	require.Equal(t, int64(2000), analytics.OutputPolicyCompletionMaxTokens)
+	require.Equal(t, int64(1920), analytics.OutputPolicyRecommendedDefaultMax)
+	require.Equal(t, int64(2048), analytics.OutputPolicyRecommendedHardMax)
+	require.Equal(t, "medium", analytics.OutputPolicyRecommendationConfidence)
+	require.Equal(t, "p95_p99_observed", analytics.OutputPolicyRecommendationReason)
+}
+
+func TestGetProfitAnalyticsOutputPolicyRecommendationNeedsSamples(t *testing.T) {
+	resetProfitTestData(t)
+
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        100,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     10,
+		CompletionTokens: 200,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:               profit.ObservationVersion,
+		profit.KeyOutputPolicyMode:             profit.ModeCap,
+		profit.KeyOutputPolicyCompletionTokens: 200,
+	})
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), analytics.OutputPolicyCompletionSampleCount)
+	require.Equal(t, int64(256), analytics.OutputPolicyRecommendedDefaultMax)
+	require.Equal(t, int64(256), analytics.OutputPolicyRecommendedHardMax)
+	require.Equal(t, "low", analytics.OutputPolicyRecommendationConfidence)
+	require.Equal(t, "insufficient_samples", analytics.OutputPolicyRecommendationReason)
 }
