@@ -539,6 +539,11 @@ func TestGetProfitAnalyticsGuardrailSuggestsOutputCapForMarginRisk(t *testing.T)
 	require.Equal(t, 1920, analytics.ProfitGuardrailPolicyTemplate.DefaultMaxTokens)
 	require.Equal(t, 2048, analytics.ProfitGuardrailPolicyTemplate.HardMaxTokens)
 	require.True(t, analytics.ProfitGuardrailPolicyTemplate.RewriteOverLimit)
+	require.NotEmpty(t, analytics.ProfitGuardrailRecommendations)
+	require.Equal(t, "primary", analytics.ProfitGuardrailRecommendations[0].ID)
+	require.Equal(t, "enable_output_cap_observe", analytics.ProfitGuardrailRecommendations[0].Action)
+	require.Equal(t, analytics.ProfitGuardrailPolicyTemplate, analytics.ProfitGuardrailRecommendations[0].OutputPolicyTemplate)
+	require.NotEmpty(t, analytics.ProfitGuardrailRecommendations[0].TemplateJSON)
 
 	var templates []profit.OutputPolicy
 	require.NoError(t, common.UnmarshalJsonStr(analytics.ProfitGuardrailPolicyTemplateJSON, &templates))
@@ -578,4 +583,60 @@ func TestGetProfitAnalyticsGuardrailCollectsSamplesBeforeCap(t *testing.T) {
 	require.Empty(t, analytics.ProfitGuardrailOutputMode)
 	require.Zero(t, analytics.ProfitGuardrailDefaultMaxTokens)
 	require.Zero(t, analytics.ProfitGuardrailHardMaxTokens)
+}
+
+func TestGetProfitAnalyticsGuardrailRecommendationsCoverObservedRisks(t *testing.T) {
+	resetProfitTestData(t)
+
+	insertProfitTestLog(t, &Log{
+		CreatedAt:        100,
+		Username:         "alice",
+		ModelName:        "gpt-5.5",
+		Group:            profit.DefaultObserveGroup,
+		PromptTokens:     64000,
+		CompletionTokens: 200,
+		Quota:            1000,
+	}, map[string]interface{}{
+		profit.KeyObserveVersion:               profit.ObservationVersion,
+		profit.KeyCostStatus:                   profit.CostStatusMissingCostProfile,
+		profit.KeyLongContextMode:              profit.ModeObserve,
+		profit.KeyLongContextTokens:            64000,
+		profit.KeyLongContextSuggestedExtraUSD: 0.2,
+		profit.KeyRetryCostUSD:                 0.01,
+		profit.KeyRetryAttemptCount:            1,
+		profit.KeyRiskMode:                     profit.RiskModeAlert,
+		profit.KeyRiskAlert:                    true,
+		profit.KeyRiskReasons: []string{
+			profit.RiskReasonLossMakingRequest,
+		},
+	})
+
+	analytics, err := GetProfitAnalytics(ProfitLogFilter{Group: profit.DefaultObserveGroup})
+
+	require.NoError(t, err)
+	ids := make([]string, 0, len(analytics.ProfitGuardrailRecommendations))
+	for _, recommendation := range analytics.ProfitGuardrailRecommendations {
+		ids = append(ids, recommendation.ID)
+	}
+	require.Contains(t, ids, "primary")
+	require.Contains(t, ids, "cost-profiles")
+	require.Contains(t, ids, "long-context-premium")
+	require.Contains(t, ids, "retry-budget")
+	require.Contains(t, ids, "margin-risk")
+	require.Equal(t, "review_pricing_or_cost", profitGuardrailRecommendationByID(t, analytics, "primary").Action)
+	require.Equal(t, "complete_cost_profiles", profitGuardrailRecommendationByID(t, analytics, "cost-profiles").Action)
+	require.Equal(t, "review_long_context_premium", profitGuardrailRecommendationByID(t, analytics, "long-context-premium").Action)
+	require.Equal(t, "review_retry_budget", profitGuardrailRecommendationByID(t, analytics, "retry-budget").Action)
+	require.Equal(t, "loss_making_requests_observed", profitGuardrailRecommendationByID(t, analytics, "margin-risk").Reason)
+}
+
+func profitGuardrailRecommendationByID(t *testing.T, analytics ProfitAnalytics, id string) ProfitGuardrailRecommendation {
+	t.Helper()
+	for _, recommendation := range analytics.ProfitGuardrailRecommendations {
+		if recommendation.ID == id {
+			return recommendation
+		}
+	}
+	require.FailNow(t, "profit guardrail recommendation not found", id)
+	return ProfitGuardrailRecommendation{}
 }

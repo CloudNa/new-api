@@ -60,6 +60,7 @@ import {
   type ProfitCostRoutingMode,
   type ProfitCostProfiles,
   type ProfitEventsPage,
+  type ProfitGuardrailRecommendation,
   type ProfitLongContextPolicy,
   type ProfitMode,
   type ProfitOutputCapMode,
@@ -657,6 +658,12 @@ function formatProfitGuardrailAction(value: string | undefined): string {
       return '建议灰度输出上限'
     case 'review_pricing_or_cost':
       return '复核定价或成本'
+    case 'complete_cost_profiles':
+      return '补齐成本档案'
+    case 'review_long_context_premium':
+      return '复核长上下文溢价'
+    case 'review_retry_budget':
+      return '复核重试预算'
     default:
       return value || '-'
   }
@@ -678,6 +685,16 @@ function formatProfitGuardrailReason(value: string | undefined): string {
       return '毛利风险但输出样本不足'
     case 'margin_risk_without_output_samples':
       return '毛利风险但暂无输出样本'
+    case 'missing_cost_profiles':
+      return '存在缺失成本档案'
+    case 'long_context_extra_revenue_observed':
+      return '观察到长上下文增收空间'
+    case 'retry_cost_observed':
+      return '观察到重试成本'
+    case 'risk_alerts_observed':
+      return '观察到毛利风险告警'
+    case 'loss_making_requests_observed':
+      return '观察到亏损请求'
     default:
       return value || '-'
   }
@@ -961,71 +978,148 @@ function GuardrailPolicyTemplate({
   onUseTemplate: (value: string) => void
 }) {
   const { t } = useTranslation()
-  const templateJson = analytics?.profit_guardrail_policy_template
+  const fallbackTemplateJson = analytics?.profit_guardrail_policy_template
     ? formatJson([analytics.profit_guardrail_policy_template])
     : (analytics?.profit_guardrail_policy_template_json ?? '')
-  const hasTemplate = templateJson.trim().length > 0
+  const recommendations =
+    analytics?.profit_guardrail_recommendations?.length
+      ? analytics.profit_guardrail_recommendations
+      : fallbackTemplateJson.trim().length > 0
+        ? [
+            {
+              id: 'primary',
+              action: analytics?.profit_guardrail_action ?? '',
+              reason: analytics?.profit_guardrail_reason ?? '',
+              confidence: analytics?.profit_guardrail_confidence ?? '',
+              mode: analytics?.profit_guardrail_output_mode,
+              default_max_tokens:
+                analytics?.profit_guardrail_default_max_tokens,
+              hard_max_tokens: analytics?.profit_guardrail_hard_max_tokens,
+              output_policy_template:
+                analytics?.profit_guardrail_policy_template ?? null,
+              template_json: fallbackTemplateJson,
+            } satisfies ProfitGuardrailRecommendation,
+          ]
+        : []
+  const hasRecommendations = recommendations.length > 0
   return (
     <div className='min-w-0 space-y-3 rounded-lg border p-3'>
       <div className='flex flex-wrap items-start justify-between gap-2'>
         <div className='min-w-0 space-y-1'>
-          <h4 className='text-sm font-semibold'>{t('策略模板')}</h4>
+          <h4 className='text-sm font-semibold'>{t('保护建议')}</h4>
           <p className='text-muted-foreground text-xs'>
             {t(
-              '基于当前 proxy-test 收益观测生成输出上限模板；填入后仍需手动保存才会进入配置。'
+              '基于当前 proxy-test 收益观测生成建议；所有建议仍需手动保存配置后才会生效。'
             )}
           </p>
         </div>
-        <Badge variant={hasTemplate ? 'default' : 'secondary'}>
-          {hasTemplate ? t('可套用') : t('暂无模板')}
+        <Badge variant={hasRecommendations ? 'default' : 'secondary'}>
+          {hasRecommendations ? t('有建议') : t('暂无建议')}
         </Badge>
       </div>
-      {hasTemplate ? (
-        <>
-          <Label
-            htmlFor='profit-guardrail-policy-template-json'
-            className='sr-only'
-          >
-            {t('策略模板')}
-          </Label>
-          <Textarea
-            id='profit-guardrail-policy-template-json'
-            name='profit-guardrail-policy-template-json'
-            rows={7}
-            value={templateJson}
-            readOnly
-            className='font-mono text-xs'
-          />
-          <div className='flex flex-wrap gap-2'>
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              onClick={() =>
-                copyText(
-                  templateJson,
-                  t('已复制策略模板'),
-                  t('复制策略模板失败')
-                )
-              }
-            >
-              <CopyIcon data-icon='inline-start' />
-              <span>{t('复制模板')}</span>
-            </Button>
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              onClick={() => onUseTemplate(templateJson)}
-            >
-              <CalculatorIcon data-icon='inline-start' />
-              <span>{t('合并模板')}</span>
-            </Button>
-          </div>
-        </>
+      {hasRecommendations ? (
+        <div className='min-w-0 divide-y'>
+          {recommendations.map((recommendation) => {
+            const templateJson = recommendation.output_policy_template
+              ? formatJson([recommendation.output_policy_template])
+              : (recommendation.template_json ?? '')
+            const hasTemplate = templateJson.trim().length > 0
+            return (
+              <div
+                key={`${recommendation.id}-${recommendation.action}`}
+                className='min-w-0 space-y-2 py-3 first:pt-0 last:pb-0'
+              >
+                <div className='flex flex-wrap items-start justify-between gap-2'>
+                  <div className='min-w-0'>
+                    <div className='truncate text-sm font-medium'>
+                      {formatProfitGuardrailAction(recommendation.action)}
+                    </div>
+                    <div className='text-muted-foreground mt-0.5 text-xs'>
+                      {formatProfitGuardrailReason(recommendation.reason)}
+                    </div>
+                  </div>
+                  <div className='flex flex-wrap gap-1'>
+                    <Badge variant='outline'>
+                      {formatOutputRecommendationConfidence(
+                        recommendation.confidence
+                      )}
+                    </Badge>
+                    {recommendation.mode ? (
+                      <Badge variant='secondary'>{recommendation.mode}</Badge>
+                    ) : null}
+                  </div>
+                </div>
+                {recommendation.default_max_tokens ||
+                recommendation.hard_max_tokens ? (
+                  <div className='text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs'>
+                    <span>
+                      {t('默认上限')}:{' '}
+                      {formatNumber(recommendation.default_max_tokens)}
+                    </span>
+                    <span>
+                      {t('硬上限')}:{' '}
+                      {formatNumber(recommendation.hard_max_tokens)}
+                    </span>
+                  </div>
+                ) : null}
+                {recommendation.notes?.length ? (
+                  <div className='text-muted-foreground space-y-1 text-xs'>
+                    {recommendation.notes.map((note) => (
+                      <div key={note}>{note}</div>
+                    ))}
+                  </div>
+                ) : null}
+                {hasTemplate ? (
+                  <div className='min-w-0 space-y-2'>
+                    <Label
+                      htmlFor={`profit-guardrail-policy-template-json-${recommendation.id}`}
+                      className='sr-only'
+                    >
+                      {t('策略模板')}
+                    </Label>
+                    <Textarea
+                      id={`profit-guardrail-policy-template-json-${recommendation.id}`}
+                      name={`profit-guardrail-policy-template-json-${recommendation.id}`}
+                      rows={6}
+                      value={templateJson}
+                      readOnly
+                      className='font-mono text-xs'
+                    />
+                    <div className='flex flex-wrap gap-2'>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={() =>
+                          copyText(
+                            templateJson,
+                            t('已复制策略模板'),
+                            t('复制策略模板失败')
+                          )
+                        }
+                      >
+                        <CopyIcon data-icon='inline-start' />
+                        <span>{t('复制模板')}</span>
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={() => onUseTemplate(templateJson)}
+                      >
+                        <CalculatorIcon data-icon='inline-start' />
+                        <span>{t('合并模板')}</span>
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
       ) : (
         <div className='bg-muted/20 text-muted-foreground rounded-md border border-dashed p-3 text-xs'>
-          {t('暂无可套用模板')}
+          {t('暂无可套用建议')}
         </div>
       )}
     </div>

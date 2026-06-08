@@ -23,6 +23,9 @@ const (
 	profitGuardrailActionCollectOutputSamples = "collect_more_output_samples"
 	profitGuardrailActionEnableOutputCap      = "enable_output_cap_observe"
 	profitGuardrailActionReviewPricingOrCost  = "review_pricing_or_cost"
+	profitGuardrailActionCompleteCostProfiles = "complete_cost_profiles"
+	profitGuardrailActionReviewLongContext    = "review_long_context_premium"
+	profitGuardrailActionReviewRetryBudget    = "review_retry_budget"
 
 	profitGuardrailReasonNoRequests                        = "no_requests"
 	profitGuardrailReasonNoMarginRisk                      = "no_margin_risk"
@@ -31,6 +34,11 @@ const (
 	profitGuardrailReasonLowMarginWithOutputTail           = "low_margin_with_output_tail"
 	profitGuardrailReasonMarginRiskWithInsufficientSamples = "margin_risk_with_insufficient_output_samples"
 	profitGuardrailReasonMarginRiskWithoutOutputSamples    = "margin_risk_without_output_samples"
+	profitGuardrailReasonMissingCostProfiles               = "missing_cost_profiles"
+	profitGuardrailReasonLongContextExtraRevenue           = "long_context_extra_revenue_observed"
+	profitGuardrailReasonRetryCostObserved                 = "retry_cost_observed"
+	profitGuardrailReasonRiskAlertsObserved                = "risk_alerts_observed"
+	profitGuardrailReasonLossMakingRequests                = "loss_making_requests_observed"
 )
 
 type ProfitLogFilter struct {
@@ -149,60 +157,74 @@ type ProfitEvent struct {
 }
 
 type ProfitAnalytics struct {
-	RequestCount                         int64                `json:"request_count"`
-	ScannedEvents                        int64                `json:"scanned_events"`
-	TotalMatchingLogs                    int64                `json:"total_matching_logs"`
-	IsPartial                            bool                 `json:"is_partial"`
-	ScanLimit                            int                  `json:"scan_limit"`
-	CostKnownCount                       int64                `json:"cost_known_count"`
-	MissingCostProfileCount              int64                `json:"missing_cost_profile_count"`
-	BillablePromptTokens                 int64                `json:"billable_prompt_tokens"`
-	BillableCompletionTokens             int64                `json:"billable_completion_tokens"`
-	UpstreamActualPromptTokens           int64                `json:"upstream_actual_prompt_tokens"`
-	UpstreamActualCompletionTokens       int64                `json:"upstream_actual_completion_tokens"`
-	EstimatedRevenueUSD                  float64              `json:"estimated_revenue_usd"`
-	EstimatedUpstreamCostUSD             *float64             `json:"estimated_upstream_cost_usd"`
-	GrossMarginUSD                       *float64             `json:"gross_margin_usd"`
-	GrossMarginPct                       *float64             `json:"gross_margin_pct"`
-	ExpectedCostUSD                      *float64             `json:"expected_cost_usd"`
-	ExpectedMarginUSD                    *float64             `json:"expected_margin_usd"`
-	ExpectedMarginPct                    *float64             `json:"expected_margin_pct"`
-	CompressionSavedTokens               int64                `json:"compression_saved_tokens"`
-	OutputPolicyObservedCount            int64                `json:"output_policy_observed_count"`
-	OutputPolicyExceededDefaultCount     int64                `json:"output_policy_exceeded_default_count"`
-	OutputPolicyExceededHardCount        int64                `json:"output_policy_exceeded_hard_count"`
-	OutputPolicyWouldCapCount            int64                `json:"output_policy_would_cap_count"`
-	OutputPolicyPremiumRequiredCount     int64                `json:"output_policy_premium_required_count"`
-	OutputPolicyCompletionTokens         int64                `json:"output_policy_completion_tokens"`
-	OutputPolicyCompletionSampleCount    int64                `json:"output_policy_completion_sample_count"`
-	OutputPolicyCompletionAvgTokens      float64              `json:"output_policy_completion_avg_tokens"`
-	OutputPolicyCompletionP95Tokens      int64                `json:"output_policy_completion_p95_tokens"`
-	OutputPolicyCompletionP99Tokens      int64                `json:"output_policy_completion_p99_tokens"`
-	OutputPolicyCompletionMaxTokens      int64                `json:"output_policy_completion_max_tokens"`
-	OutputPolicyRecommendedDefaultMax    int64                `json:"output_policy_recommended_default_max_tokens"`
-	OutputPolicyRecommendedHardMax       int64                `json:"output_policy_recommended_hard_max_tokens"`
-	OutputPolicyRecommendationConfidence string               `json:"output_policy_recommendation_confidence"`
-	OutputPolicyRecommendationReason     string               `json:"output_policy_recommendation_reason"`
-	ProfitGuardrailAction                string               `json:"profit_guardrail_action"`
-	ProfitGuardrailReason                string               `json:"profit_guardrail_reason"`
-	ProfitGuardrailConfidence            string               `json:"profit_guardrail_confidence"`
-	ProfitGuardrailOutputMode            string               `json:"profit_guardrail_output_mode"`
-	ProfitGuardrailDefaultMaxTokens      int64                `json:"profit_guardrail_default_max_tokens"`
-	ProfitGuardrailHardMaxTokens         int64                `json:"profit_guardrail_hard_max_tokens"`
-	ProfitGuardrailPolicyTemplate        *profit.OutputPolicy `json:"profit_guardrail_policy_template,omitempty"`
-	ProfitGuardrailPolicyTemplateJSON    string               `json:"profit_guardrail_policy_template_json,omitempty"`
-	RiskObservedCount                    int64                `json:"profit_risk_observed_count"`
-	RiskAlertCount                       int64                `json:"profit_risk_alert_count"`
-	RiskLossMakingCount                  int64                `json:"profit_risk_loss_making_count"`
-	RiskLowGrossMarginCount              int64                `json:"profit_risk_low_gross_margin_count"`
-	RiskLowExpectedMarginCount           int64                `json:"profit_risk_low_expected_margin_count"`
-	LongContextObservedCount             int64                `json:"long_context_observed_count"`
-	LongContextPremiumRequiredCount      int64                `json:"long_context_premium_required_count"`
-	LongContextTokens                    int64                `json:"long_context_tokens"`
-	LongContextSuggestedExtraUSD         float64              `json:"long_context_suggested_extra_revenue_usd"`
-	CacheSavedUSD                        *float64             `json:"cache_saved_usd"`
-	RetryCostUSD                         *float64             `json:"retry_cost_usd"`
-	RetryAttemptCount                    int64                `json:"profit_retry_attempt_count"`
+	RequestCount                         int64                           `json:"request_count"`
+	ScannedEvents                        int64                           `json:"scanned_events"`
+	TotalMatchingLogs                    int64                           `json:"total_matching_logs"`
+	IsPartial                            bool                            `json:"is_partial"`
+	ScanLimit                            int                             `json:"scan_limit"`
+	CostKnownCount                       int64                           `json:"cost_known_count"`
+	MissingCostProfileCount              int64                           `json:"missing_cost_profile_count"`
+	BillablePromptTokens                 int64                           `json:"billable_prompt_tokens"`
+	BillableCompletionTokens             int64                           `json:"billable_completion_tokens"`
+	UpstreamActualPromptTokens           int64                           `json:"upstream_actual_prompt_tokens"`
+	UpstreamActualCompletionTokens       int64                           `json:"upstream_actual_completion_tokens"`
+	EstimatedRevenueUSD                  float64                         `json:"estimated_revenue_usd"`
+	EstimatedUpstreamCostUSD             *float64                        `json:"estimated_upstream_cost_usd"`
+	GrossMarginUSD                       *float64                        `json:"gross_margin_usd"`
+	GrossMarginPct                       *float64                        `json:"gross_margin_pct"`
+	ExpectedCostUSD                      *float64                        `json:"expected_cost_usd"`
+	ExpectedMarginUSD                    *float64                        `json:"expected_margin_usd"`
+	ExpectedMarginPct                    *float64                        `json:"expected_margin_pct"`
+	CompressionSavedTokens               int64                           `json:"compression_saved_tokens"`
+	OutputPolicyObservedCount            int64                           `json:"output_policy_observed_count"`
+	OutputPolicyExceededDefaultCount     int64                           `json:"output_policy_exceeded_default_count"`
+	OutputPolicyExceededHardCount        int64                           `json:"output_policy_exceeded_hard_count"`
+	OutputPolicyWouldCapCount            int64                           `json:"output_policy_would_cap_count"`
+	OutputPolicyPremiumRequiredCount     int64                           `json:"output_policy_premium_required_count"`
+	OutputPolicyCompletionTokens         int64                           `json:"output_policy_completion_tokens"`
+	OutputPolicyCompletionSampleCount    int64                           `json:"output_policy_completion_sample_count"`
+	OutputPolicyCompletionAvgTokens      float64                         `json:"output_policy_completion_avg_tokens"`
+	OutputPolicyCompletionP95Tokens      int64                           `json:"output_policy_completion_p95_tokens"`
+	OutputPolicyCompletionP99Tokens      int64                           `json:"output_policy_completion_p99_tokens"`
+	OutputPolicyCompletionMaxTokens      int64                           `json:"output_policy_completion_max_tokens"`
+	OutputPolicyRecommendedDefaultMax    int64                           `json:"output_policy_recommended_default_max_tokens"`
+	OutputPolicyRecommendedHardMax       int64                           `json:"output_policy_recommended_hard_max_tokens"`
+	OutputPolicyRecommendationConfidence string                          `json:"output_policy_recommendation_confidence"`
+	OutputPolicyRecommendationReason     string                          `json:"output_policy_recommendation_reason"`
+	ProfitGuardrailAction                string                          `json:"profit_guardrail_action"`
+	ProfitGuardrailReason                string                          `json:"profit_guardrail_reason"`
+	ProfitGuardrailConfidence            string                          `json:"profit_guardrail_confidence"`
+	ProfitGuardrailOutputMode            string                          `json:"profit_guardrail_output_mode"`
+	ProfitGuardrailDefaultMaxTokens      int64                           `json:"profit_guardrail_default_max_tokens"`
+	ProfitGuardrailHardMaxTokens         int64                           `json:"profit_guardrail_hard_max_tokens"`
+	ProfitGuardrailPolicyTemplate        *profit.OutputPolicy            `json:"profit_guardrail_policy_template,omitempty"`
+	ProfitGuardrailPolicyTemplateJSON    string                          `json:"profit_guardrail_policy_template_json,omitempty"`
+	ProfitGuardrailRecommendations       []ProfitGuardrailRecommendation `json:"profit_guardrail_recommendations,omitempty"`
+	RiskObservedCount                    int64                           `json:"profit_risk_observed_count"`
+	RiskAlertCount                       int64                           `json:"profit_risk_alert_count"`
+	RiskLossMakingCount                  int64                           `json:"profit_risk_loss_making_count"`
+	RiskLowGrossMarginCount              int64                           `json:"profit_risk_low_gross_margin_count"`
+	RiskLowExpectedMarginCount           int64                           `json:"profit_risk_low_expected_margin_count"`
+	LongContextObservedCount             int64                           `json:"long_context_observed_count"`
+	LongContextPremiumRequiredCount      int64                           `json:"long_context_premium_required_count"`
+	LongContextTokens                    int64                           `json:"long_context_tokens"`
+	LongContextSuggestedExtraUSD         float64                         `json:"long_context_suggested_extra_revenue_usd"`
+	CacheSavedUSD                        *float64                        `json:"cache_saved_usd"`
+	RetryCostUSD                         *float64                        `json:"retry_cost_usd"`
+	RetryAttemptCount                    int64                           `json:"profit_retry_attempt_count"`
+}
+
+type ProfitGuardrailRecommendation struct {
+	ID                   string               `json:"id"`
+	Action               string               `json:"action"`
+	Reason               string               `json:"reason"`
+	Confidence           string               `json:"confidence"`
+	Mode                 string               `json:"mode,omitempty"`
+	DefaultMaxTokens     int64                `json:"default_max_tokens,omitempty"`
+	HardMaxTokens        int64                `json:"hard_max_tokens,omitempty"`
+	Notes                []string             `json:"notes,omitempty"`
+	OutputPolicyTemplate *profit.OutputPolicy `json:"output_policy_template,omitempty"`
+	TemplateJSON         string               `json:"template_json,omitempty"`
 }
 
 func GetProfitEvents(filter ProfitLogFilter, startIdx int, num int) (events []*ProfitEvent, total int64, err error) {
@@ -400,6 +422,7 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 	}
 	applyProfitGuardrailRecommendation(&analytics)
 	applyProfitGuardrailPolicyTemplate(&analytics, filter)
+	applyProfitGuardrailRecommendations(&analytics)
 
 	return analytics, nil
 }
@@ -493,6 +516,142 @@ func applyProfitGuardrailPolicyTemplate(analytics *ProfitAnalytics, filter Profi
 	}
 	analytics.ProfitGuardrailPolicyTemplate = &template
 	analytics.ProfitGuardrailPolicyTemplateJSON = string(payload)
+}
+
+func applyProfitGuardrailRecommendations(analytics *ProfitAnalytics) {
+	if analytics == nil {
+		return
+	}
+	recommendations := make([]ProfitGuardrailRecommendation, 0, 5)
+	if analytics.ProfitGuardrailAction != "" {
+		recommendations = append(recommendations, ProfitGuardrailRecommendation{
+			ID:                   "primary",
+			Action:               analytics.ProfitGuardrailAction,
+			Reason:               analytics.ProfitGuardrailReason,
+			Confidence:           analytics.ProfitGuardrailConfidence,
+			Mode:                 analytics.ProfitGuardrailOutputMode,
+			DefaultMaxTokens:     analytics.ProfitGuardrailDefaultMaxTokens,
+			HardMaxTokens:        analytics.ProfitGuardrailHardMaxTokens,
+			OutputPolicyTemplate: analytics.ProfitGuardrailPolicyTemplate,
+			TemplateJSON:         analytics.ProfitGuardrailPolicyTemplateJSON,
+			Notes:                profitGuardrailPrimaryNotes(analytics),
+		})
+	}
+	if analytics.MissingCostProfileCount > 0 {
+		recommendations = append(recommendations, ProfitGuardrailRecommendation{
+			ID:         "cost-profiles",
+			Action:     profitGuardrailActionCompleteCostProfiles,
+			Reason:     profitGuardrailReasonMissingCostProfiles,
+			Confidence: recommendationConfidenceByCount(analytics.MissingCostProfileCount),
+			Notes: []string{
+				"缺失成本档案的请求只参与观测，不参与毛利优先路由。",
+				"优先补高流量 channel/provider/model 的真实上游成本，低流量模型继续走通用估算。",
+			},
+		})
+	}
+	if analytics.LongContextSuggestedExtraUSD > 0 {
+		recommendations = append(recommendations, ProfitGuardrailRecommendation{
+			ID:         "long-context-premium",
+			Action:     profitGuardrailActionReviewLongContext,
+			Reason:     profitGuardrailReasonLongContextExtraRevenue,
+			Confidence: recommendationConfidenceByCount(analytics.LongContextObservedCount),
+			Mode:       profit.ModeObserve,
+			Notes: []string{
+				"已观察到长上下文可增收空间，先保持 observe，确认套餐和计费表达式后再启用。",
+				"压缩节省归平台，上游实际 token 与用户计费用 token 继续分离。",
+			},
+		})
+	}
+	if analytics.RetryAttemptCount > 0 || (analytics.RetryCostUSD != nil && *analytics.RetryCostUSD > 0) {
+		recommendations = append(recommendations, ProfitGuardrailRecommendation{
+			ID:         "retry-budget",
+			Action:     profitGuardrailActionReviewRetryBudget,
+			Reason:     profitGuardrailReasonRetryCostObserved,
+			Confidence: recommendationConfidenceByCount(analytics.RetryAttemptCount),
+			Mode:       profit.ModeObserve,
+			Notes: []string{
+				"已记录重试成本，下一步可为低毛利模型设置 max_retry_cost_usd。",
+				"流式已输出后的失败仍保持只观测，避免为了省成本影响用户成功率。",
+			},
+		})
+	}
+	if analytics.RiskAlertCount > 0 {
+		reason := profitGuardrailReasonRiskAlertsObserved
+		if analytics.RiskLossMakingCount > 0 {
+			reason = profitGuardrailReasonLossMakingRequests
+		}
+		recommendations = append(recommendations, ProfitGuardrailRecommendation{
+			ID:         "margin-risk",
+			Action:     profitGuardrailActionReviewPricingOrCost,
+			Reason:     reason,
+			Confidence: recommendationConfidenceByCount(analytics.RiskAlertCount),
+			Mode:       profit.RiskModeAlert,
+			Notes: []string{
+				"存在低毛利或亏损请求，先复核模型定价、成本档案和分组权限。",
+				"正式 enforce 前继续限制在 proxy-test，避免影响 default 组。",
+			},
+		})
+	}
+	analytics.ProfitGuardrailRecommendations = dedupeProfitGuardrailRecommendations(recommendations)
+}
+
+func profitGuardrailPrimaryNotes(analytics *ProfitAnalytics) []string {
+	if analytics == nil {
+		return nil
+	}
+	switch analytics.ProfitGuardrailAction {
+	case profitGuardrailActionEnableOutputCap:
+		return []string{
+			"输出上限模板只会合并到配置草稿，保存前仍可检查。",
+			"建议保持 observe_only=true，先观察 P95/P99 和低毛利模型表现。",
+		}
+	case profitGuardrailActionCollectOutputSamples:
+		return []string{"样本不足时不建议启用输出上限，继续采集 proxy-test 输出分布。"}
+	case profitGuardrailActionReviewPricingOrCost:
+		return []string{"暂无足够输出样本，先复核定价和上游成本。"}
+	case profitGuardrailActionKeepObservingOutput:
+		return []string{"已有输出长尾但尚未触发毛利风险，继续观测即可。"}
+	case profitGuardrailActionKeepObserving:
+		return []string{"当前未观察到需要启用限制的收益风险。"}
+	default:
+		return nil
+	}
+}
+
+func recommendationConfidenceByCount(count int64) string {
+	if count >= 100 {
+		return "high"
+	}
+	if count >= outputPolicyRecommendationMinSamples {
+		return "medium"
+	}
+	if count > 0 {
+		return "low"
+	}
+	return "none"
+}
+
+func dedupeProfitGuardrailRecommendations(items []ProfitGuardrailRecommendation) []ProfitGuardrailRecommendation {
+	seen := make(map[string]struct{}, len(items))
+	out := make([]ProfitGuardrailRecommendation, 0, len(items))
+	for _, item := range items {
+		if item.ID == "" {
+			item.ID = item.Action
+		}
+		key := item.ID
+		if key == "" {
+			key = item.Action + ":" + item.Reason
+		}
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func safePolicyIDPart(value string) string {

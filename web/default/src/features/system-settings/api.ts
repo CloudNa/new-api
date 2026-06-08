@@ -600,6 +600,19 @@ export type ProfitAnalyticsParams = {
   page_size?: number
 }
 
+export type ProfitGuardrailRecommendation = {
+  id: string
+  action: string
+  reason: string
+  confidence: string
+  mode?: ProfitOutputCapMode | ProfitRiskMode | ProfitMode | ''
+  default_max_tokens?: number
+  hard_max_tokens?: number
+  notes?: string[]
+  output_policy_template?: ProfitOutputPolicy | null
+  template_json?: string
+}
+
 export type ProfitAnalytics = {
   request_count: number
   scanned_events: number
@@ -643,6 +656,7 @@ export type ProfitAnalytics = {
   profit_guardrail_hard_max_tokens: number
   profit_guardrail_policy_template?: ProfitOutputPolicy | null
   profit_guardrail_policy_template_json?: string
+  profit_guardrail_recommendations?: ProfitGuardrailRecommendation[]
   profit_risk_observed_count: number
   profit_risk_alert_count: number
   profit_risk_loss_making_count: number
