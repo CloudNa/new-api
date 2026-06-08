@@ -138,3 +138,82 @@ func TestBuildRouteDecisionSkipsWhenCostRoutingOff(t *testing.T) {
 
 	require.Nil(t, decision)
 }
+
+func TestSelectPreferMarginRouteRespectsObserveOnly(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = true
+
+	selection := SelectPreferMarginRoute(settings, RouteDecisionInput{
+		Group:     DefaultObserveGroup,
+		ModelName: "model-a",
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1},
+			{ChannelID: 2},
+		},
+	})
+
+	require.False(t, selection.LiveRoutingUsed)
+	require.Equal(t, "observe_only", selection.Reason)
+}
+
+func TestSelectPreferMarginRouteChoosesBestKnownMargin(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = false
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:                  "expensive",
+			Enabled:             true,
+			ChannelID:           1,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  10,
+			OutputUSDPerMillion: 10,
+		},
+		{
+			ID:                  "cheap",
+			Enabled:             true,
+			ChannelID:           2,
+			ModelName:           "model-a",
+			InputUSDPerMillion:  1,
+			OutputUSDPerMillion: 1,
+		},
+	}}
+	payload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{CostProfilesOptionKey: string(payload)})
+
+	selection := SelectPreferMarginRoute(settings, RouteDecisionInput{
+		Group:                          DefaultObserveGroup,
+		ModelName:                      "model-a",
+		BillablePromptTokens:           100000,
+		BillableCompletionTokens:       100000,
+		UpstreamActualPromptTokens:     100000,
+		UpstreamActualCompletionTokens: 100000,
+		UserQuota:                      500000,
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, ChannelName: "expensive", Priority: 20, Weight: 100},
+			{ChannelID: 2, ChannelName: "cheap", Priority: 10, Weight: 100},
+		},
+	})
+
+	require.True(t, selection.LiveRoutingUsed)
+	require.Equal(t, 2, selection.ChannelID)
+	require.NotNil(t, selection.Decision)
+	require.Equal(t, ModePreferMargin, selection.Decision.Mode)
+}
+
+func TestSelectPreferMarginRouteRequiresMultipleCandidates(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = false
+
+	selection := SelectPreferMarginRoute(settings, RouteDecisionInput{
+		Group:      DefaultObserveGroup,
+		ModelName:  "model-a",
+		Candidates: []RouteCandidateInput{{ChannelID: 1}},
+	})
+
+	require.False(t, selection.LiveRoutingUsed)
+	require.Equal(t, "single_candidate", selection.Reason)
+}

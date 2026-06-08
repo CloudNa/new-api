@@ -303,7 +303,24 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			AutoBan: &autoBanInt,
 		}, nil
 	}
-	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
+	channel, selection, err := service.CacheGetProfitPreferredChannel(
+		retryParam,
+		info.GetEstimatePromptTokens(),
+		0,
+		info.FinalPreConsumedQuota,
+	)
+	selectGroup := retryParam.TokenGroup
+	if err != nil {
+		logger.LogWarn(c, "profit prefer-margin route skipped: "+err.Error())
+		channel = nil
+	} else if channel != nil && selection != nil && selection.LiveRoutingUsed {
+		logger.LogInfo(c, fmt.Sprintf("profit prefer-margin route selected channel #%d for group %s model %s", channel.Id, retryParam.TokenGroup, info.OriginModelName))
+	} else {
+		channel = nil
+	}
+	if channel == nil {
+		channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+	}
 
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 

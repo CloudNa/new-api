@@ -69,9 +69,20 @@ type RouteDecisionCandidate struct {
 	Weight            int      `json:"weight,omitempty"`
 }
 
+type RouteSelection struct {
+	ChannelID       int            `json:"channel_id,omitempty"`
+	Decision        *RouteDecision `json:"decision,omitempty"`
+	LiveRoutingUsed bool           `json:"live_routing_used"`
+	Reason          string         `json:"reason,omitempty"`
+}
+
 func BuildRouteDecision(input RouteDecisionInput) *RouteDecision {
-	settings := CurrentSettings().Normalize()
-	if !settings.Enabled || settings.GlobalKillSwitch || !costRoutingDecisionEnabled(settings.CostRoutingMode) || !EnabledForGroup(input.Group) {
+	return BuildRouteDecisionWithSettings(CurrentSettings(), input)
+}
+
+func BuildRouteDecisionWithSettings(settings Settings, input RouteDecisionInput) *RouteDecision {
+	settings = settings.Normalize()
+	if !settings.Enabled || settings.GlobalKillSwitch || !costRoutingDecisionEnabled(settings.CostRoutingMode) || !settingsEnabledForGroup(settings, input.Group) {
 		return nil
 	}
 
@@ -193,6 +204,37 @@ func BuildRouteDecision(input RouteDecisionInput) *RouteDecision {
 		BestExpectedMarginUSD: best.ExpectedMarginUSD,
 		WouldPreferDifferent:  selectedRank > 1 && best.ExpectedMarginUSD != nil && best.ChannelID != input.SelectedChannelID,
 		Candidates:            decisionCandidates,
+	}
+}
+
+func SelectPreferMarginRoute(settings Settings, input RouteDecisionInput) RouteSelection {
+	settings = settings.Normalize()
+	switch {
+	case !settings.Enabled:
+		return RouteSelection{Reason: "disabled"}
+	case settings.GlobalKillSwitch:
+		return RouteSelection{Reason: "global_kill_switch"}
+	case settings.CostRoutingMode != ModePreferMargin:
+		return RouteSelection{Reason: "mode_not_prefer_margin"}
+	case settings.ObserveOnly:
+		return RouteSelection{Reason: "observe_only"}
+	case !settingsEnabledForGroup(settings, input.Group):
+		return RouteSelection{Reason: "group_not_enabled"}
+	case len(input.Candidates) < 2:
+		return RouteSelection{Reason: "single_candidate"}
+	}
+
+	decision := BuildRouteDecisionWithSettings(settings, input)
+	if decision == nil {
+		return RouteSelection{Reason: "no_decision"}
+	}
+	if decision.BestChannelID <= 0 || decision.BestExpectedMarginUSD == nil {
+		return RouteSelection{Decision: decision, Reason: CostStatusMissingCostProfile}
+	}
+	return RouteSelection{
+		ChannelID:       decision.BestChannelID,
+		Decision:        decision,
+		LiveRoutingUsed: true,
 	}
 }
 

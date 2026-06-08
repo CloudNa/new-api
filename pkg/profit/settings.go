@@ -129,7 +129,6 @@ func CurrentSettings() Settings {
 func (s Settings) Normalize() Settings {
 	defaults := DefaultSettings()
 	s.Version = ObservationVersion
-	s.ObserveOnly = true
 	s.SettingsWritable = true
 	s.CostProfilesUsed = true
 	if len(s.ObserveGroups) == 0 {
