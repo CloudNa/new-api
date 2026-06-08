@@ -88,9 +88,9 @@ type RoutePreviewRequest struct {
 }
 
 type RoutePreviewCandidate struct {
-	Input       CostInput     `json:"input"`
-	Estimate    CostEstimate  `json:"estimate"`
-	WouldPrefer bool `json:"would_prefer"`
+	Input       CostInput    `json:"input"`
+	Estimate    CostEstimate `json:"estimate"`
+	WouldPrefer bool         `json:"would_prefer"`
 }
 
 type RoutePreviewResponse struct {
@@ -105,7 +105,180 @@ type RoutePreviewResponse struct {
 func DefaultCostProfilesDocument() CostProfilesDocument {
 	return CostProfilesDocument{
 		Version: ObservationVersion,
-		Items:   []CostProfile{},
+		Items:   DefaultCostProfiles(),
+	}
+}
+
+func DefaultCostProfiles() []CostProfile {
+	return []CostProfile{
+		{
+			ID:                         "generic-gpt-5-premium",
+			Name:                       "Generic GPT-5 family fallback estimate",
+			Enabled:                    true,
+			Priority:                   10,
+			ModelName:                  "gpt-5*",
+			InputUSDPerMillion:         1.25,
+			OutputUSDPerMillion:        10,
+			FailurePenaltyUSD:          0.01,
+			LatencyPenaltyUSDPerSecond: 0.00005,
+			Notes:                      "Generic fallback for GPT-5 family across any channel/provider; use channel-specific profiles only when real cost differs.",
+		},
+		{
+			ID:                         "generic-gemini-family",
+			Name:                       "Generic Gemini family fallback estimate",
+			Enabled:                    true,
+			Priority:                   9,
+			ModelName:                  "gemini*",
+			InputUSDPerMillion:         0.2,
+			OutputUSDPerMillion:        1,
+			FailurePenaltyUSD:          0.004,
+			LatencyPenaltyUSDPerSecond: 0.00003,
+			RiskPenaltyUSD:             0.0002,
+			Notes:                      "Generic fallback for Gemini family across any channel/provider; override per channel only when needed.",
+		},
+		{
+			ID:                         "generic-claude-family",
+			Name:                       "Generic Claude family fallback estimate",
+			Enabled:                    true,
+			Priority:                   8,
+			ModelName:                  "claude*",
+			InputUSDPerMillion:         3,
+			OutputUSDPerMillion:        15,
+			FailurePenaltyUSD:          0.02,
+			LatencyPenaltyUSDPerSecond: 0.00008,
+			RiskPenaltyUSD:             0.0005,
+			Notes:                      "Generic fallback for Claude family across any channel/provider; override per channel only when needed.",
+		},
+		{
+			ID:                         "generic-gpt-oss-family",
+			Name:                       "Generic gpt-oss family fallback estimate",
+			Enabled:                    true,
+			Priority:                   8,
+			ModelName:                  "gpt-oss*",
+			InputUSDPerMillion:         0.1,
+			OutputUSDPerMillion:        0.5,
+			FailurePenaltyUSD:          0.003,
+			LatencyPenaltyUSDPerSecond: 0.00003,
+			RiskPenaltyUSD:             0.0001,
+			Notes:                      "Generic fallback for gpt-oss family across any channel/provider; override per channel only when needed.",
+		},
+		{
+			ID:                         "generic-deepseek-family",
+			Name:                       "Generic DeepSeek family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "deepseek*",
+			InputUSDPerMillion:         0.2,
+			OutputUSDPerMillion:        0.8,
+			FailurePenaltyUSD:          0.004,
+			LatencyPenaltyUSDPerSecond: 0.00003,
+			RiskPenaltyUSD:             0.0002,
+			Notes:                      "Generic fallback for DeepSeek family across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-qwen-family",
+			Name:                       "Generic Qwen family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "qwen*",
+			InputUSDPerMillion:         0.3,
+			OutputUSDPerMillion:        1.2,
+			FailurePenaltyUSD:          0.004,
+			LatencyPenaltyUSDPerSecond: 0.00003,
+			RiskPenaltyUSD:             0.0002,
+			Notes:                      "Generic fallback for Qwen family across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-kimi-family",
+			Name:                       "Generic Kimi/Moonshot family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "kimi*",
+			InputUSDPerMillion:         0.6,
+			OutputUSDPerMillion:        2,
+			FailurePenaltyUSD:          0.006,
+			LatencyPenaltyUSDPerSecond: 0.00004,
+			RiskPenaltyUSD:             0.0003,
+			Notes:                      "Generic fallback for Kimi family across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-moonshot-family",
+			Name:                       "Generic Moonshot family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "moonshot*",
+			InputUSDPerMillion:         0.6,
+			OutputUSDPerMillion:        2,
+			FailurePenaltyUSD:          0.006,
+			LatencyPenaltyUSDPerSecond: 0.00004,
+			RiskPenaltyUSD:             0.0003,
+			Notes:                      "Generic fallback for Moonshot family across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-kiro-family",
+			Name:                       "Generic Kiro family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "kiro*",
+			InputUSDPerMillion:         3,
+			OutputUSDPerMillion:        15,
+			FailurePenaltyUSD:          0.02,
+			LatencyPenaltyUSDPerSecond: 0.00008,
+			RiskPenaltyUSD:             0.0005,
+			Notes:                      "Generic fallback for Kiro-style CLI/OAuth models across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-grok-family",
+			Name:                       "Generic Grok/xAI family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "grok*",
+			InputUSDPerMillion:         3,
+			OutputUSDPerMillion:        15,
+			FailurePenaltyUSD:          0.015,
+			LatencyPenaltyUSDPerSecond: 0.00006,
+			RiskPenaltyUSD:             0.0005,
+			Notes:                      "Generic fallback for Grok family across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-mistral-family",
+			Name:                       "Generic Mistral family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "mistral*",
+			InputUSDPerMillion:         0.5,
+			OutputUSDPerMillion:        1.5,
+			FailurePenaltyUSD:          0.004,
+			LatencyPenaltyUSDPerSecond: 0.00003,
+			RiskPenaltyUSD:             0.0002,
+			Notes:                      "Generic fallback for Mistral family across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-llama-family",
+			Name:                       "Generic Llama family fallback estimate",
+			Enabled:                    true,
+			Priority:                   7,
+			ModelName:                  "llama*",
+			InputUSDPerMillion:         0.2,
+			OutputUSDPerMillion:        0.8,
+			FailurePenaltyUSD:          0.003,
+			LatencyPenaltyUSDPerSecond: 0.00003,
+			RiskPenaltyUSD:             0.0001,
+			Notes:                      "Generic fallback for Llama family across any channel/provider; replace with exact upstream prices when available.",
+		},
+		{
+			ID:                         "generic-any-model",
+			Name:                       "Generic any-model fallback estimate",
+			Enabled:                    true,
+			Priority:                   1,
+			ModelName:                  "*",
+			InputUSDPerMillion:         2,
+			OutputUSDPerMillion:        8,
+			FailurePenaltyUSD:          0.01,
+			LatencyPenaltyUSDPerSecond: 0.00005,
+			RiskPenaltyUSD:             0.001,
+			Notes:                      "Last-resort fallback for any model without a more specific cost profile; use only as an estimate and override exact high-volume channels.",
+		},
 	}
 }
 
@@ -115,15 +288,16 @@ func LoadCostProfiles() (CostProfilesDocument, error) {
 	raw := common.OptionMap[CostProfilesOptionKey]
 	common.OptionMapRWMutex.RUnlock()
 	if strings.TrimSpace(raw) == "" {
-		return doc, nil
+		return doc.Normalize(), nil
 	}
-	if err := common.UnmarshalJsonStr(raw, &doc); err != nil {
+	var stored CostProfilesDocument
+	if err := common.UnmarshalJsonStr(raw, &stored); err != nil {
 		return CostProfilesDocument{}, errors.New("invalid stored profit cost profiles")
 	}
-	if err := doc.Validate(); err != nil {
+	if err := stored.Validate(); err != nil {
 		return CostProfilesDocument{}, err
 	}
-	return doc.Normalize(), nil
+	return mergeCostProfileDefaults(doc, stored).Normalize(), nil
 }
 
 func CurrentCostProfiles() CostProfilesDocument {
@@ -149,6 +323,39 @@ func (doc CostProfilesDocument) Normalize() CostProfilesDocument {
 	}
 	doc.Items = out
 	return doc
+}
+
+func mergeCostProfileDefaults(defaults CostProfilesDocument, stored CostProfilesDocument) CostProfilesDocument {
+	defaults = defaults.Normalize()
+	stored = stored.Normalize()
+	byID := make(map[string]int, len(stored.Items))
+	for i, profile := range stored.Items {
+		if profile.ID != "" {
+			byID[profile.ID] = i
+		}
+	}
+	out := make([]CostProfile, 0, len(defaults.Items)+len(stored.Items))
+	for _, profile := range defaults.Items {
+		if index, ok := byID[profile.ID]; ok {
+			out = append(out, stored.Items[index])
+			continue
+		}
+		out = append(out, profile)
+	}
+	defaultIDs := make(map[string]struct{}, len(defaults.Items))
+	for _, profile := range defaults.Items {
+		defaultIDs[profile.ID] = struct{}{}
+	}
+	for _, profile := range stored.Items {
+		if _, ok := defaultIDs[profile.ID]; ok {
+			continue
+		}
+		out = append(out, profile)
+	}
+	return CostProfilesDocument{
+		Version: ObservationVersion,
+		Items:   out,
+	}
 }
 
 func (doc CostProfilesDocument) Validate() error {
@@ -302,8 +509,8 @@ func PreviewRoute(settings Settings, doc CostProfilesDocument, req RoutePreviewR
 		candidate = inheritRoutePreviewDefaults(req, candidate)
 		estimate := EstimateCost(candidate, doc)
 		preview := RoutePreviewCandidate{
-			Input:       candidate,
-			Estimate:    estimate,
+			Input:    candidate,
+			Estimate: estimate,
 		}
 		if estimate.ExpectedMarginUSD != nil {
 			if !bestKnown || *estimate.ExpectedMarginUSD > bestMargin {
@@ -341,7 +548,7 @@ func profileMatchScore(profile CostProfile, input CostInput) (int, bool) {
 		}
 		score += 4
 	}
-	if profile.ModelName != "" && profile.ModelName != "*" {
+	if profile.ModelName != "" {
 		modelScore, ok := modelPatternScore(profile.ModelName, input.ModelName)
 		if !ok {
 			return 0, false
@@ -355,7 +562,10 @@ func modelPatternScore(pattern string, value string) (int, bool) {
 	pattern = strings.ToLower(strings.TrimSpace(pattern))
 	value = strings.ToLower(strings.TrimSpace(value))
 	if pattern == "" || pattern == "*" {
-		return 0, true
+		return 0, pattern == "" || value != ""
+	}
+	if value == "" {
+		return 0, false
 	}
 	if pattern == value {
 		return 8, true

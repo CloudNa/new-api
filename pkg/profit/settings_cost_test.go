@@ -115,6 +115,96 @@ func TestEstimateCostUsesMatchingProfile(t *testing.T) {
 	require.InDelta(t, 0.404, *estimate.GrossMarginUSD, 0.0001)
 }
 
+func TestDefaultCostProfilesProvideGenericFallbacks(t *testing.T) {
+	withProfitOptionMap(t, map[string]string{})
+
+	doc, err := LoadCostProfiles()
+	require.NoError(t, err)
+
+	gptEstimate := EstimateCost(CostInput{
+		ChannelID:                99,
+		Provider:                 "new-sidecar",
+		ModelName:                "gpt-5.5",
+		UpstreamPromptTokens:     762,
+		UpstreamCompletionTokens: 33,
+		RevenueUSD:               0.012074,
+	}, doc)
+
+	require.True(t, gptEstimate.CostKnown)
+	require.Equal(t, CostStatusConfigured, gptEstimate.CostStatus)
+	require.Equal(t, "generic-gpt-5-premium", gptEstimate.CostProfileID)
+	require.NotNil(t, gptEstimate.EstimatedUpstreamCostUSD)
+	require.InDelta(t, 0.0012825, *gptEstimate.EstimatedUpstreamCostUSD, 0.0000001)
+	require.NotNil(t, gptEstimate.GrossMarginUSD)
+
+	deepseekEstimate := EstimateCost(CostInput{
+		ChannelID:                100,
+		ModelName:                "deepseek-chat",
+		UpstreamPromptTokens:     1000,
+		UpstreamCompletionTokens: 100,
+		RevenueUSD:               0.01,
+	}, doc)
+
+	require.True(t, deepseekEstimate.CostKnown)
+	require.Equal(t, "generic-deepseek-family", deepseekEstimate.CostProfileID)
+
+	kiroEstimate := EstimateCost(CostInput{
+		ChannelID:                101,
+		ModelName:                "kiro-coder",
+		UpstreamPromptTokens:     1000,
+		UpstreamCompletionTokens: 100,
+		RevenueUSD:               0.01,
+	}, doc)
+
+	require.True(t, kiroEstimate.CostKnown)
+	require.Equal(t, "generic-kiro-family", kiroEstimate.CostProfileID)
+
+	unknownEstimate := EstimateCost(CostInput{
+		ChannelID:                102,
+		ModelName:                "future-model-1",
+		UpstreamPromptTokens:     1000,
+		UpstreamCompletionTokens: 100,
+		RevenueUSD:               0.01,
+	}, doc)
+
+	require.True(t, unknownEstimate.CostKnown)
+	require.Equal(t, "generic-any-model", unknownEstimate.CostProfileID)
+}
+
+func TestStoredCostProfilesCanDisableGenericFallback(t *testing.T) {
+	stored := CostProfilesDocument{Items: []CostProfile{
+		{
+			ID:        "generic-gpt-5-premium",
+			Name:      "Disable GPT-5 fallback",
+			Enabled:   false,
+			ModelName: "gpt-5*",
+		},
+		{
+			ID:        "generic-any-model",
+			Name:      "Disable universal fallback",
+			Enabled:   false,
+			ModelName: "*",
+		},
+	}}
+	payload, err := common.Marshal(stored.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{CostProfilesOptionKey: string(payload)})
+
+	doc, err := LoadCostProfiles()
+	require.NoError(t, err)
+
+	estimate := EstimateCost(CostInput{
+		ChannelID:                99,
+		ModelName:                "gpt-5.5",
+		UpstreamPromptTokens:     762,
+		UpstreamCompletionTokens: 33,
+		RevenueUSD:               0.012074,
+	}, doc)
+
+	require.False(t, estimate.CostKnown)
+	require.Equal(t, CostStatusMissingCostProfile, estimate.CostStatus)
+}
+
 func TestPreviewRouteIsObserveOnlyAndSelectsBestMargin(t *testing.T) {
 	doc := CostProfilesDocument{Items: []CostProfile{
 		{

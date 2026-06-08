@@ -9,6 +9,7 @@ import (
 )
 
 func TestAppendObservationAddsProxyTestMetrics(t *testing.T) {
+	withProfitOptionMap(t, map[string]string{})
 	other := map[string]interface{}{}
 
 	AppendObservation(other, ObservationInput{
