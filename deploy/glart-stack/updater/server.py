@@ -183,6 +183,7 @@ def precheck() -> dict:
     add("response cache sources", response_cache_sources_ok(), "present" if response_cache_sources_ok() else "missing response cache hooks")
     add("output policy sources", output_policy_sources_ok(), "present" if output_policy_sources_ok() else "missing output policy hooks")
     add("profit risk sources", profit_risk_sources_ok(), "present" if profit_risk_sources_ok() else "missing profit risk hooks")
+    add("OmniRoute parity sources", omniroute_parity_sources_ok(), "present" if omniroute_parity_sources_ok() else "missing OmniRoute parity guards")
 
     if SCRIPT.exists():
         ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
@@ -219,6 +220,7 @@ def smoke() -> dict:
         "response_cache_sources_ok": False,
         "output_policy_sources_ok": False,
         "profit_risk_sources_ok": False,
+        "omniroute_parity_sources_ok": False,
         "proxy_test_chat_checked": False,
         "proxy_test_chat_ok": False,
         "proxy_test_chat_skipped": False,
@@ -231,6 +233,7 @@ def smoke() -> dict:
         result["response_cache_sources_ok"] = response_cache_sources_ok()
         result["output_policy_sources_ok"] = output_policy_sources_ok()
         result["profit_risk_sources_ok"] = profit_risk_sources_ok()
+        result["omniroute_parity_sources_ok"] = omniroute_parity_sources_ok()
         result["proxy_test_chat_checked"], result["proxy_test_chat_ok"], result["proxy_test_chat_skipped"] = proxy_test_chat_smoke()
         result["ok"] = all(
             [
@@ -241,6 +244,7 @@ def smoke() -> dict:
                 result["response_cache_sources_ok"],
                 result["output_policy_sources_ok"],
                 result["profit_risk_sources_ok"],
+                result["omniroute_parity_sources_ok"],
                 result["proxy_test_chat_ok"] or result["proxy_test_chat_skipped"],
             ]
         )
@@ -355,6 +359,26 @@ def profit_risk_sources_ok() -> bool:
                 "profit_risk_live_enforced_count" in model_profit,
                 "profit_risk_live_enforced_count" in api_types,
                 "风险真实拦截" in profit_center,
+            ]
+        )
+    except Exception:
+        return False
+
+
+def omniroute_parity_sources_ok() -> bool:
+    try:
+        attribution = (ROOT / "pkg/promptcompress/attribution.go").read_text(encoding="utf-8")
+        embed = (ROOT / "pkg/promptcompress/omniroute_embed.go").read_text(encoding="utf-8")
+        manifest = (ROOT / "pkg/promptcompress/omniroute_manifest_test.go").read_text(encoding="utf-8")
+        return all(
+            [
+                'OmniRouteParityCommit = "630baa6"' in attribution,
+                "omniroute/caveman_rules/_schema.json" in embed,
+                "TestOmniRouteVendoredRuleBlobParity" in manifest,
+                "omniRouteExpectedBlobSHA" in manifest,
+                "gitBlobSHA" in manifest,
+                "7a3f82d887ff96f9208aa3e17e7e4ac94d9107c4" in manifest,
+                "606cc22457d857bac0bc50567dbaca30e30b52c0" in manifest,
             ]
         )
     except Exception:
