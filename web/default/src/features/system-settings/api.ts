@@ -317,6 +317,7 @@ export type SystemUpdateSmoke = {
   cliproxyapi_ready: boolean
   sidecar_bridge_sources_ok?: boolean
   response_cache_sources_ok?: boolean
+  output_policy_sources_ok?: boolean
   proxy_test_chat_checked?: boolean
   proxy_test_chat_ok?: boolean
   proxy_test_chat_skipped?: boolean
@@ -861,6 +862,8 @@ export type ProfitEvent = {
   output_policy_premium_group?: string
   output_policy_observe_only?: boolean
   output_policy_live_enforced?: boolean
+  output_policy_requested_max_tokens?: number
+  output_policy_applied_max_tokens?: number
   profit_risk_mode?: ProfitRiskMode
   profit_risk_alert?: boolean
   profit_risk_reasons?: string[]

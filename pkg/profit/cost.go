@@ -695,6 +695,13 @@ func maxInt(a int, b int) int {
 	return b
 }
 
+func minInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func floatPtr(value float64) *float64 {
 	return &value
 }

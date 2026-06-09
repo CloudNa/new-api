@@ -19,6 +19,20 @@ func TestBuildOutputPolicyDecisionSkipsWhenModeOff(t *testing.T) {
 	require.Nil(t, decision)
 }
 
+func TestBuildOutputPolicyDecisionSkipsWhenGlobalKillSwitch(t *testing.T) {
+	settings := DefaultSettings()
+	settings.GlobalKillSwitch = true
+	settings.OutputCapMode = ModeCap
+
+	decision := BuildOutputPolicyDecisionWithSettings(OutputPolicyInput{
+		Group:            DefaultObserveGroup,
+		ModelName:        "gpt-test",
+		CompletionTokens: 1000,
+	}, settings)
+
+	require.Nil(t, decision)
+}
+
 func TestBuildOutputPolicyDecisionObservesProxyTestOnly(t *testing.T) {
 	settings := DefaultSettings()
 	settings.OutputCapMode = ModeObserve
@@ -140,5 +154,96 @@ func TestBuildOutputPolicyDecisionMarksPremiumRequired(t *testing.T) {
 	require.True(t, decision.ExceededDefault)
 	require.True(t, decision.PremiumRequired)
 	require.Equal(t, "premium", decision.PremiumGroup)
+	require.False(t, decision.LiveEnforced)
+}
+
+func TestBuildOutputPolicyRequestDecisionCapsRequestedMaxTokens(t *testing.T) {
+	settings := DefaultSettings()
+	settings.ObserveOnly = false
+	settings.OutputCapMode = ModeCap
+	settings.OutputPolicies = []OutputPolicy{
+		{
+			ID:               "cap-gpt",
+			Enabled:          true,
+			Group:            DefaultObserveGroup,
+			ModelName:        "gpt-5*",
+			Mode:             ModeCap,
+			DefaultMaxTokens: 256,
+			HardMaxTokens:    512,
+			RewriteOverLimit: true,
+		},
+	}
+
+	decision := BuildOutputPolicyRequestDecisionWithSettings(OutputPolicyInput{
+		Group:               DefaultObserveGroup,
+		ModelName:           "gpt-5.5",
+		RequestedMaxTokens:  4096,
+		MaxTokensConfigured: true,
+	}, settings)
+
+	require.NotNil(t, decision)
+	require.Equal(t, ModeCap, decision.Mode)
+	require.Equal(t, 4096, decision.RequestedMaxTokens)
+	require.Equal(t, 512, decision.AppliedMaxTokens)
+	require.True(t, decision.WouldCap)
+	require.False(t, decision.ObserveOnly)
+	require.True(t, decision.LiveEnforced)
+}
+
+func TestBuildOutputPolicyRequestDecisionInjectsDefaultWhenMaxTokensAbsent(t *testing.T) {
+	settings := DefaultSettings()
+	settings.ObserveOnly = false
+	settings.OutputCapMode = ModeCap
+	settings.OutputPolicies = []OutputPolicy{
+		{
+			ID:               "cap-default",
+			Enabled:          true,
+			Group:            DefaultObserveGroup,
+			ModelName:        "gpt-5*",
+			Mode:             ModeCap,
+			DefaultMaxTokens: 256,
+			HardMaxTokens:    512,
+		},
+	}
+
+	decision := BuildOutputPolicyRequestDecisionWithSettings(OutputPolicyInput{
+		Group:     DefaultObserveGroup,
+		ModelName: "gpt-5.5",
+	}, settings)
+
+	require.NotNil(t, decision)
+	require.Equal(t, 0, decision.RequestedMaxTokens)
+	require.Equal(t, 256, decision.AppliedMaxTokens)
+	require.True(t, decision.WouldCap)
+	require.True(t, decision.LiveEnforced)
+}
+
+func TestBuildOutputPolicyRequestDecisionPreservesExplicitZeroMaxTokens(t *testing.T) {
+	settings := DefaultSettings()
+	settings.ObserveOnly = false
+	settings.OutputCapMode = ModeCap
+	settings.OutputPolicies = []OutputPolicy{
+		{
+			ID:               "cap-default",
+			Enabled:          true,
+			Group:            DefaultObserveGroup,
+			ModelName:        "gpt-5*",
+			Mode:             ModeCap,
+			DefaultMaxTokens: 256,
+			HardMaxTokens:    512,
+		},
+	}
+
+	decision := BuildOutputPolicyRequestDecisionWithSettings(OutputPolicyInput{
+		Group:               DefaultObserveGroup,
+		ModelName:           "gpt-5.5",
+		RequestedMaxTokens:  0,
+		MaxTokensConfigured: true,
+	}, settings)
+
+	require.NotNil(t, decision)
+	require.Equal(t, 0, decision.RequestedMaxTokens)
+	require.Equal(t, 0, decision.AppliedMaxTokens)
+	require.False(t, decision.WouldCap)
 	require.False(t, decision.LiveEnforced)
 }

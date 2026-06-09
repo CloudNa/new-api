@@ -530,6 +530,10 @@ export function UpdateCheckerSection({
                 ok={smoke.response_cache_sources_ok ?? false}
               />
               <HealthRow
+                label={t('输出限额自定义层')}
+                ok={smoke.output_policy_sources_ok ?? false}
+              />
+              <HealthRow
                 label={t('proxy-test chat smoke')}
                 ok={
                   smoke.proxy_test_chat_ok === true ||

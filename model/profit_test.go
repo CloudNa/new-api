@@ -116,6 +116,8 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyOutputPolicyWouldCap:           true,
 		profit.KeyOutputPolicyObserveOnly:        true,
 		profit.KeyOutputPolicyLiveEnforced:       false,
+		profit.KeyOutputPolicyRequestedMaxTokens: 4096,
+		profit.KeyOutputPolicyAppliedMaxTokens:   2000,
 		profit.KeyRiskMode:                       profit.RiskModeAlert,
 		profit.KeyRiskAlert:                      true,
 		profit.KeyRiskReasons:                    []string{profit.RiskReasonLossMakingRequest},
@@ -205,6 +207,8 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.True(t, events[0].OutputPolicyWouldCap)
 	require.True(t, events[0].OutputPolicyObserveOnly)
 	require.False(t, events[0].OutputPolicyLiveEnforced)
+	require.Equal(t, int64(4096), events[0].OutputPolicyRequestedMaxTokens)
+	require.Equal(t, int64(2000), events[0].OutputPolicyAppliedMaxTokens)
 	require.Equal(t, profit.RiskModeAlert, events[0].RiskMode)
 	require.True(t, events[0].RiskAlert)
 	require.Equal(t, []string{profit.RiskReasonLossMakingRequest}, events[0].RiskReasons)

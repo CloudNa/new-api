@@ -181,6 +181,7 @@ def precheck() -> dict:
     missing_custom = [str(path) for path in custom_files if not path.exists()]
     add("custom bridge sources", not missing_custom, ", ".join(missing_custom) if missing_custom else "present")
     add("response cache sources", response_cache_sources_ok(), "present" if response_cache_sources_ok() else "missing response cache hooks")
+    add("output policy sources", output_policy_sources_ok(), "present" if output_policy_sources_ok() else "missing output policy hooks")
 
     if SCRIPT.exists():
         ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
@@ -215,6 +216,7 @@ def smoke() -> dict:
         "cliproxyapi_ready": False,
         "sidecar_bridge_sources_ok": False,
         "response_cache_sources_ok": False,
+        "output_policy_sources_ok": False,
         "proxy_test_chat_checked": False,
         "proxy_test_chat_ok": False,
         "proxy_test_chat_skipped": False,
@@ -225,6 +227,7 @@ def smoke() -> dict:
         result["cliproxyapi_ready"] = http_ok("http://cliproxyapi:8317/management.html")
         result["sidecar_bridge_sources_ok"] = custom_bridge_sources_ok()
         result["response_cache_sources_ok"] = response_cache_sources_ok()
+        result["output_policy_sources_ok"] = output_policy_sources_ok()
         result["proxy_test_chat_checked"], result["proxy_test_chat_ok"], result["proxy_test_chat_skipped"] = proxy_test_chat_smoke()
         result["ok"] = all(
             [
@@ -233,6 +236,7 @@ def smoke() -> dict:
                 result["cliproxyapi_ready"],
                 result["sidecar_bridge_sources_ok"],
                 result["response_cache_sources_ok"],
+                result["output_policy_sources_ok"],
                 result["proxy_test_chat_ok"] or result["proxy_test_chat_skipped"],
             ]
         )
@@ -296,6 +300,31 @@ def response_cache_sources_ok() -> bool:
                 "response_cache_saved_usd" in observation,
                 "ResponseCacheModeSelect" in profit_center,
                 "profit-response-cache-rules-json" in profit_center,
+            ]
+        )
+    except Exception:
+        return False
+
+
+def output_policy_sources_ok() -> bool:
+    try:
+        output_policy = (ROOT / "pkg/profit/output_policy.go").read_text(encoding="utf-8")
+        output_policy_service = (ROOT / "service/output_policy.go").read_text(encoding="utf-8")
+        compatible_handler = (ROOT / "relay/compatible_handler.go").read_text(encoding="utf-8")
+        text_quota = (ROOT / "service/text_quota.go").read_text(encoding="utf-8")
+        observation = (ROOT / "pkg/profit/observation.go").read_text(encoding="utf-8")
+        api_types = (ROOT / "web/default/src/features/system-settings/api.ts").read_text(encoding="utf-8")
+        return all(
+            [
+                "BuildOutputPolicyRequestDecision" in output_policy,
+                "ApplyOutputPolicyForRelay" in output_policy_service,
+                "ProfitOutputPolicyDecisionFromContext" in output_policy_service,
+                "ApplyOutputPolicyForRelay" in compatible_handler,
+                "MergeOutputPolicyCompletion" in text_quota,
+                "output_policy_requested_max_tokens" in observation,
+                "output_policy_applied_max_tokens" in observation,
+                "output_policy_requested_max_tokens" in api_types,
+                "output_policy_applied_max_tokens" in api_types,
             ]
         )
     except Exception:

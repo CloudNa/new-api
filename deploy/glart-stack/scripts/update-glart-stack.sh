@@ -106,6 +106,7 @@ precheck_common() {
   require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
   require_file "$ROOT_DIR/pkg/profit/response_cache.go"
   require_file "$ROOT_DIR/service/response_cache.go"
+  require_file "$ROOT_DIR/service/output_policy.go"
   grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
@@ -214,6 +215,15 @@ git_update_and_tests() {
   grep -q "response_cache_saved_usd" "$ROOT_DIR/pkg/profit/observation.go" || fail
   grep -q "ResponseCacheModeSelect" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx" || fail
   grep -q "profit-response-cache-rules-json" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx" || fail
+  grep -q "BuildOutputPolicyRequestDecision" "$ROOT_DIR/pkg/profit/output_policy.go" || fail
+  grep -q "ApplyOutputPolicyForRelay" "$ROOT_DIR/service/output_policy.go" || fail
+  grep -q "ProfitOutputPolicyDecisionFromContext" "$ROOT_DIR/service/output_policy.go" || fail
+  grep -q "ApplyOutputPolicyForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
+  grep -q "MergeOutputPolicyCompletion" "$ROOT_DIR/service/text_quota.go" || fail
+  grep -q "output_policy_requested_max_tokens" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "output_policy_applied_max_tokens" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "output_policy_requested_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "output_policy_applied_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"

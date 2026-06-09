@@ -126,6 +126,8 @@ type ProfitEvent struct {
 	OutputPolicyPremiumGroup       string                               `json:"output_policy_premium_group,omitempty"`
 	OutputPolicyObserveOnly        bool                                 `json:"output_policy_observe_only"`
 	OutputPolicyLiveEnforced       bool                                 `json:"output_policy_live_enforced"`
+	OutputPolicyRequestedMaxTokens int64                                `json:"output_policy_requested_max_tokens"`
+	OutputPolicyAppliedMaxTokens   int64                                `json:"output_policy_applied_max_tokens"`
 	RiskMode                       string                               `json:"profit_risk_mode,omitempty"`
 	RiskAlert                      bool                                 `json:"profit_risk_alert"`
 	RiskReasons                    []string                             `json:"profit_risk_reasons,omitempty"`
@@ -1069,6 +1071,8 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		OutputPolicyPremiumGroup:       stringValue(other, profit.KeyOutputPolicyPremiumGroup),
 		OutputPolicyObserveOnly:        boolValue(other, profit.KeyOutputPolicyObserveOnly),
 		OutputPolicyLiveEnforced:       boolValue(other, profit.KeyOutputPolicyLiveEnforced),
+		OutputPolicyRequestedMaxTokens: int64Value(other, profit.KeyOutputPolicyRequestedMaxTokens),
+		OutputPolicyAppliedMaxTokens:   int64Value(other, profit.KeyOutputPolicyAppliedMaxTokens),
 		RiskMode:                       stringValue(other, profit.KeyRiskMode),
 		RiskAlert:                      boolValue(other, profit.KeyRiskAlert),
 		RiskReasons:                    stringSliceValue(other, profit.KeyRiskReasons),

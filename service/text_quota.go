@@ -490,13 +490,16 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		UserQuota:                      summary.Quota,
 		LatencyMs:                      int(summary.UseTimeSeconds * 1000),
 	})
-	outputPolicyDecision := profit.BuildOutputPolicyDecision(profit.OutputPolicyInput{
-		Group:            relayInfo.UsingGroup,
-		ModelName:        summary.ModelName,
-		ChannelID:        relayInfo.ChannelId,
-		ChannelName:      ctx.GetString("channel_name"),
-		CompletionTokens: summary.CompletionTokens,
-	})
+	outputPolicyDecision := MergeOutputPolicyCompletion(ProfitOutputPolicyDecisionFromContext(ctx), summary.CompletionTokens)
+	if outputPolicyDecision == nil {
+		outputPolicyDecision = profit.BuildOutputPolicyDecision(profit.OutputPolicyInput{
+			Group:            relayInfo.UsingGroup,
+			ModelName:        summary.ModelName,
+			ChannelID:        relayInfo.ChannelId,
+			ChannelName:      ctx.GetString("channel_name"),
+			CompletionTokens: summary.CompletionTokens,
+		})
+	}
 	profit.AppendObservation(other, profit.ObservationInput{
 		Group:                          relayInfo.UsingGroup,
 		Provider:                       ctx.GetString("channel_name"),

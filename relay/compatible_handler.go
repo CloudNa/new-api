@@ -83,6 +83,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
 	service.ApplyPromptCompressionForRelay(c, info, request, passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled)
+	service.ApplyOutputPolicyForRelay(c, info, request, passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled)
 
 	includeUsage := true
 	// 判断用户是否需要返回使用情况
