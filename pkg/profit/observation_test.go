@@ -217,18 +217,21 @@ func TestAppendObservationAddsOutputPolicyDecision(t *testing.T) {
 		Group:     "proxy-test",
 		UserQuota: 500000,
 		OutputPolicyDecision: &OutputPolicyDecision{
-			Mode:             ModeCap,
-			PolicyID:         "cap-gemini",
-			PolicyName:       "Cap Gemini",
-			CompletionTokens: 2500,
-			DefaultMaxTokens: 1000,
-			HardMaxTokens:    2000,
-			ExceededDefault:  true,
-			ExceededHard:     true,
-			RewriteOverLimit: true,
-			WouldCap:         true,
-			ObserveOnly:      true,
-			LiveEnforced:     false,
+			Mode:                  ModeCap,
+			PolicyID:              "cap-gemini",
+			PolicyName:            "Cap Gemini",
+			CompletionTokens:      2500,
+			DefaultMaxTokens:      1000,
+			HardMaxTokens:         2000,
+			ExceededDefault:       true,
+			ExceededHard:          true,
+			RewriteOverLimit:      true,
+			WouldCap:              true,
+			ObserveOnly:           true,
+			LiveEnforced:          false,
+			RequestedMaxTokens:    4096,
+			AppliedMaxTokens:      2000,
+			EnforcedLimitExceeded: true,
 		},
 	})
 
@@ -244,6 +247,9 @@ func TestAppendObservationAddsOutputPolicyDecision(t *testing.T) {
 	require.Equal(t, true, other[KeyOutputPolicyWouldCap])
 	require.Equal(t, true, other[KeyOutputPolicyObserveOnly])
 	require.Equal(t, false, other[KeyOutputPolicyLiveEnforced])
+	require.Equal(t, 4096, other[KeyOutputPolicyRequestedMaxTokens])
+	require.Equal(t, 2000, other[KeyOutputPolicyAppliedMaxTokens])
+	require.Equal(t, true, other[KeyOutputPolicyEnforcedExceeded])
 }
 
 func TestAppendObservationAddsLongContextDecision(t *testing.T) {
@@ -407,6 +413,7 @@ func TestStripUserVisibleFields(t *testing.T) {
 		"output_policy_mode":                       "cap",
 		"output_policy_would_cap":                  true,
 		"output_policy_live_enforced":              false,
+		"output_policy_enforced_limit_exceeded":    true,
 		"profit_risk_mode":                         "alert",
 		"profit_risk_alert":                        true,
 		"profit_risk_reasons":                      []string{RiskReasonLossMakingRequest},
@@ -435,6 +442,7 @@ func TestStripUserVisibleFields(t *testing.T) {
 	require.NotContains(t, other, "output_policy_mode")
 	require.NotContains(t, other, "output_policy_would_cap")
 	require.NotContains(t, other, "output_policy_live_enforced")
+	require.NotContains(t, other, "output_policy_enforced_limit_exceeded")
 	require.NotContains(t, other, "profit_risk_mode")
 	require.NotContains(t, other, "profit_risk_alert")
 	require.NotContains(t, other, "profit_risk_reasons")

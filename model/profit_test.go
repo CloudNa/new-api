@@ -118,6 +118,7 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 		profit.KeyOutputPolicyLiveEnforced:       false,
 		profit.KeyOutputPolicyRequestedMaxTokens: 4096,
 		profit.KeyOutputPolicyAppliedMaxTokens:   2000,
+		profit.KeyOutputPolicyEnforcedExceeded:   true,
 		profit.KeyRiskMode:                       profit.RiskModeAlert,
 		profit.KeyRiskAlert:                      true,
 		profit.KeyRiskReasons:                    []string{profit.RiskReasonLossMakingRequest},
@@ -209,6 +210,7 @@ func TestGetProfitEventsFiltersObservedProxyTestLogs(t *testing.T) {
 	require.False(t, events[0].OutputPolicyLiveEnforced)
 	require.Equal(t, int64(4096), events[0].OutputPolicyRequestedMaxTokens)
 	require.Equal(t, int64(2000), events[0].OutputPolicyAppliedMaxTokens)
+	require.True(t, events[0].OutputPolicyEnforcedExceeded)
 	require.Equal(t, profit.RiskModeAlert, events[0].RiskMode)
 	require.True(t, events[0].RiskAlert)
 	require.Equal(t, []string{profit.RiskReasonLossMakingRequest}, events[0].RiskReasons)
@@ -321,6 +323,7 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 		profit.KeyOutputPolicyExceededHard:       true,
 		profit.KeyOutputPolicyWouldCap:           true,
 		profit.KeyOutputPolicyPremiumRequired:    true,
+		profit.KeyOutputPolicyEnforcedExceeded:   true,
 		profit.KeyRiskMode:                       profit.RiskModeAlert,
 		profit.KeyRiskAlert:                      true,
 		profit.KeyRiskReasons: []string{
@@ -385,6 +388,7 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 	require.Equal(t, int64(1), analytics.OutputPolicyExceededHardCount)
 	require.Equal(t, int64(1), analytics.OutputPolicyWouldCapCount)
 	require.Equal(t, int64(1), analytics.OutputPolicyPremiumRequiredCount)
+	require.Equal(t, int64(1), analytics.OutputPolicyEnforcedExceededCount)
 	require.Equal(t, int64(1), analytics.RiskObservedCount)
 	require.Equal(t, int64(1), analytics.RiskAlertCount)
 	require.Equal(t, int64(1), analytics.RiskLossMakingCount)

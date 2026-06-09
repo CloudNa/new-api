@@ -222,8 +222,10 @@ git_update_and_tests() {
   grep -q "MergeOutputPolicyCompletion" "$ROOT_DIR/service/text_quota.go" || fail
   grep -q "output_policy_requested_max_tokens" "$ROOT_DIR/pkg/profit/observation.go" || fail
   grep -q "output_policy_applied_max_tokens" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "output_policy_enforced_limit_exceeded" "$ROOT_DIR/pkg/profit/observation.go" || fail
   grep -q "output_policy_requested_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
   grep -q "output_policy_applied_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "output_policy_enforced_limit_exceeded" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"

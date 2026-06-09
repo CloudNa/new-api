@@ -702,6 +702,7 @@ export type ProfitAnalytics = {
   output_policy_exceeded_hard_count: number
   output_policy_would_cap_count: number
   output_policy_premium_required_count: number
+  output_policy_enforced_limit_exceeded_count: number
   output_policy_completion_tokens: number
   output_policy_completion_sample_count: number
   output_policy_completion_avg_tokens: number
@@ -864,6 +865,7 @@ export type ProfitEvent = {
   output_policy_live_enforced?: boolean
   output_policy_requested_max_tokens?: number
   output_policy_applied_max_tokens?: number
+  output_policy_enforced_limit_exceeded?: boolean
   profit_risk_mode?: ProfitRiskMode
   profit_risk_alert?: boolean
   profit_risk_reasons?: string[]

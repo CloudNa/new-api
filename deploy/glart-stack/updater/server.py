@@ -323,8 +323,10 @@ def output_policy_sources_ok() -> bool:
                 "MergeOutputPolicyCompletion" in text_quota,
                 "output_policy_requested_max_tokens" in observation,
                 "output_policy_applied_max_tokens" in observation,
+                "output_policy_enforced_limit_exceeded" in observation,
                 "output_policy_requested_max_tokens" in api_types,
                 "output_policy_applied_max_tokens" in api_types,
+                "output_policy_enforced_limit_exceeded" in api_types,
             ]
         )
     except Exception:

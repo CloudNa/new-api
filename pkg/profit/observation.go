@@ -103,6 +103,7 @@ const (
 	KeyOutputPolicyLiveEnforced       = "output_policy_live_enforced"
 	KeyOutputPolicyRequestedMaxTokens = "output_policy_requested_max_tokens"
 	KeyOutputPolicyAppliedMaxTokens   = "output_policy_applied_max_tokens"
+	KeyOutputPolicyEnforcedExceeded   = "output_policy_enforced_limit_exceeded"
 	KeyRiskMode                       = "profit_risk_mode"
 	KeyRiskAlert                      = "profit_risk_alert"
 	KeyRiskReasons                    = "profit_risk_reasons"
@@ -222,6 +223,7 @@ var userHiddenKeys = []string{
 	KeyOutputPolicyLiveEnforced,
 	KeyOutputPolicyRequestedMaxTokens,
 	KeyOutputPolicyAppliedMaxTokens,
+	KeyOutputPolicyEnforcedExceeded,
 	KeyRiskMode,
 	KeyRiskAlert,
 	KeyRiskReasons,
@@ -572,6 +574,7 @@ func appendOutputPolicyDecision(other map[string]interface{}, decision *OutputPo
 	other[KeyOutputPolicyLiveEnforced] = decision.LiveEnforced
 	other[KeyOutputPolicyRequestedMaxTokens] = positiveInt(decision.RequestedMaxTokens)
 	other[KeyOutputPolicyAppliedMaxTokens] = positiveInt(decision.AppliedMaxTokens)
+	other[KeyOutputPolicyEnforcedExceeded] = decision.EnforcedLimitExceeded
 }
 
 func appendRiskDecision(other map[string]interface{}, decision *RiskDecision) {

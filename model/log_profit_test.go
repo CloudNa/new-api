@@ -11,7 +11,7 @@ import (
 func TestFormatUserLogsStripsProfitFields(t *testing.T) {
 	logs := []*Log{
 		{
-			Other: `{"profit_observe_version":1,"billable_prompt_tokens":100,"upstream_actual_completion_tokens":20,"compression_engine":"stacked","compression_validation_warnings":["warn"],"compression_engine_breakdown":[{"engine":"rtk"}],"output_policy_mode":"cap","output_policy_would_cap":true,"output_policy_requested_max_tokens":4096,"output_policy_applied_max_tokens":1024,"profit_risk_mode":"alert","profit_risk_alert":true,"model_ratio":1.5}`,
+			Other: `{"profit_observe_version":1,"billable_prompt_tokens":100,"upstream_actual_completion_tokens":20,"compression_engine":"stacked","compression_validation_warnings":["warn"],"compression_engine_breakdown":[{"engine":"rtk"}],"output_policy_mode":"cap","output_policy_would_cap":true,"output_policy_requested_max_tokens":4096,"output_policy_applied_max_tokens":1024,"output_policy_enforced_limit_exceeded":true,"profit_risk_mode":"alert","profit_risk_alert":true,"model_ratio":1.5}`,
 		},
 	}
 
@@ -29,6 +29,7 @@ func TestFormatUserLogsStripsProfitFields(t *testing.T) {
 	require.NotContains(t, other, "output_policy_would_cap")
 	require.NotContains(t, other, "output_policy_requested_max_tokens")
 	require.NotContains(t, other, "output_policy_applied_max_tokens")
+	require.NotContains(t, other, "output_policy_enforced_limit_exceeded")
 	require.NotContains(t, other, "profit_risk_mode")
 	require.NotContains(t, other, "profit_risk_alert")
 	require.Equal(t, 1.5, other["model_ratio"])

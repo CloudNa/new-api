@@ -91,6 +91,20 @@ func TestApplyOutputPolicyForRelayCapsConfiguredMaxTokens(t *testing.T) {
 	merged := MergeOutputPolicyCompletion(decision, 42)
 	require.Equal(t, 42, merged.CompletionTokens)
 	require.True(t, merged.LiveEnforced)
+	require.False(t, merged.EnforcedLimitExceeded)
+}
+
+func TestMergeOutputPolicyCompletionFlagsEnforcedLimitExceeded(t *testing.T) {
+	decision := &profit.OutputPolicyDecision{
+		Mode:             profit.ModeCap,
+		LiveEnforced:     true,
+		AppliedMaxTokens: 16,
+	}
+
+	merged := MergeOutputPolicyCompletion(decision, 88)
+
+	require.Equal(t, 88, merged.CompletionTokens)
+	require.True(t, merged.EnforcedLimitExceeded)
 }
 
 func TestApplyOutputPolicyForRelayCapsBothOpenAIMaxTokenFields(t *testing.T) {

@@ -1150,6 +1150,10 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
       'Premium output required',
       formatNumber(analytics?.output_policy_premium_required_count),
     ],
+    [
+      '输出上限被突破',
+      formatNumber(analytics?.output_policy_enforced_limit_exceeded_count),
+    ],
     ['风险告警', formatNumber(analytics?.profit_risk_alert_count)],
     ['亏损请求', formatNumber(analytics?.profit_risk_loss_making_count)],
     [
@@ -1641,6 +1645,9 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                         ) : null}
                         {event.output_policy_premium_required ? (
                           <Badge variant='secondary'>{t('Premium')}</Badge>
+                        ) : null}
+                        {event.output_policy_enforced_limit_exceeded ? (
+                          <Badge variant='destructive'>上限突破</Badge>
                         ) : null}
                       </div>
                       <span className='text-muted-foreground text-xs'>

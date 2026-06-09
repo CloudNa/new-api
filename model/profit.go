@@ -128,6 +128,7 @@ type ProfitEvent struct {
 	OutputPolicyLiveEnforced       bool                                 `json:"output_policy_live_enforced"`
 	OutputPolicyRequestedMaxTokens int64                                `json:"output_policy_requested_max_tokens"`
 	OutputPolicyAppliedMaxTokens   int64                                `json:"output_policy_applied_max_tokens"`
+	OutputPolicyEnforcedExceeded   bool                                 `json:"output_policy_enforced_limit_exceeded"`
 	RiskMode                       string                               `json:"profit_risk_mode,omitempty"`
 	RiskAlert                      bool                                 `json:"profit_risk_alert"`
 	RiskReasons                    []string                             `json:"profit_risk_reasons,omitempty"`
@@ -207,6 +208,7 @@ type ProfitAnalytics struct {
 	OutputPolicyExceededHardCount        int64                           `json:"output_policy_exceeded_hard_count"`
 	OutputPolicyWouldCapCount            int64                           `json:"output_policy_would_cap_count"`
 	OutputPolicyPremiumRequiredCount     int64                           `json:"output_policy_premium_required_count"`
+	OutputPolicyEnforcedExceededCount    int64                           `json:"output_policy_enforced_limit_exceeded_count"`
 	OutputPolicyCompletionTokens         int64                           `json:"output_policy_completion_tokens"`
 	OutputPolicyCompletionSampleCount    int64                           `json:"output_policy_completion_sample_count"`
 	OutputPolicyCompletionAvgTokens      float64                         `json:"output_policy_completion_avg_tokens"`
@@ -395,6 +397,9 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 			}
 			if event.OutputPolicyPremiumRequired {
 				analytics.OutputPolicyPremiumRequiredCount++
+			}
+			if event.OutputPolicyEnforcedExceeded {
+				analytics.OutputPolicyEnforcedExceededCount++
 			}
 		}
 		if event.RiskMode != "" {
@@ -1073,6 +1078,7 @@ func profitEventFromLog(log *Log) (*ProfitEvent, bool) {
 		OutputPolicyLiveEnforced:       boolValue(other, profit.KeyOutputPolicyLiveEnforced),
 		OutputPolicyRequestedMaxTokens: int64Value(other, profit.KeyOutputPolicyRequestedMaxTokens),
 		OutputPolicyAppliedMaxTokens:   int64Value(other, profit.KeyOutputPolicyAppliedMaxTokens),
+		OutputPolicyEnforcedExceeded:   boolValue(other, profit.KeyOutputPolicyEnforcedExceeded),
 		RiskMode:                       stringValue(other, profit.KeyRiskMode),
 		RiskAlert:                      boolValue(other, profit.KeyRiskAlert),
 		RiskReasons:                    stringSliceValue(other, profit.KeyRiskReasons),

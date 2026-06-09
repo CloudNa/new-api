@@ -66,6 +66,7 @@ func MergeOutputPolicyCompletion(decision *profit.OutputPolicyDecision, completi
 	next.CompletionTokens = max(0, completionTokens)
 	next.ExceededDefault = next.DefaultMaxTokens > 0 && next.CompletionTokens > next.DefaultMaxTokens
 	next.ExceededHard = next.HardMaxTokens > 0 && next.CompletionTokens > next.HardMaxTokens
+	next.EnforcedLimitExceeded = next.LiveEnforced && next.AppliedMaxTokens > 0 && next.CompletionTokens > next.AppliedMaxTokens
 	if next.Mode == profit.ModeCap {
 		next.WouldCap = next.WouldCap || next.ExceededHard || (next.RewriteOverLimit && next.ExceededDefault)
 	}

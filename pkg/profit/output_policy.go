@@ -16,22 +16,23 @@ type OutputPolicyInput struct {
 }
 
 type OutputPolicyDecision struct {
-	Mode               string `json:"mode"`
-	PolicyID           string `json:"policy_id,omitempty"`
-	PolicyName         string `json:"policy_name,omitempty"`
-	CompletionTokens   int    `json:"completion_tokens"`
-	DefaultMaxTokens   int    `json:"default_max_tokens,omitempty"`
-	HardMaxTokens      int    `json:"hard_max_tokens,omitempty"`
-	ExceededDefault    bool   `json:"exceeded_default"`
-	ExceededHard       bool   `json:"exceeded_hard"`
-	RewriteOverLimit   bool   `json:"rewrite_over_limit"`
-	WouldCap           bool   `json:"would_cap"`
-	PremiumRequired    bool   `json:"premium_required"`
-	PremiumGroup       string `json:"premium_group,omitempty"`
-	ObserveOnly        bool   `json:"observe_only"`
-	LiveEnforced       bool   `json:"live_enforced"`
-	RequestedMaxTokens int    `json:"requested_max_tokens,omitempty"`
-	AppliedMaxTokens   int    `json:"applied_max_tokens,omitempty"`
+	Mode                  string `json:"mode"`
+	PolicyID              string `json:"policy_id,omitempty"`
+	PolicyName            string `json:"policy_name,omitempty"`
+	CompletionTokens      int    `json:"completion_tokens"`
+	DefaultMaxTokens      int    `json:"default_max_tokens,omitempty"`
+	HardMaxTokens         int    `json:"hard_max_tokens,omitempty"`
+	ExceededDefault       bool   `json:"exceeded_default"`
+	ExceededHard          bool   `json:"exceeded_hard"`
+	RewriteOverLimit      bool   `json:"rewrite_over_limit"`
+	WouldCap              bool   `json:"would_cap"`
+	PremiumRequired       bool   `json:"premium_required"`
+	PremiumGroup          string `json:"premium_group,omitempty"`
+	ObserveOnly           bool   `json:"observe_only"`
+	LiveEnforced          bool   `json:"live_enforced"`
+	RequestedMaxTokens    int    `json:"requested_max_tokens,omitempty"`
+	AppliedMaxTokens      int    `json:"applied_max_tokens,omitempty"`
+	EnforcedLimitExceeded bool   `json:"enforced_limit_exceeded"`
 }
 
 func BuildOutputPolicyDecision(input OutputPolicyInput) *OutputPolicyDecision {
