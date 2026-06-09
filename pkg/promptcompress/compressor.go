@@ -264,7 +264,7 @@ func isHardCompressionBypass(reason string) bool {
 func CompressMessages(messages []Message, config Config) ([]Message, Stats) {
 	started := time.Now()
 	mode := normalizeMode(config.Mode)
-	stats := Stats{Mode: mode, OmniRouteCompatibleMode: string(mode)}
+	stats := Stats{Mode: mode, Engine: string(mode), OmniRouteCompatibleMode: string(mode)}
 	if mode == ModeOff {
 		return append([]Message(nil), messages...), stats
 	}

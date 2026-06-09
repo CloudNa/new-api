@@ -157,6 +157,59 @@ func TestSelectPreferMarginRouteRespectsObserveOnly(t *testing.T) {
 	require.Equal(t, "observe_only", selection.Reason)
 }
 
+func TestSelectPreferMarginRouteStaysScopedToProxyTest(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = false
+
+	selection := SelectPreferMarginRoute(settings, RouteDecisionInput{
+		Group:     "default",
+		ModelName: "model-a",
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, HealthRequestCount: 20, HealthSuccessRatePct: 100},
+			{ChannelID: 2, HealthRequestCount: 20, HealthSuccessRatePct: 100},
+		},
+	})
+
+	require.False(t, selection.LiveRoutingUsed)
+	require.Equal(t, "group_not_enabled", selection.Reason)
+	require.Nil(t, selection.Decision)
+}
+
+func TestSelectPreferMarginRouteBypassesWhenCostProfileUnknown(t *testing.T) {
+	settings := DefaultSettings()
+	settings.CostRoutingMode = ModePreferMargin
+	settings.ObserveOnly = false
+	settings.CostRoutingMinSamples = 0
+	settings.CostRoutingMinSuccessRatePct = 0
+
+	profiles := CostProfilesDocument{Items: []CostProfile{
+		{ID: "generic-any-model", Enabled: false, ModelName: "*"},
+	}}
+	payload, err := common.Marshal(profiles.Normalize())
+	require.NoError(t, err)
+	withProfitOptionMap(t, map[string]string{CostProfilesOptionKey: string(payload)})
+
+	selection := SelectPreferMarginRoute(settings, RouteDecisionInput{
+		Group:                          DefaultObserveGroup,
+		ModelName:                      "model-without-cost",
+		BillablePromptTokens:           100000,
+		BillableCompletionTokens:       100000,
+		UpstreamActualPromptTokens:     100000,
+		UpstreamActualCompletionTokens: 100000,
+		UserQuota:                      500000,
+		Candidates: []RouteCandidateInput{
+			{ChannelID: 1, ChannelName: "unknown-a", HealthRequestCount: 20, HealthSuccessRatePct: 100},
+			{ChannelID: 2, ChannelName: "unknown-b", HealthRequestCount: 20, HealthSuccessRatePct: 100},
+		},
+	})
+
+	require.False(t, selection.LiveRoutingUsed)
+	require.Equal(t, CostStatusMissingCostProfile, selection.Reason)
+	require.NotNil(t, selection.Decision)
+	require.Nil(t, selection.Decision.BestExpectedMarginUSD)
+}
+
 func TestInferRouteBypassReasonBackfillsObserveOnlyAndSingleCandidate(t *testing.T) {
 	settings := DefaultSettings()
 	settings.CostRoutingMode = ModePreferMargin
