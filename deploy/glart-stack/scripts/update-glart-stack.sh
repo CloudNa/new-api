@@ -104,6 +104,8 @@ precheck_common() {
   require_file "$ROOT_DIR/controller/sidecar_proxy.go"
   require_file "$ROOT_DIR/router/web-router.go"
   require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
+  require_file "$ROOT_DIR/pkg/profit/response_cache.go"
+  require_file "$ROOT_DIR/service/response_cache.go"
   grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
@@ -202,6 +204,16 @@ git_update_and_tests() {
   require_file "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx"
   grep -q "PromptCompressionSection" "$ROOT_DIR/web/default/src/features/system-settings/operations/section-registry.tsx" || fail
   require_file "$ROOT_DIR/web/default/src/features/system-settings/maintenance/prompt-compression-section.tsx"
+  grep -q "ResponseCacheRule" "$ROOT_DIR/pkg/profit/settings.go" || fail
+  grep -q "BuildResponseCacheDecision" "$ROOT_DIR/pkg/profit/response_cache.go" || fail
+  grep -q "PutResponseCache" "$ROOT_DIR/pkg/profit/response_cache.go" || fail
+  grep -q "PrepareResponseCacheForRelay" "$ROOT_DIR/service/response_cache.go" || fail
+  grep -q "ServeResponseCacheHit" "$ROOT_DIR/service/response_cache.go" || fail
+  grep -q "StoreResponseCacheForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
+  grep -q "ProfitResponseCacheObservationFromContext" "$ROOT_DIR/service/text_quota.go" || fail
+  grep -q "response_cache_saved_usd" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "ResponseCacheModeSelect" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx" || fail
+  grep -q "profit-response-cache-rules-json" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx" || fail
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"

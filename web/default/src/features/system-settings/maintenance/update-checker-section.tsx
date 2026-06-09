@@ -526,6 +526,10 @@ export function UpdateCheckerSection({
                 ok={smoke.sidecar_bridge_sources_ok ?? false}
               />
               <HealthRow
+                label={t('响应缓存自定义层')}
+                ok={smoke.response_cache_sources_ok ?? false}
+              />
+              <HealthRow
                 label={t('proxy-test chat smoke')}
                 ok={
                   smoke.proxy_test_chat_ok === true ||

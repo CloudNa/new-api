@@ -316,6 +316,7 @@ export type SystemUpdateSmoke = {
   gpt_load_healthy: boolean
   cliproxyapi_ready: boolean
   sidecar_bridge_sources_ok?: boolean
+  response_cache_sources_ok?: boolean
   proxy_test_chat_checked?: boolean
   proxy_test_chat_ok?: boolean
   proxy_test_chat_skipped?: boolean

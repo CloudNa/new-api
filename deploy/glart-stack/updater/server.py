@@ -180,6 +180,7 @@ def precheck() -> dict:
     ]
     missing_custom = [str(path) for path in custom_files if not path.exists()]
     add("custom bridge sources", not missing_custom, ", ".join(missing_custom) if missing_custom else "present")
+    add("response cache sources", response_cache_sources_ok(), "present" if response_cache_sources_ok() else "missing response cache hooks")
 
     if SCRIPT.exists():
         ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
@@ -213,6 +214,7 @@ def smoke() -> dict:
         "gpt_load_healthy": False,
         "cliproxyapi_ready": False,
         "sidecar_bridge_sources_ok": False,
+        "response_cache_sources_ok": False,
         "proxy_test_chat_checked": False,
         "proxy_test_chat_ok": False,
         "proxy_test_chat_skipped": False,
@@ -222,6 +224,7 @@ def smoke() -> dict:
         result["gpt_load_healthy"] = http_ok("http://gpt-load:3001/health")
         result["cliproxyapi_ready"] = http_ok("http://cliproxyapi:8317/management.html")
         result["sidecar_bridge_sources_ok"] = custom_bridge_sources_ok()
+        result["response_cache_sources_ok"] = response_cache_sources_ok()
         result["proxy_test_chat_checked"], result["proxy_test_chat_ok"], result["proxy_test_chat_skipped"] = proxy_test_chat_smoke()
         result["ok"] = all(
             [
@@ -229,6 +232,7 @@ def smoke() -> dict:
                 result["gpt_load_healthy"],
                 result["cliproxyapi_ready"],
                 result["sidecar_bridge_sources_ok"],
+                result["response_cache_sources_ok"],
                 result["proxy_test_chat_ok"] or result["proxy_test_chat_skipped"],
             ]
         )
@@ -263,6 +267,35 @@ def custom_bridge_sources_ok() -> bool:
                 "CLIProxyAPI" in top_nav,
                 "GPT_LOAD_INTERNAL_URL" in controller,
                 "CLIPROXYAPI_INTERNAL_URL" in controller,
+            ]
+        )
+    except Exception:
+        return False
+
+
+def response_cache_sources_ok() -> bool:
+    try:
+        profit_settings = (ROOT / "pkg/profit/settings.go").read_text(encoding="utf-8")
+        response_cache = (ROOT / "pkg/profit/response_cache.go").read_text(encoding="utf-8")
+        response_cache_service = (ROOT / "service/response_cache.go").read_text(encoding="utf-8")
+        compatible_handler = (ROOT / "relay/compatible_handler.go").read_text(encoding="utf-8")
+        text_quota = (ROOT / "service/text_quota.go").read_text(encoding="utf-8")
+        observation = (ROOT / "pkg/profit/observation.go").read_text(encoding="utf-8")
+        profit_center = (ROOT / "web/default/src/features/system-settings/maintenance/profit-center-section.tsx").read_text(
+            encoding="utf-8"
+        )
+        return all(
+            [
+                "ResponseCacheRule" in profit_settings,
+                "BuildResponseCacheDecision" in response_cache,
+                "PutResponseCache" in response_cache,
+                "PrepareResponseCacheForRelay" in response_cache_service,
+                "ServeResponseCacheHit" in response_cache_service,
+                "StoreResponseCacheForRelay" in compatible_handler,
+                "ProfitResponseCacheObservationFromContext" in text_quota,
+                "response_cache_saved_usd" in observation,
+                "ResponseCacheModeSelect" in profit_center,
+                "profit-response-cache-rules-json" in profit_center,
             ]
         )
     except Exception:
