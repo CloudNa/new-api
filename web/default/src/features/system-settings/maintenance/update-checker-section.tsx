@@ -538,6 +538,10 @@ export function UpdateCheckerSection({
                 ok={smoke.profit_risk_sources_ok ?? false}
               />
               <HealthRow
+                label={t('OmniRoute 压缩一致性保护')}
+                ok={smoke.omniroute_parity_sources_ok ?? false}
+              />
+              <HealthRow
                 label={t('proxy-test chat smoke')}
                 ok={
                   smoke.proxy_test_chat_ok === true ||

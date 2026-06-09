@@ -44,21 +44,32 @@ Use a `proxy-test` group for initial validation before moving channels to defaul
 
 ## One-click updates
 
-The dashboard system maintenance page calls the private `glart-stack-updater` service. The updater runs:
+The dashboard system maintenance page calls the private `glart-stack-updater` service. It supports a combined stack update and separate component updates for `new-api`, `GPT-Load`, and `CLIProxyAPI`. Each component gets its own backup and can be rolled back independently from the same page.
+
+The combined update runs:
 
 ```bash
-backup runtime/.env into runtime/backups/
+backup new-api runtime and current image
 git pull --ff-only
+run custom source-retention checks
 go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit ./pkg/promptcompress -count=1
-docker compose pull gpt-load cliproxyapi caddy redis
-docker compose build new-api glart-stack-updater
-docker compose up -d --remove-orphans new-api gpt-load cliproxyapi caddy redis
-smoke new-api, GPT-Load, CLIProxyAPI, and Glart bridge source retention
+docker compose build new-api
+docker compose up -d new-api redis gpt-load cliproxyapi caddy glart-stack-updater
+smoke new-api and optional proxy-test chat
+backup GPT-Load runtime and current image
+docker compose pull gpt-load && docker compose up -d --no-deps gpt-load
+smoke GPT-Load
+backup CLIProxyAPI runtime and current image
+docker compose pull cliproxyapi && docker compose up -d --no-deps cliproxyapi
+smoke CLIProxyAPI
+docker compose build/up glart-stack-updater
 ```
 
 This keeps the Glart bridge and deployment scripts in the Git branch, so future upstream `new-api` updates do not overwrite the local sidecar integration.
 
-Backups are written under `runtime/backups/` by default. They include `.env`, runtime databases, auth state, Caddy data, and a small manifest with the pre-update Git commit and Compose status. Keep this directory private and never commit it.
+Single component updates use the same backup and smoke path for only that service. Rollback is intentionally component-scoped: choose `new-api`, `GPT-Load`, or `CLIProxyAPI`; `all` rollback is disabled so a sidecar can be reverted without touching the gateway or the other sidecar.
+
+Backups are written under `runtime/backups/<component>/` by default. They include the relevant runtime path, `.env`, Compose/Caddy files, a rollback image tag, and a small manifest with the pre-update Git commit and Compose status. Keep this directory private and never commit it.
 
 Optional proxy-test chat smoke can be enabled by setting `GLART_SMOKE_MODEL` and `GLART_SMOKE_API_KEY` in the private server `.env`. Leave them empty to skip that smoke safely.
 

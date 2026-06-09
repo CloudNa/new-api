@@ -370,6 +370,7 @@ def omniroute_parity_sources_ok() -> bool:
         attribution = (ROOT / "pkg/promptcompress/attribution.go").read_text(encoding="utf-8")
         embed = (ROOT / "pkg/promptcompress/omniroute_embed.go").read_text(encoding="utf-8")
         manifest = (ROOT / "pkg/promptcompress/omniroute_manifest_test.go").read_text(encoding="utf-8")
+        behavior = (ROOT / "pkg/promptcompress/omniroute_behavior_test.go").read_text(encoding="utf-8")
         return all(
             [
                 'OmniRouteParityCommit = "630baa6"' in attribution,
@@ -377,6 +378,9 @@ def omniroute_parity_sources_ok() -> bool:
                 "TestOmniRouteVendoredRuleBlobParity" in manifest,
                 "omniRouteExpectedBlobSHA" in manifest,
                 "gitBlobSHA" in manifest,
+                "TestOmniRouteOfficialRTKSmartTruncateBehavior" in behavior,
+                "TestOmniRouteOfficialCavemanEngineBehavior" in behavior,
+                "TestOmniRouteOfficialStackedPipelineBehavior" in behavior,
                 "7a3f82d887ff96f9208aa3e17e7e4ac94d9107c4" in manifest,
                 "606cc22457d857bac0bc50567dbaca30e30b52c0" in manifest,
             ]

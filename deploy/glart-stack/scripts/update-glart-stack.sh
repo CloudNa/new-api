@@ -232,11 +232,15 @@ git_update_and_tests() {
   grep -q "profit_risk_live_enforced_count" "$ROOT_DIR/model/profit.go" || fail
   grep -q "profit_risk_live_enforced_count" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
   require_file "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go"
+  require_file "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go"
   grep -q 'OmniRouteParityCommit = "630baa6"' "$ROOT_DIR/pkg/promptcompress/attribution.go" || fail
   grep -q "omniroute/caveman_rules/_schema.json" "$ROOT_DIR/pkg/promptcompress/omniroute_embed.go" || fail
   grep -q "TestOmniRouteVendoredRuleBlobParity" "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go" || fail
   grep -q "omniRouteExpectedBlobSHA" "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go" || fail
   grep -q "gitBlobSHA" "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go" || fail
+  grep -q "TestOmniRouteOfficialRTKSmartTruncateBehavior" "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go" || fail
+  grep -q "TestOmniRouteOfficialCavemanEngineBehavior" "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go" || fail
+  grep -q "TestOmniRouteOfficialStackedPipelineBehavior" "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go" || fail
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"

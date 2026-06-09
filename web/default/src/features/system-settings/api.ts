@@ -319,6 +319,7 @@ export type SystemUpdateSmoke = {
   response_cache_sources_ok?: boolean
   output_policy_sources_ok?: boolean
   profit_risk_sources_ok?: boolean
+  omniroute_parity_sources_ok?: boolean
   proxy_test_chat_checked?: boolean
   proxy_test_chat_ok?: boolean
   proxy_test_chat_skipped?: boolean

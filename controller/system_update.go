@@ -56,6 +56,8 @@ type glartStackSmokeResult struct {
 	SidecarBridgeSourcesOK bool   `json:"sidecar_bridge_sources_ok"`
 	ResponseCacheSourcesOK bool   `json:"response_cache_sources_ok"`
 	OutputPolicySourcesOK  bool   `json:"output_policy_sources_ok"`
+	ProfitRiskSourcesOK    bool   `json:"profit_risk_sources_ok"`
+	OmniRouteParityOK      bool   `json:"omniroute_parity_sources_ok"`
 	ProxyTestChatChecked   bool   `json:"proxy_test_chat_checked"`
 	ProxyTestChatOK        bool   `json:"proxy_test_chat_ok"`
 	ProxyTestChatSkipped   bool   `json:"proxy_test_chat_skipped"`
