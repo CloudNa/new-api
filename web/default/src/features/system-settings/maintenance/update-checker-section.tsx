@@ -542,6 +542,10 @@ export function UpdateCheckerSection({
                 ok={smoke.omniroute_parity_sources_ok ?? false}
               />
               <HealthRow
+                label={t('V2 online smoke script')}
+                ok={smoke.v2_smoke_script_ok ?? false}
+              />
+              <HealthRow
                 label={t('proxy-test chat smoke')}
                 ok={
                   smoke.proxy_test_chat_ok === true ||

@@ -104,6 +104,8 @@ precheck_common() {
   require_file "$ROOT_DIR/controller/sidecar_proxy.go"
   require_file "$ROOT_DIR/router/web-router.go"
   require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.sh"
   require_file "$ROOT_DIR/pkg/profit/response_cache.go"
   require_file "$ROOT_DIR/service/response_cache.go"
   require_file "$ROOT_DIR/service/output_policy.go"
@@ -111,6 +113,9 @@ precheck_common() {
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "CLIProxyAPI" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   run docker compose -f "$COMPOSE_DIR/$COMPOSE_FILE" config --quiet
 }
 
@@ -184,10 +189,15 @@ git_update_and_tests() {
   require_file "$ROOT_DIR/controller/sidecar_proxy.go"
   require_file "$ROOT_DIR/router/web-router.go"
   require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.sh"
   grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "CLIProxyAPI" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "GetSystemUpdateStatus" "$ROOT_DIR/controller/system_update.go" || fail
   grep -q 'apiRouter.Group("/profit")' "$ROOT_DIR/router/api-router.go" || fail
   grep -q "GetProfitAnalytics" "$ROOT_DIR/controller/profit.go" || fail

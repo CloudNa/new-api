@@ -73,6 +73,19 @@ Backups are written under `runtime/backups/<component>/` by default. They includ
 
 Optional proxy-test chat smoke can be enabled by setting `GLART_SMOKE_MODEL` and `GLART_SMOKE_API_KEY` in the private server `.env`. Leave them empty to skip that smoke safely.
 
+For the fuller V2 profit/compression rollout check, run the standalone smoke script from the server checkout. It reads credentials only from environment variables and never writes them to disk:
+
+```bash
+GLART_BASE_URL=https://api.glart.cn \
+GLART_ROOT_USER_ID=1 \
+GLART_ROOT_ACCESS_TOKEN='root-access-token' \
+GLART_API_KEY='proxy-test-api-key' \
+GLART_SMOKE_MODEL=gpt-5.5 \
+sh deploy/glart-stack/scripts/v2-smoke.sh
+```
+
+You can use `GLART_ROOT_COOKIE` instead of `GLART_ROOT_ACCESS_TOKEN` when running from a browser session, but `GLART_ROOT_USER_ID` is still required by root-only APIs. Set `GLART_SMOKE_STREAM=1` and `GLART_SMOKE_LONG_CONTEXT=1` when you want the script to include stream and long-context chat smoke. Set `GLART_V2_SMOKE_REQUIRE_ROOT=1` or `GLART_V2_SMOKE_REQUIRE_CHAT=1` to turn missing credentials into a hard failure.
+
 Set `GLART_STACK_RUN_TESTS=0` or `GLART_STACK_SKIP_TESTS=1` only for emergency updates where the test container cannot run. Normal one-click updates should keep tests enabled.
 
 The Go test stage uses `GLART_STACK_GO_TEST_IMAGE`, defaulting to `golang:1.26.1` because it includes `git`. The updater marks the mounted `/workspace` repository as a Git safe directory before running tests, which avoids dubious-ownership failures when Docker mounts the host checkout into the test container.

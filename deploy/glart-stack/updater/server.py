@@ -184,10 +184,15 @@ def precheck() -> dict:
     add("output policy sources", output_policy_sources_ok(), "present" if output_policy_sources_ok() else "missing output policy hooks")
     add("profit risk sources", profit_risk_sources_ok(), "present" if profit_risk_sources_ok() else "missing profit risk hooks")
     add("OmniRoute parity sources", omniroute_parity_sources_ok(), "present" if omniroute_parity_sources_ok() else "missing OmniRoute parity guards")
+    add("V2 online smoke script", v2_smoke_script_ok(), "present" if v2_smoke_script_ok() else "missing V2 smoke checks")
 
     if SCRIPT.exists():
         ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
         add("update script syntax", ok, out)
+    v2_smoke_sh = ROOT / "deploy/glart-stack/scripts/v2-smoke.sh"
+    if v2_smoke_sh.exists():
+        ok, out = run_command(["sh", "-n", str(v2_smoke_sh)], ROOT)
+        add("V2 smoke wrapper syntax", ok, out)
 
     ok, out = run_command(["git", "-c", f"safe.directory={ROOT}", "status", "--short", "--branch"], ROOT)
     add("git status", ok, out.splitlines()[0] if out else "")
@@ -221,6 +226,7 @@ def smoke() -> dict:
         "output_policy_sources_ok": False,
         "profit_risk_sources_ok": False,
         "omniroute_parity_sources_ok": False,
+        "v2_smoke_script_ok": False,
         "proxy_test_chat_checked": False,
         "proxy_test_chat_ok": False,
         "proxy_test_chat_skipped": False,
@@ -234,6 +240,7 @@ def smoke() -> dict:
         result["output_policy_sources_ok"] = output_policy_sources_ok()
         result["profit_risk_sources_ok"] = profit_risk_sources_ok()
         result["omniroute_parity_sources_ok"] = omniroute_parity_sources_ok()
+        result["v2_smoke_script_ok"] = v2_smoke_script_ok()
         result["proxy_test_chat_checked"], result["proxy_test_chat_ok"], result["proxy_test_chat_skipped"] = proxy_test_chat_smoke()
         result["ok"] = all(
             [
@@ -245,6 +252,7 @@ def smoke() -> dict:
                 result["output_policy_sources_ok"],
                 result["profit_risk_sources_ok"],
                 result["omniroute_parity_sources_ok"],
+                result["v2_smoke_script_ok"],
                 result["proxy_test_chat_ok"] or result["proxy_test_chat_skipped"],
             ]
         )
@@ -383,6 +391,26 @@ def omniroute_parity_sources_ok() -> bool:
                 "TestOmniRouteOfficialStackedPipelineBehavior" in behavior,
                 "7a3f82d887ff96f9208aa3e17e7e4ac94d9107c4" in manifest,
                 "606cc22457d857bac0bc50567dbaca30e30b52c0" in manifest,
+            ]
+        )
+    except Exception:
+        return False
+
+
+def v2_smoke_script_ok() -> bool:
+    try:
+        script = (ROOT / "deploy/glart-stack/scripts/v2-smoke.py").read_text(encoding="utf-8")
+        wrapper = (ROOT / "deploy/glart-stack/scripts/v2-smoke.sh").read_text(encoding="utf-8")
+        return all(
+            [
+                "GLART_BASE_URL" in script,
+                "GLART_API_KEY" in script,
+                "GLART_ROOT_ACCESS_TOKEN" in script,
+                "GLART_ROOT_COOKIE" in script,
+                "OmniRoute-style stacked compression preview" in script,
+                "profit event diagnostic fields" in script,
+                "profit analytics aggregation fields" in script,
+                'exec "$PYTHON_BIN" "$SCRIPT_DIR/v2-smoke.py"' in wrapper,
             ]
         )
     except Exception:

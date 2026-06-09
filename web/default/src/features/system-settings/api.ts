@@ -320,6 +320,7 @@ export type SystemUpdateSmoke = {
   output_policy_sources_ok?: boolean
   profit_risk_sources_ok?: boolean
   omniroute_parity_sources_ok?: boolean
+  v2_smoke_script_ok?: boolean
   proxy_test_chat_checked?: boolean
   proxy_test_chat_ok?: boolean
   proxy_test_chat_skipped?: boolean
