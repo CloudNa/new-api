@@ -534,6 +534,10 @@ export function UpdateCheckerSection({
                 ok={smoke.output_policy_sources_ok ?? false}
               />
               <HealthRow
+                label={t('收益风控自定义层')}
+                ok={smoke.profit_risk_sources_ok ?? false}
+              />
+              <HealthRow
                 label={t('proxy-test chat smoke')}
                 ok={
                   smoke.proxy_test_chat_ok === true ||

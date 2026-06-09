@@ -32,6 +32,42 @@ func TestBuildRiskDecisionAlertsOnLowMargin(t *testing.T) {
 	require.False(t, decision.LiveEnforced)
 }
 
+func TestBuildRiskDecisionEnforcesWhenObserveOnlyDisabled(t *testing.T) {
+	gross := -0.01
+	settings := DefaultSettings()
+	settings.ObserveOnly = false
+	settings.RiskEnforcement = ModeEnforce
+
+	decision := BuildRiskDecision(settings, CostEstimate{
+		CostKnown:      true,
+		GrossMarginUSD: &gross,
+	})
+
+	require.NotNil(t, decision)
+	require.Equal(t, ModeEnforce, decision.Mode)
+	require.True(t, decision.Alert)
+	require.False(t, decision.ObserveOnly)
+	require.True(t, decision.LiveEnforced)
+}
+
+func TestBuildRiskDecisionEnforceStillObservesWhenGlobalObserveOnly(t *testing.T) {
+	gross := -0.01
+	settings := DefaultSettings()
+	settings.ObserveOnly = true
+	settings.RiskEnforcement = ModeEnforce
+
+	decision := BuildRiskDecision(settings, CostEstimate{
+		CostKnown:      true,
+		GrossMarginUSD: &gross,
+	})
+
+	require.NotNil(t, decision)
+	require.Equal(t, ModeEnforce, decision.Mode)
+	require.True(t, decision.Alert)
+	require.True(t, decision.ObserveOnly)
+	require.False(t, decision.LiveEnforced)
+}
+
 func TestBuildRiskDecisionSkipsWhenRiskOff(t *testing.T) {
 	gross := -0.01
 	settings := DefaultSettings()

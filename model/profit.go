@@ -230,6 +230,7 @@ type ProfitAnalytics struct {
 	ProfitGuardrailRecommendations       []ProfitGuardrailRecommendation `json:"profit_guardrail_recommendations,omitempty"`
 	RiskObservedCount                    int64                           `json:"profit_risk_observed_count"`
 	RiskAlertCount                       int64                           `json:"profit_risk_alert_count"`
+	RiskLiveEnforcedCount                int64                           `json:"profit_risk_live_enforced_count"`
 	RiskLossMakingCount                  int64                           `json:"profit_risk_loss_making_count"`
 	RiskLowGrossMarginCount              int64                           `json:"profit_risk_low_gross_margin_count"`
 	RiskLowExpectedMarginCount           int64                           `json:"profit_risk_low_expected_margin_count"`
@@ -406,6 +407,9 @@ func GetProfitAnalytics(filter ProfitLogFilter) (ProfitAnalytics, error) {
 			analytics.RiskObservedCount++
 			if event.RiskAlert {
 				analytics.RiskAlertCount++
+			}
+			if event.RiskLiveEnforced {
+				analytics.RiskLiveEnforcedCount++
 			}
 			if stringSliceContains(event.RiskReasons, profit.RiskReasonLossMakingRequest) {
 				analytics.RiskLossMakingCount++

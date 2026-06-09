@@ -233,7 +233,7 @@ func (s Settings) Normalize() Settings {
 		s.RetryBudgetMode = defaults.RetryBudgetMode
 	}
 	s.MaxRetryCostUSD = normalizeNonNegativeFloat(s.MaxRetryCostUSD)
-	if s.RiskEnforcement != ModeOff && s.RiskEnforcement != RiskModeAlert {
+	if !validRiskMode(s.RiskEnforcement) {
 		s.RiskEnforcement = defaults.RiskEnforcement
 	}
 	s.RiskMinGrossUSD = normalizeNonNegativeFloat(s.RiskMinGrossUSD)
@@ -331,7 +331,7 @@ func (s Settings) Validate() error {
 			return errors.New("output policy token limits must be non-negative")
 		}
 	}
-	if s.RiskEnforcement != "" && s.RiskEnforcement != ModeOff && s.RiskEnforcement != RiskModeAlert {
+	if s.RiskEnforcement != "" && !validRiskMode(s.RiskEnforcement) {
 		return errors.New("invalid risk_enforcement")
 	}
 	if err := s.validateObserveOnlyScope(); err != nil {
@@ -465,6 +465,10 @@ func validOutputCapMode(mode string) bool {
 
 func validRetryBudgetMode(mode string) bool {
 	return mode == ModeOff || mode == ModeObserve || mode == ModeEnforce
+}
+
+func validRiskMode(mode string) bool {
+	return mode == ModeOff || mode == RiskModeAlert || mode == ModeEnforce
 }
 
 func normalizeNonNegativeFloat(value float64) float64 {

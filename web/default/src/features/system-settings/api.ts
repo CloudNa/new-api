@@ -318,6 +318,7 @@ export type SystemUpdateSmoke = {
   sidecar_bridge_sources_ok?: boolean
   response_cache_sources_ok?: boolean
   output_policy_sources_ok?: boolean
+  profit_risk_sources_ok?: boolean
   proxy_test_chat_checked?: boolean
   proxy_test_chat_ok?: boolean
   proxy_test_chat_skipped?: boolean
@@ -500,7 +501,7 @@ export type ProfitResponseCacheMode = ProfitMode | 'enforce'
 export type ProfitCostRoutingMode = ProfitMode | 'prefer_margin'
 export type ProfitOutputCapMode = 'off' | 'observe' | 'cap' | 'premium_required'
 export type ProfitRetryBudgetMode = ProfitMode | 'enforce'
-export type ProfitRiskMode = 'off' | 'alert'
+export type ProfitRiskMode = 'off' | 'alert' | 'enforce'
 
 export type ProfitLongContextTier = {
   id: string
@@ -724,6 +725,7 @@ export type ProfitAnalytics = {
   profit_guardrail_recommendations?: ProfitGuardrailRecommendation[]
   profit_risk_observed_count: number
   profit_risk_alert_count: number
+  profit_risk_live_enforced_count: number
   profit_risk_loss_making_count: number
   profit_risk_low_gross_margin_count: number
   profit_risk_low_expected_margin_count: number

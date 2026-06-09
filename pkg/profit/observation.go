@@ -594,9 +594,13 @@ func appendRiskDecision(other map[string]interface{}, decision *RiskDecision) {
 	other[KeyRiskLiveEnforced] = decision.LiveEnforced
 }
 
-func quotaToUSD(quota int) float64 {
+func QuotaToUSD(quota int) float64 {
 	if quota <= 0 || common.QuotaPerUnit <= 0 {
 		return 0
 	}
 	return float64(quota) / common.QuotaPerUnit
+}
+
+func quotaToUSD(quota int) float64 {
+	return QuotaToUSD(quota)
 }

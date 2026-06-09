@@ -20,17 +20,18 @@ type RiskDecision struct {
 
 func BuildRiskDecision(settings Settings, estimate CostEstimate) *RiskDecision {
 	settings = settings.Normalize()
-	if settings.RiskEnforcement != RiskModeAlert || !estimate.CostKnown {
+	if (settings.RiskEnforcement != RiskModeAlert && settings.RiskEnforcement != ModeEnforce) || !estimate.CostKnown {
 		return nil
 	}
 
+	observeOnly := settings.ObserveOnly || settings.RiskEnforcement == RiskModeAlert
 	decision := &RiskDecision{
 		Mode:                 settings.RiskEnforcement,
 		MinGrossMarginUSD:    settings.RiskMinGrossUSD,
 		MinGrossMarginPct:    settings.RiskMinGrossPct,
 		MinExpectedMarginUSD: settings.RiskMinExpectUSD,
 		MinExpectedMarginPct: settings.RiskMinExpectPct,
-		ObserveOnly:          true,
+		ObserveOnly:          observeOnly,
 		LiveEnforced:         false,
 	}
 
@@ -46,6 +47,7 @@ func BuildRiskDecision(settings Settings, estimate CostEstimate) *RiskDecision {
 		decision.addReason(RiskReasonLossMakingRequest)
 	}
 	decision.Alert = len(decision.Reasons) > 0
+	decision.LiveEnforced = decision.Alert && !decision.ObserveOnly && settings.RiskEnforcement == ModeEnforce
 	return decision
 }
 

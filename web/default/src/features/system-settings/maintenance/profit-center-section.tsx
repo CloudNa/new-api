@@ -133,6 +133,7 @@ const RETRY_BUDGET_OPTIONS: Array<{
 const RISK_OPTIONS: Array<{ value: ProfitRiskMode; label: string }> = [
   { value: 'off', label: 'Off' },
   { value: 'alert', label: 'Alert' },
+  { value: 'enforce', label: 'Enforce' },
 ]
 
 const DEFAULT_SETTINGS: ProfitSettings = {
@@ -1155,6 +1156,7 @@ function StatGrid({ analytics }: { analytics: ProfitAnalytics | null }) {
       formatNumber(analytics?.output_policy_enforced_limit_exceeded_count),
     ],
     ['风险告警', formatNumber(analytics?.profit_risk_alert_count)],
+    ['风险真实拦截', formatNumber(analytics?.profit_risk_live_enforced_count)],
     ['亏损请求', formatNumber(analytics?.profit_risk_loss_making_count)],
     [
       '低毛利请求',
@@ -1708,6 +1710,9 @@ function ProfitEventsTable({ events }: { events: ProfitEventsPage | null }) {
                         </Badge>
                         {event.profit_risk_alert ? (
                           <Badge variant='secondary'>{t('告警')}</Badge>
+                        ) : null}
+                        {event.profit_risk_live_enforced ? (
+                          <Badge variant='destructive'>已拦截</Badge>
                         ) : null}
                       </div>
                       {event.profit_risk_reasons?.length ? (

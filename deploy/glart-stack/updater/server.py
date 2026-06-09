@@ -182,6 +182,7 @@ def precheck() -> dict:
     add("custom bridge sources", not missing_custom, ", ".join(missing_custom) if missing_custom else "present")
     add("response cache sources", response_cache_sources_ok(), "present" if response_cache_sources_ok() else "missing response cache hooks")
     add("output policy sources", output_policy_sources_ok(), "present" if output_policy_sources_ok() else "missing output policy hooks")
+    add("profit risk sources", profit_risk_sources_ok(), "present" if profit_risk_sources_ok() else "missing profit risk hooks")
 
     if SCRIPT.exists():
         ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
@@ -217,6 +218,7 @@ def smoke() -> dict:
         "sidecar_bridge_sources_ok": False,
         "response_cache_sources_ok": False,
         "output_policy_sources_ok": False,
+        "profit_risk_sources_ok": False,
         "proxy_test_chat_checked": False,
         "proxy_test_chat_ok": False,
         "proxy_test_chat_skipped": False,
@@ -228,6 +230,7 @@ def smoke() -> dict:
         result["sidecar_bridge_sources_ok"] = custom_bridge_sources_ok()
         result["response_cache_sources_ok"] = response_cache_sources_ok()
         result["output_policy_sources_ok"] = output_policy_sources_ok()
+        result["profit_risk_sources_ok"] = profit_risk_sources_ok()
         result["proxy_test_chat_checked"], result["proxy_test_chat_ok"], result["proxy_test_chat_skipped"] = proxy_test_chat_smoke()
         result["ok"] = all(
             [
@@ -237,6 +240,7 @@ def smoke() -> dict:
                 result["sidecar_bridge_sources_ok"],
                 result["response_cache_sources_ok"],
                 result["output_policy_sources_ok"],
+                result["profit_risk_sources_ok"],
                 result["proxy_test_chat_ok"] or result["proxy_test_chat_skipped"],
             ]
         )
@@ -327,6 +331,30 @@ def output_policy_sources_ok() -> bool:
                 "output_policy_requested_max_tokens" in api_types,
                 "output_policy_applied_max_tokens" in api_types,
                 "output_policy_enforced_limit_exceeded" in api_types,
+            ]
+        )
+    except Exception:
+        return False
+
+
+def profit_risk_sources_ok() -> bool:
+    try:
+        settings = (ROOT / "pkg/profit/settings.go").read_text(encoding="utf-8")
+        risk = (ROOT / "pkg/profit/risk.go").read_text(encoding="utf-8")
+        risk_service = (ROOT / "service/profit_risk_enforcement.go").read_text(encoding="utf-8")
+        relay = (ROOT / "controller/relay.go").read_text(encoding="utf-8")
+        model_profit = (ROOT / "model/profit.go").read_text(encoding="utf-8")
+        api_types = (ROOT / "web/default/src/features/system-settings/api.ts").read_text(encoding="utf-8")
+        profit_center = (ROOT / "web/default/src/features/system-settings/maintenance/profit-center-section.tsx").read_text(encoding="utf-8")
+        return all(
+            [
+                "validRiskMode" in settings,
+                "RiskEnforcement != ModeEnforce" in risk,
+                "EnforceProfitRiskBeforeRelay" in risk_service,
+                "EnforceProfitRiskBeforeRelay" in relay,
+                "profit_risk_live_enforced_count" in model_profit,
+                "profit_risk_live_enforced_count" in api_types,
+                "风险真实拦截" in profit_center,
             ]
         )
     except Exception:

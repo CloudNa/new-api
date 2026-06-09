@@ -326,6 +326,7 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 		profit.KeyOutputPolicyEnforcedExceeded:   true,
 		profit.KeyRiskMode:                       profit.RiskModeAlert,
 		profit.KeyRiskAlert:                      true,
+		profit.KeyRiskLiveEnforced:               true,
 		profit.KeyRiskReasons: []string{
 			profit.RiskReasonLossMakingRequest,
 			profit.RiskReasonGrossMarginBelowMinimum,
@@ -391,6 +392,7 @@ func TestGetProfitAnalyticsKeepsUnknownCostSeparate(t *testing.T) {
 	require.Equal(t, int64(1), analytics.OutputPolicyEnforcedExceededCount)
 	require.Equal(t, int64(1), analytics.RiskObservedCount)
 	require.Equal(t, int64(1), analytics.RiskAlertCount)
+	require.Equal(t, int64(1), analytics.RiskLiveEnforcedCount)
 	require.Equal(t, int64(1), analytics.RiskLossMakingCount)
 	require.Equal(t, int64(1), analytics.RiskLowGrossMarginCount)
 	require.Equal(t, int64(1), analytics.RiskLowExpectedMarginCount)

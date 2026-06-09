@@ -226,6 +226,11 @@ git_update_and_tests() {
   grep -q "output_policy_requested_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
   grep -q "output_policy_applied_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
   grep -q "output_policy_enforced_limit_exceeded" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "validRiskMode" "$ROOT_DIR/pkg/profit/settings.go" || fail
+  grep -q "EnforceProfitRiskBeforeRelay" "$ROOT_DIR/service/profit_risk_enforcement.go" || fail
+  grep -q "EnforceProfitRiskBeforeRelay" "$ROOT_DIR/controller/relay.go" || fail
+  grep -q "profit_risk_live_enforced_count" "$ROOT_DIR/model/profit.go" || fail
+  grep -q "profit_risk_live_enforced_count" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
 
   if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
     STAGE="go-test"
