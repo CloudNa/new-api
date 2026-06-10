@@ -23,16 +23,52 @@ const (
 	cpaManagerBridgeToken     = "glart-new-api-cpa-manager-plus-bridge"
 )
 
-var cpaManagerRootBridgePaths = []string{
-	"/auth-files",
-	"/config",
-	"/openai-compatibility",
-	"/request-error-logs",
+var cpaManagerAdminAuthPaths = []string{
 	"/setup",
 	"/status",
 	"/usage-service/config",
 	"/usage-service/info",
 	"/v0/management/",
+}
+
+var cpaManagerCPAProxyPaths = []string{
+	"/ampcode",
+	"/api-call",
+	"/api-key-usage",
+	"/api-keys",
+	"/anthropic-auth-url",
+	"/antigravity-auth-url",
+	"/auth-files",
+	"/claude-api-key",
+	"/codex-api-key",
+	"/codex-auth-url",
+	"/config",
+	"/config.yaml",
+	"/debug",
+	"/force-model-prefix",
+	"/gemini-api-key",
+	"/gemini-cli-auth-url",
+	"/get-auth-status",
+	"/latest-version",
+	"/logging-to-file",
+	"/logs",
+	"/logs-max-total-size-mb",
+	"/oauth-callback",
+	"/oauth-excluded-models",
+	"/oauth-model-alias",
+	"/openai-compatibility",
+	"/proxy-url",
+	"/quota-exceeded/switch-preview-model",
+	"/quota-exceeded/switch-project",
+	"/request-error-logs",
+	"/request-log",
+	"/request-log-by-id",
+	"/request-retry",
+	"/routing/strategy",
+	"/vertex-api-key",
+	"/vertex/import",
+	"/ws-auth",
+	"/xai-auth-url",
 }
 
 type sidecarProxyTarget struct {
@@ -163,6 +199,10 @@ func normalizeSidecarRequestPath(requestPath string, target sidecarProxyTarget) 
 		return "/management.html"
 	}
 
+	if target.service == "cpa-manager-plus" {
+		return normalizeCPAManagerPlusRequestPath(requestPath)
+	}
+
 	if target.service == "gpt-load" {
 		duplicatedPrefix := "/api" + target.prefix
 		if requestPath == duplicatedPrefix {
@@ -177,6 +217,22 @@ func normalizeSidecarRequestPath(requestPath string, target sidecarProxyTarget) 
 		}
 	}
 
+	return requestPath
+}
+
+func normalizeCPAManagerPlusRequestPath(requestPath string) string {
+	if strings.HasPrefix(requestPath, "/v0/management/") ||
+		strings.HasPrefix(requestPath, "/usage-service/") ||
+		requestPath == "/status" ||
+		requestPath == "/setup" ||
+		requestPath == "/management.html" {
+		return requestPath
+	}
+	for _, cpaPath := range cpaManagerCPAProxyPaths {
+		if requestPath == cpaPath || strings.HasPrefix(requestPath, cpaPath+"/") {
+			return "/v0/management" + requestPath
+		}
+	}
 	return requestPath
 }
 
@@ -235,7 +291,7 @@ func applySidecarBridgeAuth(req *http.Request, target sidecarProxyTarget) {
 }
 
 func shouldInjectCPAManagerAdminAuth(path string) bool {
-	for _, bridgePath := range cpaManagerRootBridgePaths {
+	for _, bridgePath := range cpaManagerAdminAuthPaths {
 		if strings.HasSuffix(bridgePath, "/") {
 			if strings.HasPrefix(path, bridgePath) {
 				return true
@@ -436,9 +492,6 @@ func replaceSidecarAbsolutePaths(body []byte, target sidecarProxyTarget) []byte 
 	if target.service == "gpt-load" {
 		rewritten = rewriteGPTLoadAPIRootPath(rewritten, prefix)
 	}
-	if target.service == "cpa-manager-plus" {
-		rewritten = rewriteCPAManagerPlusRootPaths(rewritten, prefix)
-	}
 	rewritten = rewriteRelativeAssetDeps(rewritten, prefix)
 	return []byte(rewritten)
 }
@@ -488,15 +541,6 @@ func rewriteGPTLoadAPIRootPath(value string, prefix string) string {
 	return value
 }
 
-func rewriteCPAManagerPlusRootPaths(value string, prefix string) string {
-	for _, path := range cpaManagerRootBridgePaths {
-		for _, quote := range []string{`"`, `'`, "`"} {
-			value = strings.ReplaceAll(value, quote+path, quote+prefix+path)
-		}
-	}
-	return value
-}
-
 func injectSidecarBridgeState(body []byte, contentType string, target sidecarProxyTarget) []byte {
 	if !strings.Contains(strings.ToLower(contentType), "text/html") {
 		return body
@@ -519,7 +563,7 @@ func injectSidecarBridgeState(body []byte, contentType string, target sidecarPro
 		if strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey)) == "" {
 			return body
 		}
-		script := `<script>(function(){try{var base=window.location.origin;var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
+		script := `<script>(function(){try{var base=window.location.origin+"` + target.prefix + `";var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
 		return injectHTMLHeadScript(body, script)
 	default:
 		return body

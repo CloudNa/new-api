@@ -24,6 +24,18 @@ func TestNormalizeSidecarRequestPath(t *testing.T) {
 			want:        "/management.html",
 		},
 		{
+			name:        "cpa-manager-plus cpa api path uses management proxy",
+			target:      cpaManager,
+			requestPath: "/cpa/config",
+			want:        "/v0/management/config",
+		},
+		{
+			name:        "cpa-manager-plus management path keeps native path",
+			target:      cpaManager,
+			requestPath: "/cpa/v0/management/auth-files",
+			want:        "/v0/management/auth-files",
+		},
+		{
 			name:        "cliproxyapi native root opens management panel",
 			target:      cliProxyAPI,
 			requestPath: "/cpa-native",
@@ -86,7 +98,7 @@ func TestApplySidecarBridgeAuth(t *testing.T) {
 	}
 
 	cpaManagerReq := &http.Request{
-		URL:    &url.URL{Path: "/config"},
+		URL:    &url.URL{Path: "/v0/management/config"},
 		Header: make(http.Header),
 	}
 	applySidecarBridgeAuth(cpaManagerReq, sidecarProxyTarget{service: "cpa-manager-plus"})
@@ -173,12 +185,12 @@ func TestCPAManagerPlusHTMLUsesShortPrivateCache(t *testing.T) {
 	}
 }
 
-func TestCPAManagerPlusRootPathsAreRewrittenUnderBridge(t *testing.T) {
+func TestCPAManagerPlusAPILiteralsStayRelativeToConfiguredBase(t *testing.T) {
 	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
-	body := []byte(`axios.get("/usage-service/info");fetch("/v0/management/usage");fetch("/status");fetch("/config");fetch("/auth-files");`)
+	body := []byte(`const MANAGEMENT_API_PREFIX="/v0/management";const API_ENDPOINTS={CONFIG:"/config",AUTH_FILES:"/auth-files"};`)
 
 	got := string(replaceSidecarAbsolutePaths(body, target))
-	want := `axios.get("/cpa/usage-service/info");fetch("/cpa/v0/management/usage");fetch("/cpa/status");fetch("/cpa/config");fetch("/cpa/auth-files");`
+	want := `const MANAGEMENT_API_PREFIX="/v0/management";const API_ENDPOINTS={CONFIG:"/config",AUTH_FILES:"/auth-files"};`
 	if got != want {
 		t.Fatalf("replaceSidecarAbsolutePaths() = %q, want %q", got, want)
 	}
