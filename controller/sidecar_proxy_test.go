@@ -127,3 +127,17 @@ func TestGPTLoadStaticAssetsUsePrivateBrowserCache(t *testing.T) {
 		t.Fatalf("gpt-load error cache control = %q, want no-store", got)
 	}
 }
+
+func TestCLIProxyAPIHTMLUsesShortPrivateCache(t *testing.T) {
+	target := sidecarProxyTarget{prefix: "/cpa", service: "cliproxyapi"}
+
+	if got := sidecarBodyCacheControl("text/html", http.StatusOK, target); got != "private, max-age=300" {
+		t.Fatalf("cliproxyapi html cache control = %q, want short private cache", got)
+	}
+	if got := sidecarBodyCacheControl("application/json", http.StatusOK, target); got != "no-store" {
+		t.Fatalf("cliproxyapi api cache control = %q, want no-store", got)
+	}
+	if got := sidecarBodyCacheControl("text/html", http.StatusBadGateway, target); got != "no-store" {
+		t.Fatalf("cliproxyapi error cache control = %q, want no-store", got)
+	}
+}

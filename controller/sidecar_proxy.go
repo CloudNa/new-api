@@ -319,6 +319,9 @@ func sidecarBodyCacheControl(contentType string, statusCode int, target sidecarP
 		return "no-store"
 	}
 	contentType = strings.ToLower(contentType)
+	if target.service == "cliproxyapi" && strings.Contains(contentType, "text/html") {
+		return "private, max-age=300"
+	}
 	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "text/x-component") {
 		return "no-store"
 	}
