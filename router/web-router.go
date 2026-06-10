@@ -49,6 +49,12 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 	cpaManagerPlusRoot := router.Group("")
 	cpaManagerPlusRoot.Use(middleware.RootSessionAuth())
 	{
+		cpaManagerPlusRoot.Any("/auth-files", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/auth-files/*path", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/config", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/openai-compatibility", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/request-error-logs", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/request-error-logs/*path", controller.CPAManagerPlusRootProxy)
 		cpaManagerPlusRoot.Any("/usage-service/*path", controller.CPAManagerPlusRootProxy)
 		cpaManagerPlusRoot.Any("/v0/management/*path", controller.CPAManagerPlusRootProxy)
 		cpaManagerPlusRoot.Any("/status", controller.CPAManagerPlusRootProxy)
