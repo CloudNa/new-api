@@ -236,7 +236,7 @@ def smoke() -> dict:
         result["new_api_healthy"], result["status"], result["content_type"] = http_status_ok("http://new-api:3000/api/status")
         result["gpt_load_healthy"] = http_ok("http://gpt-load:3001/health")
         result["cliproxyapi_ready"] = http_ok("http://cliproxyapi:8317/management.html")
-        result["cpa_manager_plus_ready"] = http_ok("http://cpa-manager-plus:18317/health")
+        result["cpa_manager_plus_ready"] = http_ok("http://cpa-manager-plus:18317/health") and http_ok("http://cpa-manager-plus:18317/usage-service/info")
         result["sidecar_bridge_sources_ok"] = custom_bridge_sources_ok()
         result["response_cache_sources_ok"] = response_cache_sources_ok()
         result["output_policy_sources_ok"] = output_policy_sources_ok()

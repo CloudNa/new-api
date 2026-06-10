@@ -18,6 +18,7 @@ for dir in \
   runtime/new-api/logs \
   runtime/redis \
   runtime/gpt-load \
+  runtime/cpa-manager-plus \
   runtime/cliproxyapi/auths \
   runtime/cliproxyapi/logs \
   runtime/caddy/data \
@@ -35,7 +36,10 @@ if [ ! -f "$CONFIG_PATH" ]; then
   chmod 600 "$CONFIG_PATH"
 fi
 
-chmod 700 "$STACK_DIR/runtime/cliproxyapi/auths" "$STACK_DIR/runtime/cliproxyapi/logs"
+chmod 700 \
+  "$STACK_DIR/runtime/cpa-manager-plus" \
+  "$STACK_DIR/runtime/cliproxyapi/auths" \
+  "$STACK_DIR/runtime/cliproxyapi/logs"
 
 printf '%s\n' "Runtime initialized at $STACK_DIR"
 printf '%s\n' "Edit $ENV_FILE before first deploy, then rerun this script if you need to regenerate config.yaml."

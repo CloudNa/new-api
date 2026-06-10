@@ -319,7 +319,8 @@ smoke_cliproxyapi() {
 
 smoke_cpa_manager_plus() {
   STAGE="smoke-cpa-manager-plus"
-  retry_smoke "cpa-manager-plus" 30 2 docker exec glart-cpa-manager-plus wget -q -O - http://localhost:18317/health
+  retry_smoke "cpa-manager-plus health" 30 2 docker exec glart-cpa-manager-plus wget -q -O - http://localhost:18317/health
+  retry_smoke "cpa-manager-plus manager info" 30 2 docker exec glart-cpa-manager-plus wget -q -O - http://localhost:18317/usage-service/info
 }
 
 optional_proxy_test_chat_smoke() {
