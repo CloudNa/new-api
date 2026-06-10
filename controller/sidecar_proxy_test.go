@@ -105,13 +105,25 @@ func TestGPTLoadAssetsAreNotPassedThroughCompressed(t *testing.T) {
 	}
 }
 
-func TestGPTLoadRewrittenAssetsAreNotCached(t *testing.T) {
+func TestGPTLoadStaticAssetsUsePrivateBrowserCache(t *testing.T) {
 	target := sidecarProxyTarget{prefix: "/gl", service: "gpt-load"}
 
-	if got := sidecarBodyCacheControl("text/javascript", http.StatusOK, target); got != "no-store" {
-		t.Fatalf("gpt-load javascript cache control = %q, want no-store", got)
+	if got := sidecarBodyCacheControl("text/javascript", http.StatusOK, target); got != "private, max-age=3600" {
+		t.Fatalf("gpt-load javascript cache control = %q, want private browser cache", got)
 	}
-	if got := sidecarBodyCacheControl("text/css", http.StatusOK, target); got != "no-store" {
-		t.Fatalf("gpt-load css cache control = %q, want no-store", got)
+	if got := sidecarBodyCacheControl("text/css", http.StatusOK, target); got != "private, max-age=3600" {
+		t.Fatalf("gpt-load css cache control = %q, want private browser cache", got)
+	}
+	if got := sidecarBodyCacheControl("image/png", http.StatusOK, target); got != "private, max-age=3600" {
+		t.Fatalf("gpt-load image cache control = %q, want private browser cache", got)
+	}
+	if got := sidecarBodyCacheControl("text/html", http.StatusOK, target); got != "no-store" {
+		t.Fatalf("gpt-load html cache control = %q, want no-store", got)
+	}
+	if got := sidecarBodyCacheControl("application/json", http.StatusOK, target); got != "no-store" {
+		t.Fatalf("gpt-load api cache control = %q, want no-store", got)
+	}
+	if got := sidecarBodyCacheControl("text/javascript", http.StatusBadGateway, target); got != "no-store" {
+		t.Fatalf("gpt-load error cache control = %q, want no-store", got)
 	}
 }

@@ -240,7 +240,7 @@ func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, passThro
 
 	contentType := resp.Header.Get("Content-Type")
 	if !shouldRewriteSidecarBody(contentType) {
-		resp.Header.Set("Cache-Control", "no-store")
+		resp.Header.Set("Cache-Control", sidecarBodyCacheControl(contentType, resp.StatusCode, target))
 		resp.Header.Del("Etag")
 		resp.Header.Del("Last-Modified")
 		return nil
@@ -318,14 +318,16 @@ func sidecarBodyCacheControl(contentType string, statusCode int, target sidecarP
 	if statusCode >= http.StatusBadRequest {
 		return "no-store"
 	}
-	if target.service == "gpt-load" {
-		return "no-store"
-	}
 	contentType = strings.ToLower(contentType)
 	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "text/x-component") {
 		return "no-store"
 	}
-	if strings.Contains(contentType, "text/css") || strings.Contains(contentType, "javascript") {
+	if strings.Contains(contentType, "text/css") ||
+		strings.Contains(contentType, "javascript") ||
+		strings.HasPrefix(contentType, "image/") ||
+		strings.Contains(contentType, "font/") ||
+		strings.Contains(contentType, "application/font") ||
+		strings.Contains(contentType, "application/octet-stream") {
 		return "private, max-age=3600"
 	}
 	return "no-store"
