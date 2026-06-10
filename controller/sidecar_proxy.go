@@ -23,6 +23,18 @@ const (
 	cpaManagerBridgeToken     = "glart-new-api-cpa-manager-plus-bridge"
 )
 
+var cpaManagerRootBridgePaths = []string{
+	"/auth-files",
+	"/config",
+	"/openai-compatibility",
+	"/request-error-logs",
+	"/setup",
+	"/status",
+	"/usage-service/config",
+	"/usage-service/info",
+	"/v0/management/",
+}
+
 type sidecarProxyTarget struct {
 	baseURL *url.URL
 	prefix  string
@@ -223,10 +235,18 @@ func applySidecarBridgeAuth(req *http.Request, target sidecarProxyTarget) {
 }
 
 func shouldInjectCPAManagerAdminAuth(path string) bool {
-	return path == "/status" ||
-		path == "/setup" ||
-		path == "/usage-service/config" ||
-		strings.HasPrefix(path, "/v0/management/")
+	for _, bridgePath := range cpaManagerRootBridgePaths {
+		if strings.HasSuffix(bridgePath, "/") {
+			if strings.HasPrefix(path, bridgePath) {
+				return true
+			}
+			continue
+		}
+		if path == bridgePath {
+			return true
+		}
+	}
+	return false
 }
 
 func replaceBridgeQueryToken(req *http.Request, realToken string, browserToken string) {
@@ -469,13 +489,7 @@ func rewriteGPTLoadAPIRootPath(value string, prefix string) string {
 }
 
 func rewriteCPAManagerPlusRootPaths(value string, prefix string) string {
-	for _, path := range []string{
-		"/usage-service/info",
-		"/usage-service/config",
-		"/v0/management/",
-		"/status",
-		"/setup",
-	} {
+	for _, path := range cpaManagerRootBridgePaths {
 		for _, quote := range []string{`"`, `'`, "`"} {
 			value = strings.ReplaceAll(value, quote+path, quote+prefix+path)
 		}

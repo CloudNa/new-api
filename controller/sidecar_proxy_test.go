@@ -86,10 +86,9 @@ func TestApplySidecarBridgeAuth(t *testing.T) {
 	}
 
 	cpaManagerReq := &http.Request{
-		URL:    &url.URL{Path: "/usage-service/config"},
+		URL:    &url.URL{Path: "/config"},
 		Header: make(http.Header),
 	}
-	cpaManagerReq.Header.Set("Authorization", "Bearer "+cpaManagerBridgeToken)
 	applySidecarBridgeAuth(cpaManagerReq, sidecarProxyTarget{service: "cpa-manager-plus"})
 	if got := cpaManagerReq.Header.Get("Authorization"); got != "Bearer real-cpa-manager-admin-key" {
 		t.Fatalf("cpa-manager-plus authorization = %q", got)
@@ -176,10 +175,10 @@ func TestCPAManagerPlusHTMLUsesShortPrivateCache(t *testing.T) {
 
 func TestCPAManagerPlusRootPathsAreRewrittenUnderBridge(t *testing.T) {
 	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
-	body := []byte(`axios.get("/usage-service/info");fetch("/v0/management/usage");fetch("/status");`)
+	body := []byte(`axios.get("/usage-service/info");fetch("/v0/management/usage");fetch("/status");fetch("/config");fetch("/auth-files");`)
 
 	got := string(replaceSidecarAbsolutePaths(body, target))
-	want := `axios.get("/cpa/usage-service/info");fetch("/cpa/v0/management/usage");fetch("/cpa/status");`
+	want := `axios.get("/cpa/usage-service/info");fetch("/cpa/v0/management/usage");fetch("/cpa/status");fetch("/cpa/config");fetch("/cpa/auth-files");`
 	if got != want {
 		t.Fatalf("replaceSidecarAbsolutePaths() = %q, want %q", got, want)
 	}
