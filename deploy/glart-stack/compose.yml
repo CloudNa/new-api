@@ -19,8 +19,10 @@ services:
       NODE_NAME: glart-new-api
       GPT_LOAD_INTERNAL_URL: http://gpt-load:3001
       CLIPROXYAPI_INTERNAL_URL: http://cliproxyapi:8317
+      CPA_MANAGER_PLUS_INTERNAL_URL: http://cpa-manager-plus:18317
       SIDECAR_GPT_LOAD_AUTH_KEY: ${GPT_LOAD_AUTH_KEY}
       SIDECAR_CLIPROXYAPI_MANAGEMENT_KEY: ${CLIPROXYAPI_MANAGEMENT_KEY}
+      SIDECAR_CPA_MANAGER_PLUS_ADMIN_KEY: ${CPA_MANAGER_ADMIN_KEY}
       GLART_STACK_UPDATER_URL: http://glart-stack-updater:8787
       GLART_STACK_UPDATER_TOKEN: ${GLART_STACK_UPDATER_TOKEN}
     volumes:
@@ -32,6 +34,8 @@ services:
       gpt-load:
         condition: service_started
       cliproxyapi:
+        condition: service_started
+      cpa-manager-plus:
         condition: service_started
       glart-stack-updater:
         condition: service_started
@@ -112,6 +116,41 @@ services:
       - glart-internal
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider -T 10 -O /dev/null http://localhost:8317/management.html || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  cpa-manager-plus:
+    image: seakee/cpa-manager-plus:latest
+    container_name: glart-cpa-manager-plus
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      HTTP_ADDR: 0.0.0.0:18317
+      USAGE_DB_PATH: /data/usage.sqlite
+      CPA_MANAGER_DATA_KEY_PATH: /data/data.key
+      CPA_MANAGER_ADMIN_KEY: ${CPA_MANAGER_ADMIN_KEY}
+      CPA_UPSTREAM_URL: http://cliproxyapi:8317
+      CPA_MANAGEMENT_KEY: ${CLIPROXYAPI_MANAGEMENT_KEY}
+      USAGE_COLLECTOR_MODE: http
+      USAGE_BATCH_SIZE: "100"
+      USAGE_POLL_INTERVAL_MS: "500"
+      USAGE_QUERY_LIMIT: "50000"
+      USAGE_CORS_ORIGINS: https://${GLART_DOMAIN}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./runtime/cpa-manager-plus:/data
+    depends_on:
+      cliproxyapi:
+        condition: service_started
+    expose:
+      - "18317"
+    networks:
+      - glart-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:18317/health | grep -q 'cpa-manager-plus'"]
       interval: 30s
       timeout: 10s
       retries: 5

@@ -8,7 +8,8 @@ import (
 
 func TestNormalizeSidecarRequestPath(t *testing.T) {
 	gptLoad := sidecarProxyTarget{prefix: "/gl", service: "gpt-load"}
-	cliProxyAPI := sidecarProxyTarget{prefix: "/cpa", service: "cliproxyapi"}
+	cliProxyAPI := sidecarProxyTarget{prefix: "/cpa-native", service: "cliproxyapi"}
+	cpaManager := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
 
 	tests := []struct {
 		name        string
@@ -17,15 +18,21 @@ func TestNormalizeSidecarRequestPath(t *testing.T) {
 		want        string
 	}{
 		{
-			name:        "cliproxyapi root opens management panel",
-			target:      cliProxyAPI,
+			name:        "cpa-manager-plus root opens management panel",
+			target:      cpaManager,
 			requestPath: "/cpa",
+			want:        "/management.html",
+		},
+		{
+			name:        "cliproxyapi native root opens management panel",
+			target:      cliProxyAPI,
+			requestPath: "/cpa-native",
 			want:        "/management.html",
 		},
 		{
 			name:        "cliproxyapi nested management api keeps native path",
 			target:      cliProxyAPI,
-			requestPath: "/cpa/v0/management/config",
+			requestPath: "/cpa-native/v0/management/config",
 			want:        "/v0/management/config",
 		},
 		{
@@ -54,6 +61,7 @@ func TestNormalizeSidecarRequestPath(t *testing.T) {
 func TestApplySidecarBridgeAuth(t *testing.T) {
 	t.Setenv(gptLoadBridgeAuthKey, "real-gpt-load-key")
 	t.Setenv(cpaBridgeManagementKey, "real-cpa-key")
+	t.Setenv(cpaManagerBridgeAdminKey, "real-cpa-manager-admin-key")
 
 	gptReq := &http.Request{
 		URL:    &url.URL{Path: "/api/keys", RawQuery: "key=" + gptLoadBridgeBrowserToken},
@@ -75,6 +83,16 @@ func TestApplySidecarBridgeAuth(t *testing.T) {
 	applySidecarBridgeAuth(cpaReq, sidecarProxyTarget{service: "cliproxyapi"})
 	if got := cpaReq.Header.Get("Authorization"); got != "Bearer real-cpa-key" {
 		t.Fatalf("cliproxyapi authorization = %q", got)
+	}
+
+	cpaManagerReq := &http.Request{
+		URL:    &url.URL{Path: "/usage-service/config"},
+		Header: make(http.Header),
+	}
+	cpaManagerReq.Header.Set("Authorization", "Bearer "+cpaManagerBridgeToken)
+	applySidecarBridgeAuth(cpaManagerReq, sidecarProxyTarget{service: "cpa-manager-plus"})
+	if got := cpaManagerReq.Header.Get("Authorization"); got != "Bearer real-cpa-manager-admin-key" {
+		t.Fatalf("cpa-manager-plus authorization = %q", got)
 	}
 }
 
@@ -139,5 +157,30 @@ func TestCLIProxyAPIHTMLUsesShortPrivateCache(t *testing.T) {
 	}
 	if got := sidecarBodyCacheControl("text/html", http.StatusBadGateway, target); got != "no-store" {
 		t.Fatalf("cliproxyapi error cache control = %q, want no-store", got)
+	}
+}
+
+func TestCPAManagerPlusHTMLUsesShortPrivateCache(t *testing.T) {
+	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
+
+	if got := sidecarBodyCacheControl("text/html", http.StatusOK, target); got != "private, max-age=300" {
+		t.Fatalf("cpa-manager-plus html cache control = %q, want short private cache", got)
+	}
+	if got := sidecarBodyCacheControl("application/json", http.StatusOK, target); got != "no-store" {
+		t.Fatalf("cpa-manager-plus api cache control = %q, want no-store", got)
+	}
+	if got := sidecarBodyCacheControl("text/html", http.StatusBadGateway, target); got != "no-store" {
+		t.Fatalf("cpa-manager-plus error cache control = %q, want no-store", got)
+	}
+}
+
+func TestCPAManagerPlusRootPathsAreRewrittenUnderBridge(t *testing.T) {
+	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
+	body := []byte(`axios.get("/usage-service/info");fetch("/v0/management/usage");fetch("/status");`)
+
+	got := string(replaceSidecarAbsolutePaths(body, target))
+	want := `axios.get("/cpa/usage-service/info");fetch("/cpa/v0/management/usage");fetch("/cpa/status");`
+	if got != want {
+		t.Fatalf("replaceSidecarAbsolutePaths() = %q, want %q", got, want)
 	}
 }

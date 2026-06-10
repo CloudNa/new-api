@@ -269,6 +269,7 @@ export type SystemUpdateComponent =
   | 'new-api'
   | 'gpt-load'
   | 'cliproxyapi'
+  | 'cpa-manager-plus'
 
 export type SystemRollbackComponent = Exclude<SystemUpdateComponent, 'all'>
 
@@ -315,6 +316,7 @@ export type SystemUpdateSmoke = {
   new_api_healthy: boolean
   gpt_load_healthy: boolean
   cliproxyapi_ready: boolean
+  cpa_manager_plus_ready?: boolean
   sidecar_bridge_sources_ok?: boolean
   response_cache_sources_ok?: boolean
   output_policy_sources_ok?: boolean

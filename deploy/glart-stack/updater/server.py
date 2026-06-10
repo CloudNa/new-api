@@ -21,8 +21,8 @@ COMPOSE_FILE = os.environ.get("GLART_STACK_COMPOSE_FILE", "compose.yml")
 SCRIPT = ROOT / "deploy/glart-stack/scripts/update-glart-stack.sh"
 LOG_LIMIT = 200
 BACKUP_DIR = Path(os.environ.get("GLART_STACK_BACKUP_DIR", str(COMPOSE_DIR / "runtime/backups")))
-VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi"}
-VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi"}
+VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
+VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
 
 state_lock = threading.Lock()
 state = {
@@ -221,6 +221,7 @@ def smoke() -> dict:
         "new_api_healthy": False,
         "gpt_load_healthy": False,
         "cliproxyapi_ready": False,
+        "cpa_manager_plus_ready": False,
         "sidecar_bridge_sources_ok": False,
         "response_cache_sources_ok": False,
         "output_policy_sources_ok": False,
@@ -235,6 +236,7 @@ def smoke() -> dict:
         result["new_api_healthy"], result["status"], result["content_type"] = http_status_ok("http://new-api:3000/api/status")
         result["gpt_load_healthy"] = http_ok("http://gpt-load:3001/health")
         result["cliproxyapi_ready"] = http_ok("http://cliproxyapi:8317/management.html")
+        result["cpa_manager_plus_ready"] = http_ok("http://cpa-manager-plus:18317/health")
         result["sidecar_bridge_sources_ok"] = custom_bridge_sources_ok()
         result["response_cache_sources_ok"] = response_cache_sources_ok()
         result["output_policy_sources_ok"] = output_policy_sources_ok()
@@ -247,6 +249,7 @@ def smoke() -> dict:
                 result["new_api_healthy"],
                 result["gpt_load_healthy"],
                 result["cliproxyapi_ready"],
+                result["cpa_manager_plus_ready"],
                 result["sidecar_bridge_sources_ok"],
                 result["response_cache_sources_ok"],
                 result["output_policy_sources_ok"],
@@ -283,10 +286,12 @@ def custom_bridge_sources_ok() -> bool:
             [
                 '"/gl"' in web_router,
                 '"/cpa"' in web_router,
+                '"/cpa-native"' in web_router,
                 "GPT-Load" in top_nav,
-                "CLIProxyAPI" in top_nav,
+                "CPA Manager Plus" in top_nav,
                 "GPT_LOAD_INTERNAL_URL" in controller,
                 "CLIPROXYAPI_INTERNAL_URL" in controller,
+                "CPA_MANAGER_PLUS_INTERNAL_URL" in controller,
             ]
         )
     except Exception:

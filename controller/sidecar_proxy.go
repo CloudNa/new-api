@@ -19,6 +19,8 @@ const (
 	gptLoadBridgeBrowserToken = "glart-new-api-gpt-load-bridge"
 	cpaBridgeManagementKey    = "SIDECAR_CLIPROXYAPI_MANAGEMENT_KEY"
 	cpaBridgeBrowserToken     = "glart-new-api-cliproxyapi-bridge"
+	cpaManagerBridgeAdminKey  = "SIDECAR_CPA_MANAGER_PLUS_ADMIN_KEY"
+	cpaManagerBridgeToken     = "glart-new-api-cpa-manager-plus-bridge"
 )
 
 type sidecarProxyTarget struct {
@@ -32,7 +34,15 @@ func GPTLoadProxy(c *gin.Context) {
 }
 
 func CLIProxyAPIProxy(c *gin.Context) {
-	proxySidecarByService(c, "cliproxyapi", "/cpa")
+	proxySidecarByService(c, "cliproxyapi", "/cpa-native")
+}
+
+func CPAManagerPlusProxy(c *gin.Context) {
+	proxySidecarByService(c, "cpa-manager-plus", "/cpa")
+}
+
+func CPAManagerPlusRootProxy(c *gin.Context) {
+	proxySidecarByService(c, "cpa-manager-plus", "")
 }
 
 func proxySidecarByService(c *gin.Context, service string, prefix string) {
@@ -67,6 +77,8 @@ func sidecarProxyBaseURL(service string) string {
 		return envOrDefault("GPT_LOAD_INTERNAL_URL", "http://gpt-load:3001")
 	case "cliproxyapi":
 		return envOrDefault("CLIPROXYAPI_INTERNAL_URL", "http://cliproxyapi:8317")
+	case "cpa-manager-plus":
+		return envOrDefault("CPA_MANAGER_PLUS_INTERNAL_URL", "http://cpa-manager-plus:18317")
 	default:
 		return ""
 	}
@@ -135,7 +147,7 @@ func normalizeSidecarRequestPath(requestPath string, target sidecarProxyTarget) 
 		requestPath = "/"
 	}
 
-	if target.service == "cliproxyapi" && requestPath == "/" {
+	if (target.service == "cliproxyapi" || target.service == "cpa-manager-plus") && requestPath == "/" {
 		return "/management.html"
 	}
 
@@ -198,7 +210,23 @@ func applySidecarBridgeAuth(req *http.Request, target sidecarProxyTarget) {
 			strings.HasPrefix(req.URL.Path, "/v0/management") {
 			req.Header.Set("Authorization", "Bearer "+managementKey)
 		}
+	case "cpa-manager-plus":
+		adminKey := strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey))
+		if adminKey == "" {
+			return
+		}
+		if req.Header.Get("Authorization") == "Bearer "+cpaManagerBridgeToken ||
+			shouldInjectCPAManagerAdminAuth(req.URL.Path) {
+			req.Header.Set("Authorization", "Bearer "+adminKey)
+		}
 	}
+}
+
+func shouldInjectCPAManagerAdminAuth(path string) bool {
+	return path == "/status" ||
+		path == "/setup" ||
+		path == "/usage-service/config" ||
+		strings.HasPrefix(path, "/v0/management/")
 }
 
 func replaceBridgeQueryToken(req *http.Request, realToken string, browserToken string) {
@@ -301,6 +329,14 @@ func shouldPassThroughSidecarBody(requestPath string, target sidecarProxyTarget)
 			strings.HasSuffix(normalizedPath, ".webp") ||
 			strings.HasSuffix(normalizedPath, ".ico") ||
 			strings.HasSuffix(normalizedPath, ".woff2")
+	case "cpa-manager-plus":
+		return strings.HasSuffix(normalizedPath, ".svg") ||
+			strings.HasSuffix(normalizedPath, ".png") ||
+			strings.HasSuffix(normalizedPath, ".jpg") ||
+			strings.HasSuffix(normalizedPath, ".jpeg") ||
+			strings.HasSuffix(normalizedPath, ".webp") ||
+			strings.HasSuffix(normalizedPath, ".ico") ||
+			strings.HasSuffix(normalizedPath, ".woff2")
 	default:
 		return false
 	}
@@ -319,7 +355,7 @@ func sidecarBodyCacheControl(contentType string, statusCode int, target sidecarP
 		return "no-store"
 	}
 	contentType = strings.ToLower(contentType)
-	if target.service == "cliproxyapi" && strings.Contains(contentType, "text/html") {
+	if (target.service == "cliproxyapi" || target.service == "cpa-manager-plus") && strings.Contains(contentType, "text/html") {
 		return "private, max-age=300"
 	}
 	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "text/x-component") {
@@ -380,6 +416,9 @@ func replaceSidecarAbsolutePaths(body []byte, target sidecarProxyTarget) []byte 
 	if target.service == "gpt-load" {
 		rewritten = rewriteGPTLoadAPIRootPath(rewritten, prefix)
 	}
+	if target.service == "cpa-manager-plus" {
+		rewritten = rewriteCPAManagerPlusRootPaths(rewritten, prefix)
+	}
 	rewritten = rewriteRelativeAssetDeps(rewritten, prefix)
 	return []byte(rewritten)
 }
@@ -429,6 +468,21 @@ func rewriteGPTLoadAPIRootPath(value string, prefix string) string {
 	return value
 }
 
+func rewriteCPAManagerPlusRootPaths(value string, prefix string) string {
+	for _, path := range []string{
+		"/usage-service/info",
+		"/usage-service/config",
+		"/v0/management/",
+		"/status",
+		"/setup",
+	} {
+		for _, quote := range []string{`"`, `'`, "`"} {
+			value = strings.ReplaceAll(value, quote+path, quote+prefix+path)
+		}
+	}
+	return value
+}
+
 func injectSidecarBridgeState(body []byte, contentType string, target sidecarProxyTarget) []byte {
 	if !strings.Contains(strings.ToLower(contentType), "text/html") {
 		return body
@@ -445,7 +499,13 @@ func injectSidecarBridgeState(body []byte, contentType string, target sidecarPro
 		if strings.TrimSpace(os.Getenv(cpaBridgeManagementKey)) == "" {
 			return body
 		}
-		script := `<script>(function(){try{var payload={state:{apiBase:window.location.origin+"/cpa",managementKey:"` + cpaBridgeBrowserToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,serverRuntimeKind:"unknown"},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));}catch(e){}})();</script>`
+		script := `<script>(function(){try{var payload={state:{apiBase:window.location.origin+"` + target.prefix + `",managementKey:"` + cpaBridgeBrowserToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,serverRuntimeKind:"unknown"},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));}catch(e){}})();</script>`
+		return injectHTMLHeadScript(body, script)
+	case "cpa-manager-plus":
+		if strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey)) == "" {
+			return body
+		}
+		script := `<script>(function(){try{var base=window.location.origin;var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
 		return injectHTMLHeadScript(body, script)
 	default:
 		return body

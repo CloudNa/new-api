@@ -53,11 +53,13 @@ const UPDATE_COMPONENTS: SystemUpdateComponent[] = [
   'new-api',
   'gpt-load',
   'cliproxyapi',
+  'cpa-manager-plus',
 ]
 const ROLLBACK_COMPONENTS: SystemRollbackComponent[] = [
   'new-api',
   'gpt-load',
   'cliproxyapi',
+  'cpa-manager-plus',
 ]
 
 type PendingOperation =
@@ -94,6 +96,7 @@ export function UpdateCheckerSection({
     'new-api': [],
     'gpt-load': [],
     cliproxyapi: [],
+    'cpa-manager-plus': [],
   })
   const [precheck, setPrecheck] = useState<SystemUpdatePrecheck | null>(null)
   const [smoke, setSmoke] = useState<SystemUpdateSmoke | null>(null)
@@ -410,7 +413,7 @@ export function UpdateCheckerSection({
                 )
               : pendingOperation?.component === 'all'
                 ? t(
-                    'This will update new-api, GPT-Load, and CLIProxyAPI together while preserving separate backups for each component.'
+                    'This will update new-api, GPT-Load, CLIProxyAPI, and CPA Manager Plus together while preserving separate backups for each component.'
                   )
                 : t(
                     'This will update only the selected component and create a component-specific rollback point.'
@@ -520,6 +523,10 @@ export function UpdateCheckerSection({
               <HealthRow
                 label={t('CLIProxyAPI health')}
                 ok={smoke.cliproxyapi_ready}
+              />
+              <HealthRow
+                label={t('CPA Manager Plus health')}
+                ok={smoke.cpa_manager_plus_ready ?? false}
               />
               <HealthRow
                 label={t('Sidecar bridge sources')}
@@ -647,5 +654,7 @@ function getSystemUpdateComponentLabel(
       return 'GPT-Load'
     case 'cliproxyapi':
       return 'CLIProxyAPI'
+    case 'cpa-manager-plus':
+      return 'CPA Manager Plus'
   }
 }

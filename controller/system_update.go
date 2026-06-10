@@ -53,6 +53,7 @@ type glartStackSmokeResult struct {
 	NewAPIHealthy          bool   `json:"new_api_healthy"`
 	GPTLoadHealthy         bool   `json:"gpt_load_healthy"`
 	CLIProxyAPIReady       bool   `json:"cliproxyapi_ready"`
+	CPAManagerPlusReady    bool   `json:"cpa_manager_plus_ready"`
 	SidecarBridgeSourcesOK bool   `json:"sidecar_bridge_sources_ok"`
 	ResponseCacheSourcesOK bool   `json:"response_cache_sources_ok"`
 	OutputPolicySourcesOK  bool   `json:"output_policy_sources_ok"`
@@ -93,16 +94,18 @@ type systemUpdateRollbackRequest struct {
 }
 
 var validSystemUpdateComponents = map[string]bool{
-	"all":         true,
-	"new-api":     true,
-	"gpt-load":    true,
-	"cliproxyapi": true,
+	"all":              true,
+	"new-api":          true,
+	"gpt-load":         true,
+	"cliproxyapi":      true,
+	"cpa-manager-plus": true,
 }
 
 var validSystemRollbackComponents = map[string]bool{
-	"new-api":     true,
-	"gpt-load":    true,
-	"cliproxyapi": true,
+	"new-api":          true,
+	"gpt-load":         true,
+	"cliproxyapi":      true,
+	"cpa-manager-plus": true,
 }
 
 func glartStackUpdaterConfig() (string, string, bool) {

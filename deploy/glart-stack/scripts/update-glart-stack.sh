@@ -55,7 +55,7 @@ load_env() {
 
 normalize_component() {
   case "$1" in
-    all|new-api|gpt-load|cliproxyapi) printf '%s' "$1" ;;
+    all|new-api|gpt-load|cliproxyapi|cpa-manager-plus) printf '%s' "$1" ;;
     *) log "invalid component: $1"; fail ;;
   esac
 }
@@ -65,6 +65,7 @@ component_service() {
     new-api) printf '%s' "new-api" ;;
     gpt-load) printf '%s' "gpt-load" ;;
     cliproxyapi) printf '%s' "cliproxyapi" ;;
+    cpa-manager-plus) printf '%s' "cpa-manager-plus" ;;
     *) printf '%s' "" ;;
   esac
 }
@@ -74,6 +75,7 @@ component_container() {
     new-api) printf '%s' "glart-new-api" ;;
     gpt-load) printf '%s' "glart-gpt-load" ;;
     cliproxyapi) printf '%s' "glart-cliproxyapi" ;;
+    cpa-manager-plus) printf '%s' "glart-cpa-manager-plus" ;;
     *) printf '%s' "" ;;
   esac
 }
@@ -83,6 +85,7 @@ component_image() {
     new-api) printf 'glart/new-api:%s' "${NEW_API_VERSION:-clean}" ;;
     gpt-load) printf '%s' "ghcr.io/tbphp/gpt-load:latest" ;;
     cliproxyapi) printf '%s' "eceasy/cli-proxy-api:latest" ;;
+    cpa-manager-plus) printf '%s' "seakee/cpa-manager-plus:latest" ;;
     *) printf '%s' "" ;;
   esac
 }
@@ -92,6 +95,7 @@ component_runtime_path() {
     new-api) printf '%s' "runtime/new-api" ;;
     gpt-load) printf '%s' "runtime/gpt-load" ;;
     cliproxyapi) printf '%s' "runtime/cliproxyapi" ;;
+    cpa-manager-plus) printf '%s' "runtime/cpa-manager-plus" ;;
     all) printf '%s' "runtime" ;;
     *) printf '%s' "" ;;
   esac
@@ -111,8 +115,11 @@ precheck_common() {
   require_file "$ROOT_DIR/service/output_policy.go"
   grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q '"/cpa-native"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
-  grep -q "CLIProxyAPI" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA Manager Plus" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA_MANAGER_PLUS_INTERNAL_URL" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "CPAManagerPlusProxy" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
   grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
@@ -193,8 +200,11 @@ git_update_and_tests() {
   require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.sh"
   grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q '"/cpa-native"' "$ROOT_DIR/router/web-router.go" || fail
   grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
-  grep -q "CLIProxyAPI" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA Manager Plus" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA_MANAGER_PLUS_INTERNAL_URL" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "CPAManagerPlusProxy" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
   grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
@@ -307,6 +317,11 @@ smoke_cliproxyapi() {
   retry_smoke "cliproxyapi" 30 2 docker exec glart-cliproxyapi wget -q --spider -T 10 -O /dev/null http://localhost:8317/management.html
 }
 
+smoke_cpa_manager_plus() {
+  STAGE="smoke-cpa-manager-plus"
+  retry_smoke "cpa-manager-plus" 30 2 docker exec glart-cpa-manager-plus wget -q -O - http://localhost:18317/health
+}
+
 optional_proxy_test_chat_smoke() {
   if [ -n "${GLART_SMOKE_API_KEY:-}" ] && [ -n "${GLART_SMOKE_MODEL:-}" ]; then
     STAGE="proxy-test-chat-smoke"
@@ -338,7 +353,7 @@ update_new_api() {
   STAGE="build-new-api"
   run compose build new-api
   STAGE="up-new-api"
-  run compose up -d --remove-orphans new-api redis gpt-load cliproxyapi caddy glart-stack-updater
+  run compose up -d --remove-orphans new-api redis gpt-load cliproxyapi cpa-manager-plus caddy glart-stack-updater
   if ! smoke_new_api; then
     rollback_after_failed_update new-api
   fi
@@ -369,6 +384,17 @@ update_cliproxyapi() {
   fi
 }
 
+update_cpa_manager_plus() {
+  create_backup cpa-manager-plus
+  STAGE="pull-cpa-manager-plus"
+  run compose pull cpa-manager-plus
+  STAGE="up-cpa-manager-plus"
+  run compose up -d --no-deps cpa-manager-plus
+  if ! smoke_cpa_manager_plus; then
+    rollback_after_failed_update cpa-manager-plus
+  fi
+}
+
 update_updater() {
   STAGE="build-updater"
   run compose build glart-stack-updater
@@ -380,6 +406,7 @@ update_all() {
   update_new_api
   update_gpt_load
   update_cliproxyapi
+  update_cpa_manager_plus
   update_updater
 }
 
@@ -430,6 +457,7 @@ rollback_component() {
     new-api) smoke_new_api ;;
     gpt-load) smoke_gpt_load ;;
     cliproxyapi) smoke_cliproxyapi ;;
+    cpa-manager-plus) smoke_cpa_manager_plus ;;
   esac
   log "$component rollback completed from $backup_dir"
 }
@@ -444,9 +472,11 @@ main() {
     update:new-api) update_new_api ;;
     update:gpt-load) update_gpt_load ;;
     update:cliproxyapi) update_cliproxyapi ;;
+    update:cpa-manager-plus) update_cpa_manager_plus ;;
     rollback:new-api) rollback_component new-api ;;
     rollback:gpt-load) rollback_component gpt-load ;;
     rollback:cliproxyapi) rollback_component cliproxyapi ;;
+    rollback:cpa-manager-plus) rollback_component cpa-manager-plus ;;
     *) log "unsupported action/component: $ACTION $COMPONENT"; fail ;;
   esac
   STAGE="done"

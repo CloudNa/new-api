@@ -34,11 +34,25 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 		gptLoad.Any("", controller.GPTLoadProxy)
 		gptLoad.Any("/*path", controller.GPTLoadProxy)
 	}
-	cliProxyAPI := router.Group("/cpa")
+	cpaManagerPlus := router.Group("/cpa")
+	cpaManagerPlus.Use(middleware.RootSessionAuth())
+	{
+		cpaManagerPlus.Any("", controller.CPAManagerPlusProxy)
+		cpaManagerPlus.Any("/*path", controller.CPAManagerPlusProxy)
+	}
+	cliProxyAPI := router.Group("/cpa-native")
 	cliProxyAPI.Use(middleware.RootSessionAuth())
 	{
 		cliProxyAPI.Any("", controller.CLIProxyAPIProxy)
 		cliProxyAPI.Any("/*path", controller.CLIProxyAPIProxy)
+	}
+	cpaManagerPlusRoot := router.Group("")
+	cpaManagerPlusRoot.Use(middleware.RootSessionAuth())
+	{
+		cpaManagerPlusRoot.Any("/usage-service/*path", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/v0/management/*path", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/status", controller.CPAManagerPlusRootProxy)
+		cpaManagerPlusRoot.Any("/setup", controller.CPAManagerPlusRootProxy)
 	}
 	router.Use(middleware.Cache())
 	router.Use(static.Serve("/", themeFS))
