@@ -88,3 +88,30 @@ func TestCLIProxyAPIManagementPrefixIsNotDoubled(t *testing.T) {
 		t.Fatalf("replaceSidecarAbsolutePaths() = %q, want %q", got, want)
 	}
 }
+
+func TestGPTLoadAssetsAreNotPassedThroughCompressed(t *testing.T) {
+	target := sidecarProxyTarget{prefix: "/gl", service: "gpt-load"}
+
+	for _, path := range []string{
+		"/gl/assets/index-BqwwA4bP.js",
+		"/gl/assets/Dashboard-DTtdD9k4.js",
+		"/gl/assets/index-B_l-oE-2.css",
+	} {
+		t.Run(path, func(t *testing.T) {
+			if shouldPassThroughSidecarBody(path, target) {
+				t.Fatalf("gpt-load asset %q should be decompressed by the bridge", path)
+			}
+		})
+	}
+}
+
+func TestGPTLoadRewrittenAssetsAreNotCached(t *testing.T) {
+	target := sidecarProxyTarget{prefix: "/gl", service: "gpt-load"}
+
+	if got := sidecarBodyCacheControl("text/javascript", http.StatusOK, target); got != "no-store" {
+		t.Fatalf("gpt-load javascript cache control = %q, want no-store", got)
+	}
+	if got := sidecarBodyCacheControl("text/css", http.StatusOK, target); got != "no-store" {
+		t.Fatalf("gpt-load css cache control = %q, want no-store", got)
+	}
+}

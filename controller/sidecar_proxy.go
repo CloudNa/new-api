@@ -258,7 +258,7 @@ func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, passThro
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
 	resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
-	resp.Header.Set("Cache-Control", sidecarBodyCacheControl(contentType, resp.StatusCode))
+	resp.Header.Set("Cache-Control", sidecarBodyCacheControl(contentType, resp.StatusCode, target))
 	resp.Header.Del("Etag")
 	resp.Header.Del("Last-Modified")
 	resp.Header.Del("Content-Encoding")
@@ -292,11 +292,7 @@ func shouldPassThroughSidecarBody(requestPath string, target sidecarProxyTarget)
 
 	switch target.service {
 	case "gpt-load":
-		if !strings.HasPrefix(normalizedPath, "/assets/") {
-			return false
-		}
-		name := normalizedPath[strings.LastIndex(normalizedPath, "/")+1:]
-		return !strings.HasPrefix(name, "index-")
+		return false
 	case "cliproxyapi":
 		return strings.HasSuffix(normalizedPath, ".svg") ||
 			strings.HasSuffix(normalizedPath, ".png") ||
@@ -318,8 +314,11 @@ func shouldRewriteSidecarBody(contentType string) bool {
 		strings.Contains(contentType, "text/x-component")
 }
 
-func sidecarBodyCacheControl(contentType string, statusCode int) string {
+func sidecarBodyCacheControl(contentType string, statusCode int, target sidecarProxyTarget) string {
 	if statusCode >= http.StatusBadRequest {
+		return "no-store"
+	}
+	if target.service == "gpt-load" {
 		return "no-store"
 	}
 	contentType = strings.ToLower(contentType)
