@@ -435,7 +435,8 @@ func injectSidecarBridgeState(body []byte, contentType string, target sidecarPro
 		if strings.TrimSpace(os.Getenv(gptLoadBridgeAuthKey)) == "" {
 			return body
 		}
-		return injectHTMLHeadScript(body, `<script>try{window.localStorage.setItem("authKey","`+gptLoadBridgeBrowserToken+`")}catch(e){}</script>`)
+		script := `<script>(function(){try{window.localStorage.setItem("authKey","` + gptLoadBridgeBrowserToken + `");window.localStorage.setItem("glart:sidecar:gpt-load:bridge","new-api");}catch(e){}})();</script>`
+		return injectHTMLHeadScript(body, script)
 	case "cliproxyapi":
 		if strings.TrimSpace(os.Getenv(cpaBridgeManagementKey)) == "" {
 			return body
