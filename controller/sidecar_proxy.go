@@ -492,10 +492,6 @@ func replaceSidecarAbsolutePaths(body []byte, target sidecarProxyTarget) []byte 
 	if target.service == "gpt-load" {
 		rewritten = rewriteGPTLoadAPIRootPath(rewritten, prefix)
 	}
-	if target.service == "cpa-manager-plus" {
-		rewritten = rewriteCPAManagerPlusAPIRootPath(rewritten, prefix)
-		rewritten = rewriteCPAManagerPlusHashRoutes(rewritten, prefix)
-	}
 	rewritten = rewriteRelativeAssetDeps(rewritten, prefix)
 	return []byte(rewritten)
 }
@@ -543,28 +539,6 @@ func rewriteGPTLoadAPIRootPath(value string, prefix string) string {
 		value = strings.ReplaceAll(value, quote+"/api"+quote, quote+prefix+"/api"+quote)
 	}
 	return value
-}
-
-func rewriteCPAManagerPlusAPIRootPath(value string, prefix string) string {
-	paths := append([]string{
-		"/setup",
-		"/status",
-		"/usage-service",
-		"/v0/management",
-	}, cpaManagerCPAProxyPaths...)
-
-	for _, quote := range []string{`"`, `'`, "`"} {
-		for _, path := range paths {
-			value = strings.ReplaceAll(value, quote+path+quote, quote+prefix+path+quote)
-			value = strings.ReplaceAll(value, quote+path+"/", quote+prefix+path+"/")
-			value = strings.ReplaceAll(value, quote+path+"?", quote+prefix+path+"?")
-		}
-	}
-	return value
-}
-
-func rewriteCPAManagerPlusHashRoutes(value string, prefix string) string {
-	return strings.ReplaceAll(value, "#"+prefix+"/", "#/")
 }
 
 func injectSidecarBridgeState(body []byte, contentType string, target sidecarProxyTarget) []byte {
