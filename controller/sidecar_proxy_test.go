@@ -204,10 +204,21 @@ func TestCPAManagerPlusBridgeStateUsesPrefixedAPIBase(t *testing.T) {
 	body := []byte(`<html><head></head><body></body></html>`)
 
 	got := string(injectSidecarBridgeState(body, "text/html; charset=utf-8", target))
-	if !strings.Contains(got, `var base=window.location.origin+"/cpa"`) {
+	if !strings.Contains(got, `var prefix="/cpa"`) || !strings.Contains(got, `var base=window.location.origin+prefix`) {
 		t.Fatalf("cpa-manager-plus bridge base should use /cpa prefix: %s", got)
 	}
 	if strings.Contains(got, `var base=window.location.origin;`) {
 		t.Fatalf("cpa-manager-plus bridge base should not use root origin: %s", got)
+	}
+	for _, want := range []string{
+		`window.fetch=function`,
+		`xhr.prototype.open=function`,
+		`"/usage-service"`,
+		`"/v0/management"`,
+		cpaManagerBridgeToken,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("cpa-manager-plus bridge script missing %q: %s", want, got)
+		}
 	}
 }

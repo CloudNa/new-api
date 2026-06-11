@@ -563,11 +563,26 @@ func injectSidecarBridgeState(body []byte, contentType string, target sidecarPro
 		if strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey)) == "" {
 			return body
 		}
-		script := `<script>(function(){try{var base=window.location.origin+"` + target.prefix + `";var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
+		script := buildCPAManagerPlusBridgeScript(target.prefix)
 		return injectHTMLHeadScript(body, script)
 	default:
 		return body
 	}
+}
+
+func buildCPAManagerPlusBridgeScript(prefix string) string {
+	paths := append([]string{
+		"/setup",
+		"/status",
+		"/usage-service",
+		"/v0/management",
+	}, cpaManagerCPAProxyPaths...)
+	for i, path := range paths {
+		paths[i] = `"` + path + `"`
+	}
+	pathList := strings.Join(paths, ",")
+
+	return `<script>(function(){try{var prefix="` + prefix + `";var apiPaths=[` + pathList + `];function shouldPrefixPath(path){if(!path||path.indexOf(prefix+"/")===0){return false;}for(var i=0;i<apiPaths.length;i++){var p=apiPaths[i];if(path===p||path.indexOf(p+"/")===0||path.indexOf(p+"?")===0){return true;}}return false;}function prefixURL(value){try{if(typeof value!=="string"||value.indexOf("#")===0){return value;}if(value.indexOf("/")===0){return shouldPrefixPath(value)?prefix+value:value;}var origin=window.location.origin;if(value.indexOf(origin+"/")===0){var path=value.slice(origin.length);return shouldPrefixPath(path)?origin+prefix+path:value;}return value;}catch(e){return value;}}var originalFetch=window.fetch;if(originalFetch&&!window.__glartCpaManagerFetchPatched){window.__glartCpaManagerFetchPatched=true;window.fetch=function(input,init){try{if(typeof input==="string"){input=prefixURL(input);}else if(input&&input.url){var next=prefixURL(input.url);if(next!==input.url){input=new Request(next,input);}}}catch(e){}return originalFetch.call(this,input,init);};}var xhr=window.XMLHttpRequest;if(xhr&&xhr.prototype&&xhr.prototype.open&&!xhr.prototype.__glartCpaManagerOpenPatched){var originalOpen=xhr.prototype.open;xhr.prototype.__glartCpaManagerOpenPatched=true;xhr.prototype.open=function(){try{arguments[1]=prefixURL(arguments[1]);}catch(e){}return originalOpen.apply(this,arguments);};}var base=window.location.origin+prefix;var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
 }
 
 func injectHTMLHeadScript(body []byte, script string) []byte {
