@@ -49,10 +49,7 @@ def has_root_auth() -> bool:
 def root_headers() -> dict[str, str]:
     headers: dict[str, str] = {}
     if ROOT_ACCESS_TOKEN:
-        if ROOT_ACCESS_TOKEN.lower().startswith("bearer "):
-            headers["Authorization"] = ROOT_ACCESS_TOKEN
-        else:
-            headers["Authorization"] = "Bearer " + ROOT_ACCESS_TOKEN
+        headers["Authorization"] = ROOT_ACCESS_TOKEN
     if ROOT_COOKIE:
         headers["Cookie"] = ROOT_COOKIE
     if ROOT_USER_ID:

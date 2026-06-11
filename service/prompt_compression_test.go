@@ -499,6 +499,82 @@ func TestApplyPromptCompressionForRelayWritesDiagnostics(t *testing.T) {
 	require.Equal(t, info.PromptCompressionStats.EngineBreakdown, other[profit.KeyCompressionEngineBreakdown])
 }
 
+func TestPromptCompressionDiagnosticsFeedProfitObservationFields(t *testing.T) {
+	withPromptCompressionOptionMap(t, promptcompress.Settings{})
+	info := newPromptCompressionRelayInfo(profit.DefaultObserveGroup)
+	info.PromptCompressionStats = &promptcompress.Stats{
+		Mode:                   promptcompress.ModeStacked,
+		Engine:                 "stacked",
+		Timestamp:              123456,
+		OriginalTokens:         200,
+		CompressedTokens:       120,
+		CompressionSavedTokens: 80,
+		SavingsPercent:         40,
+		RulesApplied:           []string{"docker-build:strip", "caveman"},
+		PreservedBlockCount:    2,
+		RedactedSecretCount:    1,
+		EngineBreakdown: []promptcompress.EngineBreakdownItem{
+			{Engine: "rtk", OriginalTokens: 160, CompressedTokens: 100},
+			{Engine: "caveman", OriginalTokens: 100, CompressedTokens: 80},
+		},
+	}
+	other := map[string]interface{}{}
+
+	saved := injectPromptCompressionOther(other, info)
+	bestMargin := 0.25
+	profit.AppendObservation(other, profit.ObservationInput{
+		Group:                          profit.DefaultObserveGroup,
+		ChannelID:                      7,
+		ChannelName:                    "CLIProxyAPI proxy-test",
+		ModelName:                      "gpt-5.5",
+		BillablePromptTokens:           200,
+		BillableCompletionTokens:       30,
+		UpstreamActualPromptTokens:     120,
+		UpstreamActualCompletionTokens: 30,
+		UserQuota:                      500000,
+		CompressionSavedTokens:         saved,
+		RouteDecision: &profit.RouteDecision{
+			Mode:                  profit.ModeObserve,
+			CandidateCount:        2,
+			SelectedChannelID:     7,
+			SelectedMarginRank:    2,
+			BestChannelID:         9,
+			BestChannelName:       "lower-cost-channel",
+			BestExpectedMarginUSD: &bestMargin,
+			WouldPreferDifferent:  true,
+			LiveRoutingUsed:       false,
+			BypassReason:          "observe_only",
+		},
+		OutputPolicyDecision: &profit.OutputPolicyDecision{
+			Mode:               profit.ModeObserve,
+			CompletionTokens:   30,
+			DefaultMaxTokens:   1024,
+			HardMaxTokens:      2048,
+			WouldCap:           false,
+			ObserveOnly:        true,
+			LiveEnforced:       false,
+			RequestedMaxTokens: 4096,
+			AppliedMaxTokens:   2048,
+		},
+	})
+
+	require.Equal(t, 80, saved)
+	require.Equal(t, "stacked", other[profit.KeyCompressionMode])
+	require.Equal(t, []string{"docker-build:strip", "caveman"}, other[profit.KeyCompressionRulesApplied])
+	require.Equal(t, 2, other[profit.KeyCompressionPreservedBlocks])
+	require.Equal(t, 1, other[profit.KeyCompressionRedactedSecrets])
+	require.Equal(t, 80, other[profit.KeyCompressionSavedTokens])
+	require.Equal(t, 200, other[profit.KeyBillablePromptTokens])
+	require.Equal(t, 120, other[profit.KeyUpstreamActualPromptTokens])
+	require.Equal(t, profit.ModeObserve, other[profit.KeyRouteMode])
+	require.Equal(t, true, other[profit.KeyRouteWouldPreferDifferent])
+	require.Equal(t, "observe_only", other[profit.KeyRouteBypassReason])
+	require.Equal(t, profit.ModeObserve, other[profit.KeyOutputPolicyMode])
+	require.Equal(t, 30, other[profit.KeyOutputPolicyCompletionTokens])
+	require.Equal(t, true, other[profit.KeyOutputPolicyObserveOnly])
+	require.Equal(t, false, other[profit.KeyOutputPolicyLiveEnforced])
+}
+
 func TestMergePromptCompressionStatsMetadataIncludesDiagnostics(t *testing.T) {
 	stats := promptcompress.Stats{}
 	stepStats := promptcompress.Stats{
