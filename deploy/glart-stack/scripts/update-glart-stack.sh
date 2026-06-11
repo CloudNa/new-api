@@ -302,36 +302,60 @@ retry_smoke() {
   return 1
 }
 
+stack_curl() {
+  url="$1"
+  shift
+
+  if [ -f /.dockerenv ]; then
+    curl -fsS --connect-timeout 5 --max-time "${GLART_STACK_SMOKE_MAX_TIME:-20}" "$@" "$url"
+  else
+    docker exec glart-stack-updater curl -fsS --connect-timeout 5 --max-time "${GLART_STACK_SMOKE_MAX_TIME:-20}" "$@" "$url"
+  fi
+}
+
+stack_curl_ok() {
+  url="$1"
+  shift
+  stack_curl "$url" "$@" >/dev/null
+}
+
+stack_curl_grep() {
+  url="$1"
+  pattern="$2"
+  shift 2
+  stack_curl "$url" "$@" | grep -q "$pattern"
+}
+
 smoke_new_api() {
   STAGE="smoke-new-api"
-  retry_smoke "new-api" 40 3 sh -c "docker exec glart-new-api wget -q -O - http://localhost:3000/api/status | grep -q '\"success\"[[:space:]]*:[[:space:]]*true'"
+  retry_smoke "new-api" 40 3 stack_curl_grep http://new-api:3000/api/status '"success"[[:space:]]*:[[:space:]]*true'
 }
 
 smoke_gpt_load() {
   STAGE="smoke-gpt-load"
-  retry_smoke "gpt-load" 30 2 docker exec glart-gpt-load wget -q --spider -T 10 -O /dev/null http://localhost:3001/health
+  retry_smoke "gpt-load" 30 2 stack_curl_ok http://gpt-load:3001/health
 }
 
 smoke_cliproxyapi() {
   STAGE="smoke-cliproxyapi"
-  retry_smoke "cliproxyapi" 30 2 docker exec glart-cliproxyapi wget -q --spider -T 10 -O /dev/null http://localhost:8317/management.html
+  retry_smoke "cliproxyapi" 30 2 stack_curl_ok http://cliproxyapi:8317/management.html
 }
 
 smoke_cpa_manager_plus() {
   STAGE="smoke-cpa-manager-plus"
-  retry_smoke "cpa-manager-plus health" 30 2 docker exec glart-cpa-manager-plus wget -q -O - http://localhost:18317/health
-  retry_smoke "cpa-manager-plus manager info" 30 2 docker exec glart-cpa-manager-plus wget -q -O - http://localhost:18317/usage-service/info
+  retry_smoke "cpa-manager-plus health" 30 2 stack_curl_grep http://cpa-manager-plus:18317/health cpa-manager-plus
+  retry_smoke "cpa-manager-plus manager info" 30 2 stack_curl_ok http://cpa-manager-plus:18317/usage-service/info
 }
 
 optional_proxy_test_chat_smoke() {
   if [ -n "${GLART_SMOKE_API_KEY:-}" ] && [ -n "${GLART_SMOKE_MODEL:-}" ]; then
     STAGE="proxy-test-chat-smoke"
     log "running optional proxy-test chat smoke with configured model"
-    run docker exec glart-new-api wget -q -O - \
-      --header="Authorization: Bearer $GLART_SMOKE_API_KEY" \
-      --header="Content-Type: application/json" \
-      --post-data="{\"model\":\"$GLART_SMOKE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Return exactly: ok\"}],\"max_tokens\":8}" \
-      http://localhost:3000/v1/chat/completions
+    stack_curl_ok \
+      http://new-api:3000/v1/chat/completions \
+      -H "Authorization: Bearer $GLART_SMOKE_API_KEY" \
+      -H "Content-Type: application/json" \
+      --data "{\"model\":\"$GLART_SMOKE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Return exactly: ok\"}],\"max_tokens\":8}"
   else
     log "optional proxy-test chat smoke skipped: GLART_SMOKE_API_KEY or GLART_SMOKE_MODEL is not configured"
   fi

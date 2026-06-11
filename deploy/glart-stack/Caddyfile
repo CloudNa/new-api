@@ -3,7 +3,15 @@
 }
 
 {$GLART_DOMAIN} {
-	encode zstd gzip
+	@relay_api {
+		path /v1/* /v1beta/* /pg/* /mj/* /suno/* /kling/v1/* /jimeng/*
+	}
+
+	@compressible {
+		not path /v1/* /v1beta/* /pg/* /mj/* /suno/* /kling/v1/* /jimeng/*
+	}
+
+	encode @compressible zstd gzip
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
@@ -11,5 +19,18 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 	}
 
-	reverse_proxy new-api:3000
+	handle @relay_api {
+		reverse_proxy new-api:3000 {
+			flush_interval -1
+			header_down Cache-Control "no-store, no-cache, must-revalidate, private, max-age=0"
+			header_down X-Accel-Buffering "no"
+			header_down -Alt-Svc
+		}
+	}
+
+	handle {
+		reverse_proxy new-api:3000 {
+			header_down -Alt-Svc
+		}
+	}
 }
