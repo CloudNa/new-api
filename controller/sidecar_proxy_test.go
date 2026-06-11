@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -193,5 +194,20 @@ func TestCPAManagerPlusAPILiteralsStayRelativeToConfiguredBase(t *testing.T) {
 	want := `const MANAGEMENT_API_PREFIX="/v0/management";const API_ENDPOINTS={CONFIG:"/config",AUTH_FILES:"/auth-files"};`
 	if got != want {
 		t.Fatalf("replaceSidecarAbsolutePaths() = %q, want %q", got, want)
+	}
+}
+
+func TestCPAManagerPlusBridgeStateUsesPrefixedAPIBase(t *testing.T) {
+	t.Setenv(cpaManagerBridgeAdminKey, "real-cpa-manager-admin-key")
+
+	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
+	body := []byte(`<html><head></head><body></body></html>`)
+
+	got := string(injectSidecarBridgeState(body, "text/html; charset=utf-8", target))
+	if !strings.Contains(got, `var base=window.location.origin+"/cpa"`) {
+		t.Fatalf("cpa-manager-plus bridge base should use /cpa prefix: %s", got)
+	}
+	if strings.Contains(got, `var base=window.location.origin;`) {
+		t.Fatalf("cpa-manager-plus bridge base should not use root origin: %s", got)
 	}
 }

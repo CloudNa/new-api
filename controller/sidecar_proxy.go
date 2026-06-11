@@ -563,7 +563,7 @@ func injectSidecarBridgeState(body []byte, contentType string, target sidecarPro
 		if strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey)) == "" {
 			return body
 		}
-		script := `<script>(function(){try{var base=window.location.origin;var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
+		script := `<script>(function(){try{var base=window.location.origin+"` + target.prefix + `";var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
 		return injectHTMLHeadScript(body, script)
 	default:
 		return body
