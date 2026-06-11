@@ -1,10 +1,15 @@
 package controller
 
 import (
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestNormalizeSidecarRequestPath(t *testing.T) {
@@ -230,4 +235,156 @@ func TestCPAManagerPlusBridgeStateUsesPrefixedAPIBase(t *testing.T) {
 			t.Fatalf("cpa-manager-plus bridge script missing %q: %s", want, got)
 		}
 	}
+}
+
+func TestCPAManagerPlusHTMLShellCacheOnlyTargetsManagementShell(t *testing.T) {
+	t.Setenv(cpaManagerBridgeAdminKey, "real-cpa-manager-admin-key")
+	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
+
+	key, ok := sidecarHTMLShellCacheKey(target, "/", "text/html; charset=utf-8", http.StatusOK)
+	if !ok {
+		t.Fatal("cpa-manager-plus management shell should be cacheable")
+	}
+	if !strings.Contains(key, "bridge-on") {
+		t.Fatalf("cache key should include bridge state: %q", key)
+	}
+
+	for _, tt := range []struct {
+		name        string
+		requestPath string
+		contentType string
+		statusCode  int
+		target      sidecarProxyTarget
+	}{
+		{
+			name:        "dynamic config is not cached",
+			requestPath: "/config",
+			contentType: "application/json",
+			statusCode:  http.StatusOK,
+			target:      target,
+		},
+		{
+			name:        "non html management response is not cached",
+			requestPath: "/",
+			contentType: "application/json",
+			statusCode:  http.StatusOK,
+			target:      target,
+		},
+		{
+			name:        "error management response is not cached",
+			requestPath: "/",
+			contentType: "text/html",
+			statusCode:  http.StatusBadGateway,
+			target:      target,
+		},
+		{
+			name:        "gpt-load html is not cached by this shell cache",
+			requestPath: "/",
+			contentType: "text/html",
+			statusCode:  http.StatusOK,
+			target:      sidecarProxyTarget{prefix: "/gl", service: "gpt-load"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, ok := sidecarHTMLShellCacheKey(tt.target, tt.requestPath, tt.contentType, tt.statusCode); ok {
+				t.Fatalf("sidecarHTMLShellCacheKey(%q) should not be cacheable", tt.requestPath)
+			}
+		})
+	}
+}
+
+func TestCPAManagerPlusHTMLShellCacheStoresRewrittenShell(t *testing.T) {
+	resetSidecarHTMLShellCacheForTest(t)
+	t.Setenv(cpaManagerBridgeAdminKey, "real-cpa-manager-admin-key")
+	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/html; charset=utf-8"},
+		},
+		Body: io.NopCloser(strings.NewReader(`<html><head></head><body><a href="/management.html">Admin</a></body></html>`)),
+	}
+
+	if err := rewriteSidecarBody(resp, target, "/", false); err != nil {
+		t.Fatalf("rewriteSidecarBody() error = %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read rewritten body: %v", err)
+	}
+	if got := resp.Header.Get("X-Glart-Sidecar-Cache"); got != "MISS" {
+		t.Fatalf("cache header = %q, want MISS", got)
+	}
+	for _, want := range []string{
+		`href="/cpa/management.html"`,
+		`var prefix="/cpa"`,
+		cpaManagerBridgeToken,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("rewritten cached shell missing %q: %s", want, body)
+		}
+	}
+
+	key, ok := sidecarHTMLShellCacheKeyForRequest(target, "/")
+	if !ok {
+		t.Fatal("management shell cache key should be available")
+	}
+	entry, ok := getSidecarHTMLShellCache(key)
+	if !ok {
+		t.Fatal("rewritten management shell was not cached")
+	}
+	if !strings.Contains(string(entry.body), cpaManagerBridgeToken) {
+		t.Fatalf("cached shell missing bridge state: %s", entry.body)
+	}
+}
+
+func TestCPAManagerPlusHTMLShellCacheServesBeforeProxy(t *testing.T) {
+	resetSidecarHTMLShellCacheForTest(t)
+	t.Setenv(cpaManagerBridgeAdminKey, "real-cpa-manager-admin-key")
+	gin.SetMode(gin.TestMode)
+	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
+	key, ok := sidecarHTMLShellCacheKeyForRequest(target, "/")
+	if !ok {
+		t.Fatal("management shell cache key should be available")
+	}
+	setSidecarHTMLShellCache(key, []byte(`<html>cached cpa manager</html>`), "text/html; charset=utf-8", time.Now().Add(time.Minute))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/cpa", nil)
+	if !serveSidecarHTMLShellCache(c, target, "/") {
+		t.Fatal("expected cached management shell to be served")
+	}
+	if got := w.Header().Get("X-Glart-Sidecar-Cache"); got != "HIT" {
+		t.Fatalf("cache header = %q, want HIT", got)
+	}
+	if got := w.Body.String(); got != `<html>cached cpa manager</html>` {
+		t.Fatalf("cached body = %q", got)
+	}
+
+	for _, tt := range []struct {
+		name        string
+		method      string
+		path        string
+		requestPath string
+	}{
+		{name: "post root is not served from shell cache", method: http.MethodPost, path: "/cpa", requestPath: "/"},
+		{name: "dynamic config is not served from shell cache", method: http.MethodGet, path: "/cpa/config", requestPath: "/config"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(tt.method, tt.path, nil)
+			if serveSidecarHTMLShellCache(c, target, tt.requestPath) {
+				t.Fatalf("%s should not be served from html shell cache", tt.requestPath)
+			}
+		})
+	}
+}
+
+func resetSidecarHTMLShellCacheForTest(t *testing.T) {
+	t.Helper()
+	sidecarHTMLShellCache.Lock()
+	sidecarHTMLShellCache.items = make(map[string]sidecarHTMLShellCacheEntry)
+	sidecarHTMLShellCache.Unlock()
 }

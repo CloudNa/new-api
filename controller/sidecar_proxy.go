@@ -10,6 +10,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -82,6 +84,21 @@ var cpaManagerCPAProxyPaths = []string{
 	"/xai-auth-url",
 }
 
+const sidecarHTMLShellCacheTTL = 10 * time.Minute
+
+type sidecarHTMLShellCacheEntry struct {
+	body        []byte
+	contentType string
+	expiresAt   time.Time
+}
+
+var sidecarHTMLShellCache = struct {
+	sync.RWMutex
+	items map[string]sidecarHTMLShellCacheEntry
+}{
+	items: make(map[string]sidecarHTMLShellCacheEntry),
+}
+
 type sidecarProxyTarget struct {
 	baseURL *url.URL
 	prefix  string
@@ -144,6 +161,10 @@ func sidecarProxyBaseURL(service string) string {
 }
 
 func proxySidecarRequest(c *gin.Context, target sidecarProxyTarget, requestPath string) {
+	if serveSidecarHTMLShellCache(c, target, requestPath) {
+		return
+	}
+
 	passThroughBody := shouldPassThroughSidecarBody(requestPath, target)
 	proxy := httputil.NewSingleHostReverseProxy(target.baseURL)
 	proxy.Director = func(req *http.Request) {
@@ -166,7 +187,7 @@ func proxySidecarRequest(c *gin.Context, target sidecarProxyTarget, requestPath 
 	}
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		rewriteSidecarLocation(resp, target)
-		return rewriteSidecarBody(resp, target, passThroughBody)
+		return rewriteSidecarBody(resp, target, requestPath, passThroughBody)
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		w.Header().Set("Content-Type", "application/json")
@@ -344,7 +365,7 @@ func rewriteSidecarLocation(resp *http.Response, target sidecarProxyTarget) {
 	}
 }
 
-func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, passThroughBody bool) error {
+func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, requestPath string, passThroughBody bool) error {
 	resp.Header.Del("Content-Security-Policy")
 	resp.Header.Del("X-Frame-Options")
 	rewriteSidecarCookies(resp, target)
@@ -361,6 +382,22 @@ func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, passThro
 		return nil
 	}
 
+	cacheKey, useHTMLShellCache := sidecarHTMLShellCacheKey(target, requestPath, contentType, resp.StatusCode)
+	if useHTMLShellCache {
+		if entry, ok := getSidecarHTMLShellCache(cacheKey); ok {
+			_ = resp.Body.Close()
+			resp.Body = io.NopCloser(bytes.NewReader(entry.body))
+			resp.ContentLength = int64(len(entry.body))
+			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(entry.body)))
+			resp.Header.Set("Cache-Control", sidecarBodyCacheControl(contentType, resp.StatusCode, target))
+			resp.Header.Set("X-Glart-Sidecar-Cache", "HIT")
+			resp.Header.Del("Etag")
+			resp.Header.Del("Last-Modified")
+			resp.Header.Del("Content-Encoding")
+			return nil
+		}
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
@@ -370,6 +407,10 @@ func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, passThro
 	body = replaceSidecarAbsolutePaths(body, target)
 	body = rewriteSidecarRuntimeBody(body, resp.Header.Get("Content-Type"), target)
 	body = injectSidecarBridgeState(body, resp.Header.Get("Content-Type"), target)
+	if useHTMLShellCache {
+		setSidecarHTMLShellCache(cacheKey, body, contentType, time.Now().Add(sidecarHTMLShellCacheTTL))
+		resp.Header.Set("X-Glart-Sidecar-Cache", "MISS")
+	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
 	resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
@@ -378,6 +419,78 @@ func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, passThro
 	resp.Header.Del("Last-Modified")
 	resp.Header.Del("Content-Encoding")
 	return nil
+}
+
+func serveSidecarHTMLShellCache(c *gin.Context, target sidecarProxyTarget, requestPath string) bool {
+	if c.Request.Method != http.MethodGet {
+		return false
+	}
+	cacheKey, ok := sidecarHTMLShellCacheKeyForRequest(target, requestPath)
+	if !ok {
+		return false
+	}
+	entry, ok := getSidecarHTMLShellCache(cacheKey)
+	if !ok {
+		return false
+	}
+	c.Header("Cache-Control", sidecarBodyCacheControl(entry.contentType, http.StatusOK, target))
+	c.Header("X-Glart-Sidecar-Cache", "HIT")
+	c.Data(http.StatusOK, entry.contentType, entry.body)
+	return true
+}
+
+func sidecarHTMLShellCacheKey(target sidecarProxyTarget, requestPath string, contentType string, statusCode int) (string, bool) {
+	if statusCode != http.StatusOK {
+		return "", false
+	}
+	if !strings.Contains(strings.ToLower(contentType), "text/html") {
+		return "", false
+	}
+	return sidecarHTMLShellCacheKeyForRequest(target, requestPath)
+}
+
+func sidecarHTMLShellCacheKeyForRequest(target sidecarProxyTarget, requestPath string) (string, bool) {
+	if target.service != "cpa-manager-plus" {
+		return "", false
+	}
+	normalizedPath := normalizeSidecarRequestPath(requestPath, target)
+	if normalizedPath != "/management.html" {
+		return "", false
+	}
+	bridgeState := "bridge-off"
+	if strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey)) != "" {
+		bridgeState = "bridge-on"
+	}
+	return target.service + ":" + target.prefix + ":" + normalizedPath + ":" + bridgeState, true
+}
+
+func getSidecarHTMLShellCache(key string) (sidecarHTMLShellCacheEntry, bool) {
+	now := time.Now()
+	sidecarHTMLShellCache.RLock()
+	entry, ok := sidecarHTMLShellCache.items[key]
+	sidecarHTMLShellCache.RUnlock()
+	if !ok || now.After(entry.expiresAt) {
+		if ok {
+			sidecarHTMLShellCache.Lock()
+			if current, exists := sidecarHTMLShellCache.items[key]; exists && now.After(current.expiresAt) {
+				delete(sidecarHTMLShellCache.items, key)
+			}
+			sidecarHTMLShellCache.Unlock()
+		}
+		return sidecarHTMLShellCacheEntry{}, false
+	}
+	entry.body = append([]byte(nil), entry.body...)
+	return entry, true
+}
+
+func setSidecarHTMLShellCache(key string, body []byte, contentType string, expiresAt time.Time) {
+	sidecarHTMLShellCache.Lock()
+	sidecarHTMLShellCache.items[key] = sidecarHTMLShellCacheEntry{
+		body:        append([]byte(nil), body...),
+		contentType: contentType,
+		expiresAt:   expiresAt,
+	}
+	sidecarHTMLShellCache.Unlock()
 }
 
 func rewriteSidecarCookies(resp *http.Response, target sidecarProxyTarget) {
