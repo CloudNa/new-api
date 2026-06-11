@@ -37,6 +37,12 @@ func TestNormalizeSidecarRequestPath(t *testing.T) {
 			want:        "/v0/management/auth-files",
 		},
 		{
+			name:        "cpa-manager-plus usage statistics toggle uses management proxy",
+			target:      cpaManager,
+			requestPath: "/cpa/usage-statistics-enabled",
+			want:        "/v0/management/usage-statistics-enabled",
+		},
+		{
 			name:        "cliproxyapi native root opens management panel",
 			target:      cliProxyAPI,
 			requestPath: "/cpa-native",
@@ -214,6 +220,7 @@ func TestCPAManagerPlusBridgeStateUsesPrefixedAPIBase(t *testing.T) {
 		`window.fetch=function`,
 		`xhr.prototype.open=function`,
 		`"/usage-service"`,
+		`"/usage-statistics-enabled"`,
 		`"/v0/management"`,
 		cpaManagerBridgeToken,
 	} {
