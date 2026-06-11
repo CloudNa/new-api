@@ -222,6 +222,8 @@ func TestCPAManagerPlusBridgeStateUsesPrefixedAPIBase(t *testing.T) {
 		`"/usage-service"`,
 		`"/usage-statistics-enabled"`,
 		`"/v0/management"`,
+		`connectionStatus:"connected"`,
+		`connectionError:null`,
 		cpaManagerBridgeToken,
 	} {
 		if !strings.Contains(got, want) {
