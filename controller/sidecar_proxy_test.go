@@ -188,10 +188,10 @@ func TestCPAManagerPlusHTMLUsesShortPrivateCache(t *testing.T) {
 
 func TestCPAManagerPlusAPILiteralsUseBridgePrefix(t *testing.T) {
 	target := sidecarProxyTarget{prefix: "/cpa", service: "cpa-manager-plus"}
-	body := []byte(`const MANAGEMENT_API_PREFIX="/v0/management";const API_ENDPOINTS={CONFIG:"/config",AUTH_FILES:"/auth-files",INFO:"/usage-service/info",STATUS:"/status"};`)
+	body := []byte(`const MANAGEMENT_API_PREFIX="/v0/management";const API_ENDPOINTS={CONFIG:"/config",AUTH_FILES:"/auth-files",INFO:"/usage-service/info",STATUS:"/status"};const ROUTES={CONFIG:"#/config",AUTH_FILES:"#/auth-files",LOGS:"#/logs"};`)
 
 	got := string(replaceSidecarAbsolutePaths(body, target))
-	want := `const MANAGEMENT_API_PREFIX="/cpa/v0/management";const API_ENDPOINTS={CONFIG:"/cpa/config",AUTH_FILES:"/cpa/auth-files",INFO:"/cpa/usage-service/info",STATUS:"/cpa/status"};`
+	want := `const MANAGEMENT_API_PREFIX="/cpa/v0/management";const API_ENDPOINTS={CONFIG:"/cpa/config",AUTH_FILES:"/cpa/auth-files",INFO:"/cpa/usage-service/info",STATUS:"/cpa/status"};const ROUTES={CONFIG:"#/config",AUTH_FILES:"#/auth-files",LOGS:"#/logs"};`
 	if got != want {
 		t.Fatalf("replaceSidecarAbsolutePaths() = %q, want %q", got, want)
 	}

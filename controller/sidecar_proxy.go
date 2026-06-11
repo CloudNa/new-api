@@ -494,6 +494,7 @@ func replaceSidecarAbsolutePaths(body []byte, target sidecarProxyTarget) []byte 
 	}
 	if target.service == "cpa-manager-plus" {
 		rewritten = rewriteCPAManagerPlusAPIRootPath(rewritten, prefix)
+		rewritten = rewriteCPAManagerPlusHashRoutes(rewritten, prefix)
 	}
 	rewritten = rewriteRelativeAssetDeps(rewritten, prefix)
 	return []byte(rewritten)
@@ -560,6 +561,10 @@ func rewriteCPAManagerPlusAPIRootPath(value string, prefix string) string {
 		}
 	}
 	return value
+}
+
+func rewriteCPAManagerPlusHashRoutes(value string, prefix string) string {
+	return strings.ReplaceAll(value, "#"+prefix+"/", "#/")
 }
 
 func injectSidecarBridgeState(body []byte, contentType string, target sidecarProxyTarget) []byte {
