@@ -347,6 +347,17 @@ smoke_cpa_manager_plus() {
   retry_smoke "cpa-manager-plus manager info" 30 2 stack_curl_ok http://cpa-manager-plus:18317/usage-service/info
 }
 
+ensure_runtime_services() {
+  STAGE="ensure-runtime-services"
+  run compose up -d redis gpt-load cliproxyapi cpa-manager-plus caddy
+}
+
+smoke_runtime_services() {
+  smoke_gpt_load
+  smoke_cliproxyapi
+  smoke_cpa_manager_plus
+}
+
 optional_proxy_test_chat_smoke() {
   if [ -n "${GLART_SMOKE_API_KEY:-}" ] && [ -n "${GLART_SMOKE_MODEL:-}" ]; then
     STAGE="proxy-test-chat-smoke"
@@ -377,9 +388,13 @@ update_new_api() {
   git_update_and_tests
   STAGE="build-new-api"
   run compose build new-api
+  ensure_runtime_services
   STAGE="up-new-api"
-  run compose up -d --remove-orphans new-api redis gpt-load cliproxyapi cpa-manager-plus caddy glart-stack-updater
+  run compose up -d --no-deps new-api
   if ! smoke_new_api; then
+    rollback_after_failed_update new-api
+  fi
+  if ! smoke_runtime_services; then
     rollback_after_failed_update new-api
   fi
   if ! optional_proxy_test_chat_smoke; then
