@@ -48,6 +48,9 @@ func TestStreamStatus_SetEndReason_Concurrent(t *testing.T) {
 		StreamEndReasonScannerErr,
 		StreamEndReasonHandlerStop,
 		StreamEndReasonEOF,
+		StreamEndReasonUpstreamEOFWithoutTerminalEvent,
+		StreamEndReasonUpstreamReadError,
+		StreamEndReasonWriteFailed,
 		StreamEndReasonPanic,
 		StreamEndReasonPingFail,
 	}
@@ -135,8 +138,11 @@ func TestStreamStatus_IsNormalEnd(t *testing.T) {
 		normal bool
 	}{
 		{StreamEndReasonDone, true},
-		{StreamEndReasonEOF, true},
+		{StreamEndReasonEOF, false},
 		{StreamEndReasonHandlerStop, true},
+		{StreamEndReasonUpstreamEOFWithoutTerminalEvent, false},
+		{StreamEndReasonUpstreamReadError, false},
+		{StreamEndReasonWriteFailed, false},
 		{StreamEndReasonTimeout, false},
 		{StreamEndReasonClientGone, false},
 		{StreamEndReasonScannerErr, false},
@@ -173,6 +179,35 @@ func TestStreamStatus_Summary(t *testing.T) {
 	summary2 := s2.Summary()
 	assert.Contains(t, summary2, "reason=timeout")
 	assert.Contains(t, summary2, "soft_errors=2")
+}
+
+func TestStreamStatus_Snapshot_Diagnostics(t *testing.T) {
+	t.Parallel()
+
+	s := NewStreamStatus()
+	s.SetRequestMeta("openai", "default", "gpt-5.5", 12)
+	s.RecordChunk(42)
+	s.MarkTerminalEvent("response.completed")
+	s.MarkUpstreamEOF()
+	s.RecordReadError(fmt.Errorf("read failed"))
+	s.RecordWriteError(fmt.Errorf("write failed"))
+	s.MarkClientGone(fmt.Errorf("context canceled"))
+	s.SetEndReason(StreamEndReasonDone, nil)
+
+	snapshot := s.Snapshot()
+	assert.Equal(t, "openai", snapshot.RequestFormat)
+	assert.Equal(t, "default", snapshot.Group)
+	assert.Equal(t, "gpt-5.5", snapshot.Model)
+	assert.Equal(t, 12, snapshot.ChannelID)
+	assert.Equal(t, "response.completed", snapshot.TerminalEvent)
+	assert.True(t, snapshot.TerminalReceived)
+	assert.Equal(t, 1, snapshot.ChunkCount)
+	assert.Equal(t, int64(42), snapshot.ByteCount)
+	assert.True(t, snapshot.UpstreamEOF)
+	assert.True(t, snapshot.ClientGone)
+	assert.Equal(t, "read failed", snapshot.ReadError)
+	assert.Equal(t, "write failed", snapshot.WriteError)
+	assert.Equal(t, 2, snapshot.ErrorCount)
 }
 
 func TestStreamStatus_Summary_NilSafe(t *testing.T) {

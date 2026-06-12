@@ -14,7 +14,7 @@ import (
 func SetApiRouter(router *gin.Engine) {
 	apiRouter := router.Group("/api")
 	apiRouter.Use(middleware.RouteTag("api"))
-	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
+	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/api/stream/canary"})))
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
 	{
@@ -244,6 +244,12 @@ func SetApiRouter(router *gin.Engine) {
 			profitRoute.GET("/analytics", controller.GetProfitAnalytics)
 			profitRoute.GET("/events", controller.GetProfitEvents)
 			profitRoute.POST("/route-preview", controller.PreviewProfitRoute)
+		}
+		streamRoute := apiRouter.Group("/stream")
+		streamRoute.Use(middleware.RootAuth())
+		{
+			streamRoute.GET("/diagnostics", controller.GetStreamDiagnostics)
+			streamRoute.GET("/canary", controller.StreamCanary)
 		}
 		compressionSettingsRoute := apiRouter.Group("/settings/compression")
 		compressionSettingsRoute.Use(middleware.RootAuth())

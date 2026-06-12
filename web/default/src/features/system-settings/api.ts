@@ -264,6 +264,27 @@ export async function previewProfitRoute(request: ProfitRoutePreviewRequest) {
   }
 }
 
+export async function getSystemGroups() {
+  const res = await api.get('/api/group/')
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: string[]
+  }
+}
+
+export async function getStreamDiagnostics(params?: StreamDiagnosticsParams) {
+  const res = await api.get('/api/stream/diagnostics', {
+    params,
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: StreamDiagnosticsResponse
+  }
+}
+
 export type SystemUpdateComponent =
   | 'all'
   | 'new-api'
@@ -651,6 +672,56 @@ export type ProfitAnalyticsParams = {
   end_timestamp?: number
   p?: number
   page_size?: number
+}
+
+export type StreamDiagnosticsParams = {
+  group?: string
+  model_name?: string
+  username?: string
+  channel?: number
+  start_timestamp?: number
+  end_timestamp?: number
+  limit?: number
+}
+
+export type StreamDiagnostic = {
+  log_id: number
+  created_at: number
+  type: number
+  username: string
+  token_name: string
+  model_name: string
+  group: string
+  channel: number
+  channel_name?: string
+  request_id?: string
+  upstream_request_id?: string
+  use_time: number
+  status: string
+  end_reason: string
+  end_error?: string
+  request_format?: string
+  terminal_event?: string
+  terminal_received: boolean
+  chunk_count: number
+  byte_count: number
+  started_at?: number
+  first_chunk_at?: number
+  last_chunk_at?: number
+  upstream_eof: boolean
+  client_gone: boolean
+  read_error?: string
+  write_error?: string
+  error_count: number
+  errors?: string[]
+  prompt_tokens: number
+  completion_tokens: number
+  quota: number
+}
+
+export type StreamDiagnosticsResponse = {
+  items: StreamDiagnostic[]
+  count: number
 }
 
 export type ProfitGuardrailRecommendation = {

@@ -78,6 +78,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	var terminalReceived bool
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -88,9 +89,17 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+			logger.LogError(c, "failed to write responses stream data: "+err.Error())
+			sr.StopWithReason(relaycommon.StreamEndReasonWriteFailed, err)
+			return
+		}
 		switch streamResponse.Type {
 		case "response.completed":
+			terminalReceived = true
+			if info.StreamStatus != nil {
+				info.StreamStatus.MarkTerminalEvent(streamResponse.Type)
+			}
 			if streamResponse.Response != nil {
 				if streamResponse.Response.Usage != nil {
 					if streamResponse.Response.Usage.InputTokens != 0 {
@@ -112,6 +121,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					c.Set("image_generation_call_size", streamResponse.Response.GetSize())
 				}
 			}
+			sr.Done()
+		case "response.failed", "response.incomplete", "response.error", "error":
+			terminalReceived = true
+			if info.StreamStatus != nil {
+				info.StreamStatus.MarkTerminalEvent(streamResponse.Type)
+			}
+			sr.Error(fmt.Errorf("responses terminal event: %s", streamResponse.Type))
+			sr.Done()
 		case "response.output_text.delta":
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
@@ -130,6 +147,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 	})
 
+	if !terminalReceived && info.StreamStatus != nil && info.StreamStatus.EndReason == relaycommon.StreamEndReasonUpstreamEOFWithoutTerminalEvent {
+		err := sendResponsesStreamTerminalError(c, "upstream stream ended before a terminal Responses event")
+		if err != nil {
+			info.StreamStatus.RecordWriteError(err)
+			logger.LogError(c, "failed to write responses terminal error: "+err.Error())
+		}
+	}
+
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
 		tempStr := responseTextBuilder.String()
@@ -147,4 +172,22 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func sendResponsesStreamTerminalError(c *gin.Context, message string) error {
+	payload := map[string]interface{}{
+		"type": "error",
+		"error": map[string]interface{}{
+			"type":    "stream_error",
+			"code":    "upstream_eof_without_terminal_event",
+			"message": message,
+		},
+	}
+	data, err := common.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	c.Render(-1, common.CustomEvent{Data: "event: error\n"})
+	c.Render(-1, common.CustomEvent{Data: "data: " + string(data)})
+	return helper.FlushWriter(c)
 }

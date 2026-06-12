@@ -85,7 +85,9 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 				response.Choices[j].Delta.Reasoning = nil
 			}
 			info.ThinkingContentInfo.SendLastThinkingContent = true
-			helper.ObjectData(c, response)
+			if err := helper.ObjectData(c, response); err != nil {
+				return err
+			}
 		}
 
 		// Convert reasoning content to regular content if any
@@ -173,7 +175,12 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	if info.RelayFormat == types.RelayFormatOpenAI {
 		if shouldSendLastResp {
-			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
+			if err := sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
+				if info.StreamStatus != nil {
+					info.StreamStatus.RecordWriteError(err)
+				}
+				logger.LogError(c, "error sending final stream data: "+err.Error())
+			}
 		}
 	}
 
@@ -184,7 +191,26 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
 
-	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
+	if info.RelayFormat == types.RelayFormatOpenAI &&
+		info.StreamStatus != nil &&
+		info.StreamStatus.EndReason == relaycommon.StreamEndReasonUpstreamEOFWithoutTerminalEvent {
+		if err := SendChatStreamTerminalError(
+			c,
+			string(relaycommon.StreamEndReasonUpstreamEOFWithoutTerminalEvent),
+			"upstream stream ended before [DONE]",
+		); err != nil {
+			info.StreamStatus.RecordWriteError(err)
+			logger.LogError(c, "error sending stream terminal error: "+err.Error())
+		}
+		return usage, nil
+	}
+
+	if err := HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage); err != nil {
+		if info.StreamStatus != nil {
+			info.StreamStatus.RecordWriteError(err)
+		}
+		logger.LogError(c, "error sending final stream response: "+err.Error())
+	}
 
 	return usage, nil
 }
