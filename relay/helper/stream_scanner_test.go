@@ -470,6 +470,26 @@ func TestStreamScannerHandler_StreamStatus_EOFWithoutDone(t *testing.T) {
 	assert.True(t, info.StreamStatus.HasErrors())
 }
 
+func TestStreamScannerHandler_StreamStatus_TerminalEventEOFIsNormal(t *testing.T) {
+	t.Parallel()
+
+	body := "event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n"
+	c, resp, info := setupStreamTest(t, strings.NewReader(body))
+
+	var received []string
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+		received = append(received, data)
+	})
+
+	require.Equal(t, []string{`{"type":"response.completed"}`}, received)
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
+	assert.True(t, info.StreamStatus.TerminalReceived)
+	assert.Equal(t, "response.completed", info.StreamStatus.TerminalEvent)
+	assert.True(t, info.StreamStatus.UpstreamEOF)
+	assert.False(t, info.StreamStatus.HasErrors())
+}
+
 func TestStreamScannerHandler_HandlesCRLFAndMultilineData(t *testing.T) {
 	t.Parallel()
 

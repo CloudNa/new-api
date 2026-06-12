@@ -25,6 +25,7 @@ import (
 const (
 	InitialScannerBufferSize    = 64 << 10 // 64KB (64*1024)
 	DefaultMaxScannerBufferSize = 64 << 20 // 64MB (64*1024*1024) default SSE buffer size
+	DefaultStreamingTimeout     = 300 * time.Second
 	DefaultPingInterval         = 10 * time.Second
 )
 
@@ -89,6 +90,15 @@ func standaloneSSEData(value string) bool {
 	return value == "[DONE]" ||
 		(strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}")) ||
 		(strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]"))
+}
+
+func isKnownSSETerminalEvent(eventName string) bool {
+	switch eventName {
+	case "response.completed", "response.failed", "response.incomplete", "response.error", "error", "message_stop":
+		return true
+	default:
+		return false
+	}
 }
 
 func readSSEEvent(reader *bufio.Reader) (sseEvent, error) {
@@ -161,6 +171,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}()
 
 	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
+	if streamingTimeout <= 0 {
+		streamingTimeout = DefaultStreamingTimeout
+	}
 
 	var (
 		stopChan   = make(chan bool, 3) // 增加缓冲区避免阻塞
@@ -344,6 +357,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					status.MarkUpstreamEOF()
+					if status.Snapshot().TerminalReceived {
+						status.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+						return
+					}
 					status.RecordError("upstream EOF before terminal event")
 					status.SetEndReason(relaycommon.StreamEndReasonUpstreamEOFWithoutTerminalEvent, nil)
 					return
@@ -364,6 +381,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				continue
 			}
 			if !strings.HasPrefix(data, "[DONE]") {
+				if isKnownSSETerminalEvent(event.event) {
+					status.MarkTerminalEvent(event.event)
+				}
 				status.RecordChunk(len(data))
 				if info != nil {
 					info.SetFirstResponseTime()
