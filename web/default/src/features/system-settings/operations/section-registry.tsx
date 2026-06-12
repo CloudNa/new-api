@@ -148,11 +148,13 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'profit-center',
     titleKey: 'Profit Center',
+    hideFromNav: true,
     build: () => <ProfitCenterSection />,
   },
   {
     id: 'prompt-compression',
     titleKey: 'Prompt Compression',
+    hideFromNav: true,
     build: () => <PromptCompressionSection />,
   },
   {
