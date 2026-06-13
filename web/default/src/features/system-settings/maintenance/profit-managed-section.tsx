@@ -609,7 +609,10 @@ export function ProfitManagedSection() {
             <h4 className='text-sm font-semibold'>分组选择</h4>
           </div>
           <div className='mt-4'>
-            <Select value={selectedGroup} onValueChange={setSelectedGroup}>
+            <Select
+              value={selectedGroup}
+              onValueChange={(value) => value !== null && setSelectedGroup(value)}
+            >
               <SelectTrigger className='w-full'>
                 <SelectValue placeholder='选择分组' />
               </SelectTrigger>
@@ -698,7 +701,12 @@ export function ProfitManagedSection() {
             <Button
               size='sm'
               variant='outline'
-              render={<Link to='/system-settings/operations/profit-center' />}
+              render={
+                <Link
+                  to='/system-settings/operations/$section'
+                  params={{ section: 'profit-center' }}
+                />
+              }
             >
               <Settings2Icon data-icon='inline-start' />
               <span>收益中心</span>
@@ -706,7 +714,12 @@ export function ProfitManagedSection() {
             <Button
               size='sm'
               variant='outline'
-              render={<Link to='/system-settings/operations/prompt-compression' />}
+              render={
+                <Link
+                  to='/system-settings/operations/$section'
+                  params={{ section: 'prompt-compression' }}
+                />
+              }
             >
               <Settings2Icon data-icon='inline-start' />
               <span>压缩设置</span>
@@ -758,7 +771,12 @@ export function ProfitManagedSection() {
                   {item.action === 'advanced_profit' ? (
                     <Button
                       size='sm'
-                      render={<Link to='/system-settings/operations/profit-center' />}
+                      render={
+                        <Link
+                          to='/system-settings/operations/$section'
+                          params={{ section: 'profit-center' }}
+                        />
+                      }
                     >
                       <Settings2Icon data-icon='inline-start' />
                       <span>进入高级设置</span>
@@ -766,7 +784,12 @@ export function ProfitManagedSection() {
                   ) : item.action === 'advanced_compression' ? (
                     <Button
                       size='sm'
-                      render={<Link to='/system-settings/operations/prompt-compression' />}
+                      render={
+                        <Link
+                          to='/system-settings/operations/$section'
+                          params={{ section: 'prompt-compression' }}
+                        />
+                      }
                     >
                       <Settings2Icon data-icon='inline-start' />
                       <span>进入高级设置</span>

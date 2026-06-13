@@ -110,6 +110,8 @@ export function UpdateCheckerSection({
   const smokePassed = smoke?.ok === true
   const updateChecksPassed = precheckPassed && smokePassed
   const logLines = status?.log_tail ?? []
+  const upstream = status?.upstream
+  const upstreamNeedsUpdate = upstream?.needs_update === true
   const canStartUpdate =
     updaterEnabled && !updaterRunning && !loading && updateChecksPassed
   const canStartRollback = updaterEnabled && !updaterRunning && !loading
@@ -293,6 +295,53 @@ export function UpdateCheckerSection({
             </div>
             <div className='text-lg font-semibold'>{uptime}</div>
           </div>
+        </div>
+
+        <div className='rounded-lg border p-4'>
+          <div className='mb-3 flex flex-wrap items-center gap-2'>
+            <div className='font-medium'>官方上游基线</div>
+            <Badge
+              variant={
+                upstream?.error
+                  ? 'destructive'
+                  : upstreamNeedsUpdate
+                    ? 'secondary'
+                    : 'default'
+              }
+            >
+              {upstream?.error
+                ? '检测失败'
+                : upstreamNeedsUpdate
+                  ? '需要合并上游'
+                  : '已跟上官方上游'}
+            </Badge>
+            {upstream?.checked_at && (
+              <div className='text-muted-foreground text-sm'>
+                检查时间：{upstream.checked_at}
+              </div>
+            )}
+          </div>
+          <div className='grid gap-3 text-sm md:grid-cols-3'>
+            <CommitInfoBlock
+              label='当前定制版'
+              commit={upstream?.current}
+              fallback={version}
+            />
+            <CommitInfoBlock label='当前上游基线' commit={upstream?.baseline} />
+            <CommitInfoBlock label='官方最新上游' commit={upstream?.latest} />
+          </div>
+          <div className='text-muted-foreground mt-3 text-sm'>
+            {upstream?.error
+              ? `无法检测官方上游：${upstream.error}`
+              : upstreamNeedsUpdate
+                ? `官方上游已有 ${upstream.upstream_commits_since_baseline} 个新提交；当前定制分支相对基线有 ${upstream.custom_commits_since_baseline} 个自定义提交。建议先把 QuantumNous/new-api 的更新合并到定制分支，通过测试后再执行 new-api 单独更新。`
+                : '当前定制分支的上游基线已经等于官方最新提交，暂时不需要合并官方上游。'}
+          </div>
+          {upstream?.source_url && (
+            <div className='text-muted-foreground mt-2 break-all text-xs'>
+              官方来源：{upstream.source_url}，分支：{upstream.branch || 'main'}
+            </div>
+          )}
         </div>
 
         <div className='flex flex-wrap gap-2'>
@@ -637,6 +686,43 @@ function HealthRow({
       <div className='font-medium'>
         {statusText ?? (ok ? t('OK') : t('Failed'))}
       </div>
+    </div>
+  )
+}
+
+function CommitInfoBlock({
+  label,
+  commit,
+  fallback,
+}: {
+  label: string
+  commit?: {
+    version?: string
+    short_commit?: string
+    date?: string
+    subject?: string
+  } | null
+  fallback?: string
+}) {
+  const displayVersion = commit?.version || fallback || '未知'
+  const shortCommit = commit?.short_commit
+  return (
+    <div className='rounded-md border p-3'>
+      <div className='text-muted-foreground'>{label}</div>
+      <div className='mt-1 break-words font-medium'>{displayVersion}</div>
+      {shortCommit && (
+        <div className='text-muted-foreground mt-1 font-mono text-xs'>
+          {shortCommit}
+        </div>
+      )}
+      {commit?.date && (
+        <div className='text-muted-foreground mt-1 text-xs'>{commit.date}</div>
+      )}
+      {commit?.subject && (
+        <div className='text-muted-foreground mt-1 line-clamp-2 text-xs'>
+          {commit.subject}
+        </div>
+      )}
     </div>
   )
 }

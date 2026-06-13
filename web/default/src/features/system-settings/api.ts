@@ -311,6 +311,33 @@ export type SystemUpdateStatus = {
   current_component?: SystemUpdateComponent
   current_backup_id?: string
   log_tail?: string[]
+  upstream?: SystemUpdateUpstreamStatus
+}
+
+export type SystemUpdateCommitInfo = {
+  ref?: string
+  commit?: string
+  short_commit?: string
+  version?: string
+  tag?: string
+  date?: string
+  subject?: string
+}
+
+export type SystemUpdateUpstreamStatus = {
+  enabled: boolean
+  source_url?: string
+  branch?: string
+  tracking_ref?: string
+  checked_at?: string
+  needs_update: boolean
+  upstream_commits_since_baseline: number
+  custom_commits_since_baseline: number
+  current?: SystemUpdateCommitInfo | null
+  baseline?: SystemUpdateCommitInfo | null
+  latest?: SystemUpdateCommitInfo | null
+  error?: string
+  cached?: boolean
 }
 
 export type SystemUpdatePrecheckItem = {

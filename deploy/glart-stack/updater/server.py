@@ -21,10 +21,24 @@ COMPOSE_FILE = os.environ.get("GLART_STACK_COMPOSE_FILE", "compose.yml")
 SCRIPT = ROOT / "deploy/glart-stack/scripts/update-glart-stack.sh"
 LOG_LIMIT = 200
 BACKUP_DIR = Path(os.environ.get("GLART_STACK_BACKUP_DIR", str(COMPOSE_DIR / "runtime/backups")))
+UPSTREAM_URL = os.environ.get("GLART_STACK_UPSTREAM_URL", "https://github.com/QuantumNous/new-api.git")
+UPSTREAM_BRANCH = os.environ.get("GLART_STACK_UPSTREAM_BRANCH", "main")
+UPSTREAM_REF = os.environ.get("GLART_STACK_UPSTREAM_REF", f"refs/heads/{UPSTREAM_BRANCH}")
+UPSTREAM_TRACKING_REF = os.environ.get(
+    "GLART_STACK_UPSTREAM_TRACKING_REF",
+    f"refs/remotes/glart-upstream/{UPSTREAM_BRANCH}",
+)
+UPSTREAM_CHECK_TTL_SECONDS = int(os.environ.get("GLART_STACK_UPSTREAM_CHECK_TTL_SECONDS", "300"))
+UPSTREAM_CHECK_TIMEOUT_SECONDS = int(os.environ.get("GLART_STACK_UPSTREAM_CHECK_TIMEOUT_SECONDS", "12"))
 VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
 VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
 
 state_lock = threading.Lock()
+upstream_cache_lock = threading.Lock()
+upstream_cache = {
+    "expires_at": 0.0,
+    "data": None,
+}
 state = {
     "running": False,
     "last_exit": None,
@@ -53,7 +67,8 @@ def snapshot() -> dict:
         data = dict(state)
         data["log_tail"] = list(state["log_tail"])
         data["enabled"] = bool(TOKEN)
-        return data
+    data["upstream"] = upstream_status()
+    return data
 
 
 def set_state(**kwargs) -> None:
@@ -82,6 +97,101 @@ def run_command(cmd: list[str], cwd: Path, timeout: int = 30) -> tuple[bool, str
         return completed.returncode == 0, output
     except Exception as exc:
         return False, str(exc)
+
+
+def run_git(args: list[str], timeout: int = 30) -> tuple[bool, str]:
+    return run_command(["git", "-c", f"safe.directory={ROOT}", *args], ROOT, timeout)
+
+
+def git_text(args: list[str], timeout: int = 30) -> str:
+    ok, out = run_git(args, timeout)
+    if not ok:
+        raise RuntimeError(out or f"git {' '.join(args)} failed")
+    return out.strip()
+
+
+def git_count(args: list[str], timeout: int = 30) -> int:
+    value = git_text(args, timeout)
+    return int(value or "0")
+
+
+def commit_info(ref: str) -> dict:
+    commit = git_text(["rev-parse", ref])
+    short_commit = git_text(["rev-parse", "--short=8", ref])
+    version = git_text(["describe", "--tags", "--always", "--abbrev=8", ref])
+    tag_ok, tag_out = run_git(["describe", "--tags", "--abbrev=0", ref])
+    meta = git_text(["log", "-1", "--format=%ci%x00%s", ref])
+    date, _, subject = meta.partition("\x00")
+    return {
+        "ref": ref,
+        "commit": commit,
+        "short_commit": short_commit,
+        "version": version,
+        "tag": tag_out.strip() if tag_ok else "",
+        "date": date.strip(),
+        "subject": subject.strip(),
+    }
+
+
+def upstream_status(force: bool = False) -> dict:
+    if not UPSTREAM_URL:
+        return {
+            "enabled": False,
+            "source_url": "",
+            "branch": UPSTREAM_BRANCH,
+            "tracking_ref": UPSTREAM_TRACKING_REF,
+            "checked_at": now(),
+            "needs_update": False,
+            "error": "GLART_STACK_UPSTREAM_URL is empty",
+        }
+
+    now_ts = time.time()
+    with upstream_cache_lock:
+        cached = upstream_cache.get("data")
+        if not force and cached and float(upstream_cache.get("expires_at", 0)) > now_ts:
+            data = dict(cached)
+            data["cached"] = True
+            return data
+
+    data = {
+        "enabled": True,
+        "source_url": UPSTREAM_URL,
+        "branch": UPSTREAM_BRANCH,
+        "tracking_ref": UPSTREAM_TRACKING_REF,
+        "checked_at": now(),
+        "needs_update": False,
+        "upstream_commits_since_baseline": 0,
+        "custom_commits_since_baseline": 0,
+        "current": None,
+        "baseline": None,
+        "latest": None,
+        "error": "",
+        "cached": False,
+    }
+    try:
+        data["current"] = commit_info("HEAD")
+        fetch_refspec = f"+{UPSTREAM_REF}:{UPSTREAM_TRACKING_REF}"
+        ok, out = run_git(
+            ["fetch", "--quiet", "--no-tags", UPSTREAM_URL, fetch_refspec],
+            UPSTREAM_CHECK_TIMEOUT_SECONDS,
+        )
+        if not ok:
+            raise RuntimeError(out or "failed to fetch official upstream")
+        data["latest"] = commit_info(UPSTREAM_TRACKING_REF)
+        baseline = git_text(["merge-base", "HEAD", UPSTREAM_TRACKING_REF])
+        data["baseline"] = commit_info(baseline)
+        upstream_count = git_count(["rev-list", "--count", f"{baseline}..{UPSTREAM_TRACKING_REF}"])
+        custom_count = git_count(["rev-list", "--count", f"{baseline}..HEAD"])
+        data["upstream_commits_since_baseline"] = upstream_count
+        data["custom_commits_since_baseline"] = custom_count
+        data["needs_update"] = upstream_count > 0
+    except Exception as exc:
+        data["error"] = str(exc)
+
+    with upstream_cache_lock:
+        upstream_cache["data"] = dict(data)
+        upstream_cache["expires_at"] = now_ts + max(UPSTREAM_CHECK_TTL_SECONDS, 30)
+    return data
 
 
 def parse_json_body(handler: BaseHTTPRequestHandler) -> dict:

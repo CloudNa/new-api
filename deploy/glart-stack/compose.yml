@@ -189,6 +189,9 @@ services:
       GLART_STACK_ROOT: ${GLART_STACK_HOST_ROOT:-/workspace}
       GLART_STACK_COMPOSE_DIR: ${GLART_STACK_HOST_ROOT:-/workspace}/deploy/glart-stack
       GLART_STACK_COMPOSE_FILE: compose.yml
+      GLART_STACK_UPSTREAM_URL: ${GLART_STACK_UPSTREAM_URL:-https://github.com/QuantumNous/new-api.git}
+      GLART_STACK_UPSTREAM_BRANCH: ${GLART_STACK_UPSTREAM_BRANCH:-main}
+      GLART_STACK_UPSTREAM_CHECK_TIMEOUT_SECONDS: ${GLART_STACK_UPSTREAM_CHECK_TIMEOUT_SECONDS:-12}
     volumes:
       - ${GLART_STACK_HOST_ROOT:-../..}:${GLART_STACK_HOST_ROOT:-/workspace}
       - /var/run/docker.sock:/var/run/docker.sock

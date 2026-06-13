@@ -17,16 +17,43 @@ import (
 const defaultGlartStackUpdaterURL = "http://glart-stack-updater:8787"
 
 type glartStackUpdaterStatus struct {
-	Enabled          bool     `json:"enabled"`
-	Running          bool     `json:"running"`
-	LastExit         *int     `json:"last_exit,omitempty"`
-	StartedAt        string   `json:"started_at,omitempty"`
-	FinishedAt       string   `json:"finished_at,omitempty"`
-	Message          string   `json:"message,omitempty"`
-	CurrentAction    string   `json:"current_action,omitempty"`
-	CurrentComponent string   `json:"current_component,omitempty"`
-	CurrentBackupID  string   `json:"current_backup_id,omitempty"`
-	LogTail          []string `json:"log_tail,omitempty"`
+	Enabled          bool                      `json:"enabled"`
+	Running          bool                      `json:"running"`
+	LastExit         *int                      `json:"last_exit,omitempty"`
+	StartedAt        string                    `json:"started_at,omitempty"`
+	FinishedAt       string                    `json:"finished_at,omitempty"`
+	Message          string                    `json:"message,omitempty"`
+	CurrentAction    string                    `json:"current_action,omitempty"`
+	CurrentComponent string                    `json:"current_component,omitempty"`
+	CurrentBackupID  string                    `json:"current_backup_id,omitempty"`
+	LogTail          []string                  `json:"log_tail,omitempty"`
+	Upstream         *glartStackUpstreamStatus `json:"upstream,omitempty"`
+}
+
+type glartStackCommitInfo struct {
+	Ref         string `json:"ref,omitempty"`
+	Commit      string `json:"commit,omitempty"`
+	ShortCommit string `json:"short_commit,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Tag         string `json:"tag,omitempty"`
+	Date        string `json:"date,omitempty"`
+	Subject     string `json:"subject,omitempty"`
+}
+
+type glartStackUpstreamStatus struct {
+	Enabled                      bool                  `json:"enabled"`
+	SourceURL                    string                `json:"source_url,omitempty"`
+	Branch                       string                `json:"branch,omitempty"`
+	TrackingRef                  string                `json:"tracking_ref,omitempty"`
+	CheckedAt                    string                `json:"checked_at,omitempty"`
+	NeedsUpdate                  bool                  `json:"needs_update"`
+	UpstreamCommitsSinceBaseline int                   `json:"upstream_commits_since_baseline"`
+	CustomCommitsSinceBaseline   int                   `json:"custom_commits_since_baseline"`
+	Current                      *glartStackCommitInfo `json:"current,omitempty"`
+	Baseline                     *glartStackCommitInfo `json:"baseline,omitempty"`
+	Latest                       *glartStackCommitInfo `json:"latest,omitempty"`
+	Error                        string                `json:"error,omitempty"`
+	Cached                       bool                  `json:"cached,omitempty"`
 }
 
 type glartStackPrecheckItem struct {
