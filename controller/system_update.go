@@ -17,17 +17,18 @@ import (
 const defaultGlartStackUpdaterURL = "http://glart-stack-updater:8787"
 
 type glartStackUpdaterStatus struct {
-	Enabled          bool                      `json:"enabled"`
-	Running          bool                      `json:"running"`
-	LastExit         *int                      `json:"last_exit,omitempty"`
-	StartedAt        string                    `json:"started_at,omitempty"`
-	FinishedAt       string                    `json:"finished_at,omitempty"`
-	Message          string                    `json:"message,omitempty"`
-	CurrentAction    string                    `json:"current_action,omitempty"`
-	CurrentComponent string                    `json:"current_component,omitempty"`
-	CurrentBackupID  string                    `json:"current_backup_id,omitempty"`
-	LogTail          []string                  `json:"log_tail,omitempty"`
-	Upstream         *glartStackUpstreamStatus `json:"upstream,omitempty"`
+	Enabled           bool                      `json:"enabled"`
+	Running           bool                      `json:"running"`
+	LastExit          *int                      `json:"last_exit,omitempty"`
+	StartedAt         string                    `json:"started_at,omitempty"`
+	FinishedAt        string                    `json:"finished_at,omitempty"`
+	Message           string                    `json:"message,omitempty"`
+	CurrentAction     string                    `json:"current_action,omitempty"`
+	CurrentComponent  string                    `json:"current_component,omitempty"`
+	CurrentBackupID   string                    `json:"current_backup_id,omitempty"`
+	CurrentStagingDir string                    `json:"current_staging_dir,omitempty"`
+	LogTail           []string                  `json:"log_tail,omitempty"`
+	Upstream          *glartStackUpstreamStatus `json:"upstream,omitempty"`
 }
 
 type glartStackCommitInfo struct {
@@ -347,6 +348,24 @@ func StartSystemUpdate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Update started",
+		"data":    status,
+	})
+}
+
+func PrepareUpstreamMerge(c *gin.Context) {
+	status, _, err := callGlartStackUpdater(http.MethodPost, "/prepare-upstream-merge", []byte("{}"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+			"data":    status,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Prepare upstream merge started",
 		"data":    status,
 	})
 }

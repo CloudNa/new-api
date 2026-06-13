@@ -232,6 +232,7 @@ func SetApiRouter(router *gin.Engine) {
 			systemUpdateRoute.GET("/backups", controller.ListSystemUpdateBackups)
 			systemUpdateRoute.POST("/smoke", middleware.CriticalRateLimit(), controller.SmokeSystemUpdate)
 			systemUpdateRoute.POST("/start", middleware.CriticalRateLimit(), controller.StartSystemUpdate)
+			systemUpdateRoute.POST("/prepare_upstream_merge", middleware.CriticalRateLimit(), controller.PrepareUpstreamMerge)
 			systemUpdateRoute.POST("/rollback", middleware.CriticalRateLimit(), controller.RollbackSystemUpdate)
 		}
 		profitRoute := apiRouter.Group("/profit")

@@ -123,6 +123,21 @@ export async function startSystemUpdate(
   }
 }
 
+export async function prepareSystemUpstreamMerge() {
+  const res = await api.post(
+    '/api/system_update/prepare_upstream_merge',
+    {},
+    {
+      disableDuplicate: true,
+    }
+  )
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdateStatus
+  }
+}
+
 export async function rollbackSystemUpdate(
   request: SystemUpdateRollbackRequest
 ) {
@@ -310,6 +325,7 @@ export type SystemUpdateStatus = {
   current_action?: string
   current_component?: SystemUpdateComponent
   current_backup_id?: string
+  current_staging_dir?: string
   log_tail?: string[]
   upstream?: SystemUpdateUpstreamStatus
 }

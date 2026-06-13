@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -10,6 +13,13 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
+
+
+def env_flag(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 HOST = os.environ.get("GLART_STACK_UPDATER_HOST", "0.0.0.0")
@@ -30,6 +40,19 @@ UPSTREAM_TRACKING_REF = os.environ.get(
 )
 UPSTREAM_CHECK_TTL_SECONDS = int(os.environ.get("GLART_STACK_UPSTREAM_CHECK_TTL_SECONDS", "300"))
 UPSTREAM_CHECK_TIMEOUT_SECONDS = int(os.environ.get("GLART_STACK_UPSTREAM_CHECK_TIMEOUT_SECONDS", "12"))
+CUSTOM_REMOTE = os.environ.get("GLART_STACK_CUSTOM_REMOTE", "origin").strip() or "origin"
+CUSTOM_BRANCH = os.environ.get("GLART_STACK_CUSTOM_BRANCH", "").strip()
+STAGING_ROOT = Path(os.environ.get("GLART_STACK_STAGING_ROOT", str(COMPOSE_DIR / "runtime/staging")))
+STAGING_WORKTREE = Path(
+    os.environ.get(
+        "GLART_STACK_UPSTREAM_MERGE_DIR",
+        str(STAGING_ROOT / "new-api-upstream-merge"),
+    )
+)
+UPSTREAM_MERGE_RUN_TESTS = env_flag("GLART_STACK_UPSTREAM_MERGE_RUN_TESTS", True)
+UPSTREAM_MERGE_BUILD_IMAGE = env_flag("GLART_STACK_UPSTREAM_MERGE_BUILD_IMAGE", True)
+UPSTREAM_MERGE_PUSH = env_flag("GLART_STACK_UPSTREAM_MERGE_PUSH", True)
+GO_TEST_IMAGE = os.environ.get("GLART_STACK_GO_TEST_IMAGE", "golang:1.26.1")
 VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
 VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
 
@@ -48,6 +71,7 @@ state = {
     "current_action": "",
     "current_component": "",
     "current_backup_id": "",
+    "current_staging_dir": "",
     "log_tail": [],
 }
 
@@ -99,8 +123,57 @@ def run_command(cmd: list[str], cwd: Path, timeout: int = 30) -> tuple[bool, str
         return False, str(exc)
 
 
+def format_cmd(cmd: list[str]) -> str:
+    text = shlex.join([str(part) for part in cmd])
+    return re.sub(r"(https?://)([^/\s'\"@]+)@", r"\1***@", text)
+
+
+def run_logged(
+    cmd: list[str],
+    cwd: Path,
+    timeout: int = 30,
+    env: dict[str, str] | None = None,
+) -> None:
+    append_log(f"[{now()}] + cd {cwd} && {format_cmd(cmd)}")
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            check=False,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        for line in str(output).splitlines():
+            append_log(line)
+        raise TimeoutError(f"command timed out after {timeout}s: {format_cmd(cmd)}") from exc
+    for line in completed.stdout.splitlines():
+        append_log(line)
+    if completed.returncode != 0:
+        raise RuntimeError(f"command failed with exit code {completed.returncode}: {format_cmd(cmd)}")
+
+
 def run_git(args: list[str], timeout: int = 30) -> tuple[bool, str]:
     return run_command(["git", "-c", f"safe.directory={ROOT}", *args], ROOT, timeout)
+
+
+def run_git_in(cwd: Path, args: list[str], timeout: int = 30) -> tuple[bool, str]:
+    return run_command(["git", "-c", f"safe.directory={cwd}", *args], cwd, timeout)
+
+
+def git_text_in(cwd: Path, args: list[str], timeout: int = 30) -> str:
+    ok, out = run_git_in(cwd, args, timeout)
+    if not ok:
+        raise RuntimeError(out or f"git {' '.join(args)} failed")
+    return out.strip()
+
+
+def run_git_logged(cwd: Path, args: list[str], timeout: int = 30) -> None:
+    run_logged(["git", "-c", f"safe.directory={cwd}", *args], cwd, timeout)
 
 
 def git_text(args: list[str], timeout: int = 30) -> str:
@@ -194,6 +267,211 @@ def upstream_status(force: bool = False) -> dict:
     return data
 
 
+def clear_upstream_cache() -> None:
+    with upstream_cache_lock:
+        upstream_cache["data"] = None
+        upstream_cache["expires_at"] = 0.0
+
+
+def resolved(path: Path) -> Path:
+    return path.expanduser().resolve()
+
+
+def is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def ensure_staging_path(path: Path) -> Path:
+    staging_root = resolved(STAGING_ROOT)
+    target = resolved(path)
+    if target == resolved(ROOT):
+        raise RuntimeError("refusing to use production root as staging directory")
+    if not is_relative_to(target, staging_root):
+        raise RuntimeError(f"staging directory must stay under {staging_root}: {target}")
+    staging_root.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def safe_branch_name(branch: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", branch.strip())
+    cleaned = cleaned.strip(".-")
+    return (cleaned or "current")[:80]
+
+
+def current_branch_name() -> str:
+    if CUSTOM_BRANCH:
+        return CUSTOM_BRANCH
+    branch = git_text(["rev-parse", "--abbrev-ref", "HEAD"])
+    if branch == "HEAD":
+        raise RuntimeError("production repository is detached; set GLART_STACK_CUSTOM_BRANCH")
+    return branch
+
+
+def ensure_production_clean_for_staging() -> None:
+    status = git_text(["status", "--porcelain"], 30)
+    if status.strip():
+        append_log(status)
+        raise RuntimeError("production repository has uncommitted changes; refusing staging merge")
+
+
+def copy_private_env_to_staging(staging_dir: Path) -> None:
+    source = COMPOSE_DIR / ".env"
+    target_dir = staging_dir / "deploy/glart-stack"
+    target = target_dir / ".env"
+    if not source.exists():
+        raise RuntimeError(f"missing private env file: {source}")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    target.chmod(0o600)
+
+
+def remove_existing_staging_worktree(staging_dir: Path) -> None:
+    if not staging_dir.exists():
+        return
+    ok, out = run_git(["worktree", "remove", "--force", str(staging_dir)], 120)
+    if ok:
+        return
+    append_log(out)
+    target = ensure_staging_path(staging_dir)
+    if target.exists():
+        shutil.rmtree(target)
+    run_git_logged(ROOT, ["worktree", "prune"], 120)
+
+
+def run_staging_go_tests(staging_dir: Path) -> None:
+    cache_dir = STAGING_ROOT / "cache"
+    go_build_cache = cache_dir / "go-build"
+    go_mod_cache = cache_dir / "gomod"
+    go_build_cache.mkdir(parents=True, exist_ok=True)
+    go_mod_cache.mkdir(parents=True, exist_ok=True)
+    run_logged(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{staging_dir}:/workspace",
+            "-v",
+            f"{go_build_cache}:/tmp/go-cache",
+            "-v",
+            f"{go_mod_cache}:/tmp/gomodcache",
+            "-w",
+            "/workspace",
+            "-e",
+            "GOCACHE=/tmp/go-cache",
+            "-e",
+            "GOMODCACHE=/tmp/gomodcache",
+            GO_TEST_IMAGE,
+            "sh",
+            "-c",
+            "git config --global --add safe.directory /workspace && go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit ./pkg/promptcompress -count=1",
+        ],
+        staging_dir,
+        1800,
+    )
+
+
+def run_staging_checks(staging_dir: Path, branch: str) -> None:
+    compose_dir = staging_dir / "deploy/glart-stack"
+    run_logged(["python", "-m", "py_compile", "deploy/glart-stack/updater/server.py"], staging_dir, 60)
+    run_logged(["sh", "-n", "deploy/glart-stack/scripts/update-glart-stack.sh"], staging_dir, 60)
+    run_logged(["sh", "-n", "deploy/glart-stack/scripts/v2-smoke.sh"], staging_dir, 60)
+    run_logged(["docker", "compose", "-f", COMPOSE_FILE, "config", "--quiet"], compose_dir, 120)
+    if UPSTREAM_MERGE_RUN_TESTS:
+        run_staging_go_tests(staging_dir)
+    else:
+        append_log(f"[{now()}] staging go test skipped by GLART_STACK_UPSTREAM_MERGE_RUN_TESTS=0")
+    if UPSTREAM_MERGE_BUILD_IMAGE:
+        image_tag = f"glart/new-api:upstream-merge-{safe_branch_name(branch)}"
+        run_logged(["docker", "build", "-t", image_tag, "-f", "Dockerfile", "."], staging_dir, 2400)
+        append_log(f"[{now()}] staging image built: {image_tag}")
+    else:
+        append_log(f"[{now()}] staging image build skipped by GLART_STACK_UPSTREAM_MERGE_BUILD_IMAGE=0")
+
+
+def prepare_upstream_merge_operation() -> None:
+    branch = ""
+    staging_dir = STAGING_WORKTREE
+    set_state(
+        running=True,
+        started_at=now(),
+        finished_at="",
+        last_exit=None,
+        message="prepare upstream merge running",
+        current_action="prepare-upstream-merge",
+        current_component="new-api",
+        current_backup_id="",
+        current_staging_dir=str(STAGING_WORKTREE),
+        log_tail=[],
+    )
+    try:
+        staging_dir = ensure_staging_path(STAGING_WORKTREE)
+        set_state(current_staging_dir=str(staging_dir))
+        append_log(f"[{now()}] preparing official upstream merge in staging")
+        append_log(f"[{now()}] production root: {ROOT}")
+        append_log(f"[{now()}] staging worktree: {staging_dir}")
+        branch = current_branch_name()
+        staging_branch = f"glart-upstream-merge-{safe_branch_name(branch)}"
+        append_log(f"[{now()}] custom branch: {branch}")
+        ensure_production_clean_for_staging()
+        run_git_logged(
+            ROOT,
+            [
+                "fetch",
+                "--prune",
+                CUSTOM_REMOTE,
+                f"+refs/heads/{branch}:refs/remotes/{CUSTOM_REMOTE}/{branch}",
+            ],
+            300,
+        )
+        run_git_logged(ROOT, ["fetch", "--tags", UPSTREAM_URL, f"+{UPSTREAM_REF}:{UPSTREAM_TRACKING_REF}"], 600)
+        remove_existing_staging_worktree(staging_dir)
+        run_git_logged(
+            ROOT,
+            [
+                "worktree",
+                "add",
+                "-B",
+                staging_branch,
+                str(staging_dir),
+                f"{CUSTOM_REMOTE}/{branch}",
+            ],
+            300,
+        )
+        run_git_logged(staging_dir, ["config", "user.name", "Glart Stack Updater"], 30)
+        run_git_logged(staging_dir, ["config", "user.email", "stack-updater@glart.local"], 30)
+        run_git_logged(staging_dir, ["merge", "--no-edit", UPSTREAM_TRACKING_REF], 900)
+        copy_private_env_to_staging(staging_dir)
+        run_staging_checks(staging_dir, branch)
+        merged_commit = git_text_in(staging_dir, ["rev-parse", "--short=12", "HEAD"])
+        if UPSTREAM_MERGE_PUSH:
+            run_git_logged(staging_dir, ["push", CUSTOM_REMOTE, f"HEAD:{branch}"], 600)
+            append_log(f"[{now()}] pushed merged commit {merged_commit} to {CUSTOM_REMOTE}/{branch}")
+        else:
+            append_log(f"[{now()}] merged commit {merged_commit} is ready in staging; push skipped")
+        clear_upstream_cache()
+        message = f"prepare upstream merge completed: {merged_commit}"
+        append_log(f"[{now()}] {message}")
+        set_state(running=False, last_exit=0, finished_at=now(), message=message)
+    except Exception as exc:
+        append_log(f"[{now()}] prepare upstream merge failed: {exc}")
+        if staging_dir.exists():
+            ok, out = run_git_in(staging_dir, ["status", "--short"], 30)
+            if ok and out.strip():
+                append_log("[staging git status]")
+                append_log(out)
+        set_state(
+            running=False,
+            last_exit=1,
+            finished_at=now(),
+            message=f"prepare upstream merge failed: {exc}",
+        )
+
+
 def parse_json_body(handler: BaseHTTPRequestHandler) -> dict:
     length = int(handler.headers.get("Content-Length", "0") or "0")
     if length <= 0:
@@ -272,6 +550,8 @@ def precheck() -> dict:
     add("update script", SCRIPT.exists(), str(SCRIPT))
     add("env file", (COMPOSE_DIR / ".env").exists(), str(COMPOSE_DIR / ".env"))
     add("docker socket", Path("/var/run/docker.sock").exists(), "/var/run/docker.sock")
+    add("staging root configured", bool(STAGING_ROOT), str(STAGING_ROOT))
+    add("custom remote configured", bool(CUSTOM_REMOTE), CUSTOM_REMOTE)
 
     try:
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -281,6 +561,17 @@ def precheck() -> dict:
         add("backup dir writable", True, str(BACKUP_DIR))
     except Exception as exc:
         add("backup dir writable", False, f"{BACKUP_DIR}: {exc}")
+
+    try:
+        staging_dir = ensure_staging_path(STAGING_WORKTREE)
+        probe_dir = resolved(STAGING_ROOT)
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        probe = probe_dir / ".write-test"
+        probe.write_text(now(), encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        add("staging dir writable", True, str(staging_dir))
+    except Exception as exc:
+        add("staging dir writable", False, f"{STAGING_WORKTREE}: {exc}")
 
     custom_files = [
         ROOT / "controller/sidecar_proxy.go",
@@ -295,6 +586,11 @@ def precheck() -> dict:
     add("profit risk sources", profit_risk_sources_ok(), "present" if profit_risk_sources_ok() else "missing profit risk hooks")
     add("OmniRoute parity sources", omniroute_parity_sources_ok(), "present" if omniroute_parity_sources_ok() else "missing OmniRoute parity guards")
     add("V2 online smoke script", v2_smoke_script_ok(), "present" if v2_smoke_script_ok() else "missing V2 smoke checks")
+    add(
+        "upstream merge staging sources",
+        upstream_merge_sources_ok(),
+        "present" if upstream_merge_sources_ok() else "missing upstream merge staging hooks",
+    )
 
     if SCRIPT.exists():
         ok, out = run_command(["sh", "-n", str(SCRIPT)], ROOT)
@@ -532,6 +828,28 @@ def v2_smoke_script_ok() -> bool:
         return False
 
 
+def upstream_merge_sources_ok() -> bool:
+    try:
+        updater = (ROOT / "deploy/glart-stack/updater/server.py").read_text(encoding="utf-8")
+        controller = (ROOT / "controller/system_update.go").read_text(encoding="utf-8")
+        router = (ROOT / "router/api-router.go").read_text(encoding="utf-8")
+        api_types = (ROOT / "web/default/src/features/system-settings/api.ts").read_text(encoding="utf-8")
+        maintenance = (ROOT / "web/default/src/features/system-settings/maintenance/update-checker-section.tsx").read_text(
+            encoding="utf-8"
+        )
+        return all(
+            [
+                "prepare_upstream_merge" in router,
+                "PrepareUpstreamMerge" in controller,
+                "prepareSystemUpstreamMerge" in api_types,
+                "prepare-upstream-merge" in updater,
+                "准备上游合并" in maintenance,
+            ]
+        )
+    except Exception:
+        return False
+
+
 def proxy_test_chat_smoke() -> tuple[bool, bool, bool]:
     api_key = os.environ.get("GLART_SMOKE_API_KEY", "").strip()
     model = os.environ.get("GLART_SMOKE_MODEL", "").strip()
@@ -576,6 +894,7 @@ def run_operation(
         current_action=action,
         current_component=component,
         current_backup_id=backup_id,
+        current_staging_dir="",
         log_tail=[],
     )
     append_log(f"[{now()}] starting glart stack {action} {component}")
@@ -654,6 +973,19 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(
                 target=run_operation,
                 args=("update", component, "latest", False),
+                daemon=True,
+            ).start()
+            time.sleep(0.2)
+            self.write_json(snapshot())
+            return
+        if parsed.path == "/prepare-upstream-merge":
+            with state_lock:
+                if state["running"]:
+                    self.write_json(snapshot(), 409)
+                    return
+                state["running"] = True
+            threading.Thread(
+                target=prepare_upstream_merge_operation,
                 daemon=True,
             ).start()
             time.sleep(0.2)

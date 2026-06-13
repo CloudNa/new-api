@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import {
   CheckCircle2Icon,
   ClipboardCheckIcon,
+  GitBranchIcon,
   RefreshCcwIcon,
   RocketIcon,
   SendIcon,
@@ -36,6 +37,7 @@ import {
   getSystemUpdateBackups,
   getSystemUpdateStatus,
   precheckSystemUpdate,
+  prepareSystemUpstreamMerge,
   rollbackSystemUpdate,
   smokeSystemUpdate,
   startSystemUpdate,
@@ -72,6 +74,23 @@ type PendingOperation =
       component: SystemRollbackComponent
       backupId: string
     }
+  | {
+      action: 'prepare-upstream-merge'
+      component: 'new-api'
+    }
+
+async function runPendingOperation(operation: PendingOperation) {
+  if (operation.action === 'update') {
+    return startSystemUpdate(operation.component)
+  }
+  if (operation.action === 'rollback') {
+    return rollbackSystemUpdate({
+      component: operation.component,
+      backup_id: operation.backupId,
+    })
+  }
+  return prepareSystemUpstreamMerge()
+}
 
 type UpdateCheckerSectionProps = {
   currentVersion?: string | null
@@ -115,6 +134,8 @@ export function UpdateCheckerSection({
   const canStartUpdate =
     updaterEnabled && !updaterRunning && !loading && updateChecksPassed
   const canStartRollback = updaterEnabled && !updaterRunning && !loading
+  const canPrepareUpstreamMerge =
+    updaterEnabled && !updaterRunning && !loading && upstreamNeedsUpdate
 
   const refreshBackups = async () => {
     if (!updaterEnabled && status) return
@@ -222,6 +243,11 @@ export function UpdateCheckerSection({
     setConfirmOpen(true)
   }
 
+  const openPrepareUpstreamMergeConfirm = () => {
+    setPendingOperation({ action: 'prepare-upstream-merge', component: 'new-api' })
+    setConfirmOpen(true)
+  }
+
   const openRollbackConfirm = (
     component: SystemRollbackComponent,
     backupId: string
@@ -236,13 +262,7 @@ export function UpdateCheckerSection({
     setConfirmOpen(false)
     setLoading(true)
     try {
-      const res =
-        operation.action === 'update'
-          ? await startSystemUpdate(operation.component)
-          : await rollbackSystemUpdate({
-              component: operation.component,
-              backup_id: operation.backupId,
-            })
+      const res = await runPendingOperation(operation)
       if (res.data) {
         setStatus(res.data)
       }
@@ -250,14 +270,18 @@ export function UpdateCheckerSection({
         toast.success(
           operation.action === 'update'
             ? t('Update task started.')
-            : t('Rollback task started.')
+            : operation.action === 'rollback'
+              ? t('Rollback task started.')
+              : '上游合并准备任务已启动。'
         )
       } else {
         toast.error(
           res.message ||
             (operation.action === 'update'
               ? t('Failed to start update task')
-              : t('Failed to start rollback task'))
+              : operation.action === 'rollback'
+                ? t('Failed to start rollback task')
+                : '无法启动上游合并准备任务')
         )
       }
     } catch (error) {
@@ -266,7 +290,9 @@ export function UpdateCheckerSection({
           ? error.message
           : operation.action === 'update'
             ? t('Failed to start update task')
-            : t('Failed to start rollback task')
+            : operation.action === 'rollback'
+              ? t('Failed to start rollback task')
+              : '无法启动上游合并准备任务'
       toast.error(message)
     } finally {
       setLoading(false)
@@ -278,6 +304,8 @@ export function UpdateCheckerSection({
     ? getSystemUpdateComponentLabel(t, pendingOperation.component)
     : ''
   const pendingIsRollback = pendingOperation?.action === 'rollback'
+  const pendingIsPrepareMerge =
+    pendingOperation?.action === 'prepare-upstream-merge'
 
   return (
     <SettingsSection title={t('System maintenance')}>
@@ -342,6 +370,20 @@ export function UpdateCheckerSection({
               官方来源：{upstream.source_url}，分支：{upstream.branch || 'main'}
             </div>
           )}
+          <div className='mt-4 flex flex-wrap items-center gap-2'>
+            <Button
+              type='button'
+              variant='secondary'
+              onClick={openPrepareUpstreamMergeConfirm}
+              disabled={!canPrepareUpstreamMerge}
+            >
+              <GitBranchIcon className='me-2 h-4 w-4' />
+              准备上游合并
+            </Button>
+            <div className='text-muted-foreground text-xs'>
+              在服务器 staging worktree 合并官方上游，测试通过后推送定制分支；生产目录不会被直接合并。
+            </div>
+          </div>
         </div>
 
         <div className='flex flex-wrap gap-2'>
@@ -451,15 +493,19 @@ export function UpdateCheckerSection({
           title={
             pendingIsRollback
               ? t('Rollback component?')
-              : pendingOperation?.component === 'all'
-                ? t('Start combined one-click update?')
-                : t('Start component update?')
+              : pendingIsPrepareMerge
+                ? '准备上游合并？'
+                : pendingOperation?.component === 'all'
+                  ? t('Start combined one-click update?')
+                  : t('Start component update?')
           }
           desc={
             pendingIsRollback
               ? t(
                   'This will roll back only the selected component image. Runtime data is not restored by default.'
                 )
+              : pendingIsPrepareMerge
+                ? '这会在服务器独立 staging worktree 中合并 QuantumNous/new-api 官方上游，运行检查和构建验证，成功后推送到当前定制分支。它不会在生产目录直接执行 merge；完成后你还需要执行 new-api 单独更新来部署已验证提交。'
               : pendingOperation?.component === 'all'
                 ? t(
                     'This will update new-api, GPT-Load, CLIProxyAPI, and CPA Manager Plus together while preserving separate backups for each component.'
@@ -471,7 +517,9 @@ export function UpdateCheckerSection({
           confirmText={
             pendingIsRollback
               ? `${t('Rollback')} ${pendingComponentLabel}`
-              : `${t('Update')} ${pendingComponentLabel}`
+              : pendingIsPrepareMerge
+                ? '开始准备合并'
+                : `${t('Update')} ${pendingComponentLabel}`
           }
           destructive={pendingIsRollback}
           isLoading={loading}
@@ -479,7 +527,9 @@ export function UpdateCheckerSection({
             !pendingOperation ||
             !updaterEnabled ||
             updaterRunning ||
-            (pendingOperation.action === 'update' && !updateChecksPassed)
+            (pendingOperation.action === 'update' && !updateChecksPassed) ||
+            (pendingOperation.action === 'prepare-upstream-merge' &&
+              !upstreamNeedsUpdate)
           }
           handleConfirm={handleConfirmOperation}
         />
@@ -525,6 +575,14 @@ export function UpdateCheckerSection({
               <div>
                 <div className='text-muted-foreground'>{t('Backup ID')}</div>
                 <div className='font-medium'>{status.current_backup_id}</div>
+              </div>
+            )}
+            {status?.current_staging_dir && (
+              <div>
+                <div className='text-muted-foreground'>Staging 目录</div>
+                <div className='break-all font-medium'>
+                  {status.current_staging_dir}
+                </div>
               </div>
             )}
             {status?.finished_at && (

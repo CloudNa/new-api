@@ -120,6 +120,10 @@ precheck_common() {
   grep -q "CPA Manager Plus" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "CPA_MANAGER_PLUS_INTERNAL_URL" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
   grep -q "CPAManagerPlusProxy" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "PrepareUpstreamMerge" "$ROOT_DIR/controller/system_update.go" || fail
+  grep -q "prepare_upstream_merge" "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "prepareSystemUpstreamMerge" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "准备上游合并" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/update-checker-section.tsx" || fail
   grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
@@ -205,6 +209,10 @@ git_update_and_tests() {
   grep -q "CPA Manager Plus" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
   grep -q "CPA_MANAGER_PLUS_INTERNAL_URL" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
   grep -q "CPAManagerPlusProxy" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "PrepareUpstreamMerge" "$ROOT_DIR/controller/system_update.go" || fail
+  grep -q "prepare_upstream_merge" "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "prepareSystemUpstreamMerge" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "准备上游合并" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/update-checker-section.tsx" || fail
   grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
   grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
