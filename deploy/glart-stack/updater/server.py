@@ -329,6 +329,30 @@ def copy_private_env_to_staging(staging_dir: Path) -> None:
     target.chmod(0o600)
 
 
+def restore_staging_owner(staging_dir: Path) -> None:
+    if os.name == "nt":
+        return
+    try:
+        owner = ROOT.stat()
+        uid = owner.st_uid
+        gid = owner.st_gid
+        paths = [staging_dir]
+        ok, git_dir = run_git_in(staging_dir, ["rev-parse", "--git-dir"], 30)
+        if ok and git_dir.strip():
+            paths.append((staging_dir / git_dir.strip()).resolve())
+        ok, common_dir = run_git_in(staging_dir, ["rev-parse", "--git-common-dir"], 30)
+        if ok and common_dir.strip():
+            paths.append((staging_dir / common_dir.strip()).resolve())
+        for target in paths:
+            if target.exists():
+                shutil.chown(target, user=uid, group=gid)
+                if target.is_dir():
+                    for child in target.rglob("*"):
+                        shutil.chown(child, user=uid, group=gid)
+    except Exception as exc:
+        append_log(f"[{now()}] unable to restore staging ownership: {exc}")
+
+
 def remove_existing_staging_worktree(staging_dir: Path) -> None:
     if not staging_dir.exists():
         return
@@ -442,6 +466,7 @@ def prepare_upstream_merge_operation() -> None:
             ],
             300,
         )
+        restore_staging_owner(staging_dir)
         run_git_logged(staging_dir, ["config", "user.name", "Glart Stack Updater"], 30)
         run_git_logged(staging_dir, ["config", "user.email", "stack-updater@glart.local"], 30)
         run_git_logged(staging_dir, ["merge", "--no-edit", UPSTREAM_TRACKING_REF], 900)
@@ -453,11 +478,13 @@ def prepare_upstream_merge_operation() -> None:
             append_log(f"[{now()}] pushed merged commit {merged_commit} to {CUSTOM_REMOTE}/{branch}")
         else:
             append_log(f"[{now()}] merged commit {merged_commit} is ready in staging; push skipped")
+        restore_staging_owner(staging_dir)
         clear_upstream_cache()
         message = f"prepare upstream merge completed: {merged_commit}"
         append_log(f"[{now()}] {message}")
         set_state(running=False, last_exit=0, finished_at=now(), message=message)
     except Exception as exc:
+        restore_staging_owner(staging_dir)
         append_log(f"[{now()}] prepare upstream merge failed: {exc}")
         if staging_dir.exists():
             ok, out = run_git_in(staging_dir, ["status", "--short"], 30)

@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	InitialScannerBufferSize    = 64 << 10 // 64KB (64*1024)
-	DefaultMaxScannerBufferSize = 64 << 20 // 64MB (64*1024*1024) default SSE buffer size
+	InitialScannerBufferSize    = 64 << 10  // 64KB (64*1024)
+	DefaultMaxScannerBufferSize = 128 << 20 // 128MB default SSE buffer size
 	DefaultStreamingTimeout     = 300 * time.Second
 	DefaultPingInterval         = 10 * time.Second
 )
@@ -48,6 +48,12 @@ func getScannerBufferSize() int {
 		return constant.StreamScannerMaxBufferMB << 20
 	}
 	return DefaultMaxScannerBufferSize
+}
+
+func NewStreamScanner(reader io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, InitialScannerBufferSize), getScannerBufferSize())
+	return scanner
 }
 
 func trimSSELineEnding(line string) string {
