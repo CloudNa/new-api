@@ -115,7 +115,7 @@ services:
     networks:
       - glart-internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider -T 10 -O /dev/null http://localhost:8317/management.html || exit 1"]
+      test: ["CMD-SHELL", "grep -E '[0-9A-Fa-f]{8}:207D' /proc/net/tcp /proc/net/tcp6 | grep -q ' 0A '"]
       interval: 30s
       timeout: 10s
       retries: 5
