@@ -23,7 +23,6 @@ import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
 import { ProfitCenterSection } from '../maintenance/profit-center-section'
-import { ProfitManagedSection } from '../maintenance/profit-managed-section'
 import { PromptCompressionSection } from '../maintenance/prompt-compression-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
@@ -139,11 +138,6 @@ const OPERATIONS_SECTIONS = [
         }}
       />
     ),
-  },
-  {
-    id: 'profit-managed',
-    titleKey: '收益托管',
-    build: () => <ProfitManagedSection />,
   },
   {
     id: 'profit-center',
