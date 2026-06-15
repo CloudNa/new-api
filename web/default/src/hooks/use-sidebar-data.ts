@@ -28,12 +28,15 @@ import {
   MessageSquare,
   Radio,
   Settings,
+  Sparkles,
   Ticket,
   User,
   Users,
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
 import { type SidebarData } from '@/components/layout/types'
 
 /**
@@ -44,6 +47,8 @@ import { type SidebarData } from '@/components/layout/types'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const userRole = useAuthStore((state) => state.auth.user?.role)
+  const isRoot = Boolean(userRole && userRole >= ROLE.SUPER_ADMIN)
 
   return {
     navGroups: [
@@ -141,6 +146,15 @@ export function useSidebarData(): SidebarData {
             url: '/subscriptions',
             icon: CreditCard,
           },
+          ...(isRoot
+            ? [
+                {
+                  title: t('收益托管'),
+                  url: '/profit-managed',
+                  icon: Sparkles,
+                },
+              ]
+            : []),
           {
             title: t('System Settings'),
             url: '/system-settings/site',
