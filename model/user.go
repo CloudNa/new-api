@@ -422,6 +422,13 @@ func (user *User) Insert(inviterId int) error {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
+	desktopGroup := createdUser.Group
+	if strings.TrimSpace(desktopGroup) == "" {
+		desktopGroup = "default"
+	}
+	if _, err := EnsureDesktopDefaultToken(user.Id, desktopGroup); err != nil {
+		common.SysLog(fmt.Sprintf("failed to create desktop default token for oauth user %d: %s", user.Id, err.Error()))
+	}
 	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
 		if common.QuotaForInvitee > 0 {
 			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)

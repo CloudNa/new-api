@@ -48,21 +48,21 @@ type sqliteColumnInfo struct {
 }
 
 type legacyToken struct {
-	Id                 int            `gorm:"primaryKey"`
-	UserId             int            `gorm:"index"`
-	Key                string         `gorm:"column:key;type:char(48);uniqueIndex"`
-	Status             int            `gorm:"default:1"`
-	Name               string         `gorm:"index"`
-	CreatedTime        int64          `gorm:"bigint"`
-	AccessedTime       int64          `gorm:"bigint"`
-	ExpiredTime        int64          `gorm:"bigint;default:-1"`
-	RemainQuota        int            `gorm:"default:0"`
+	Id                 int    `gorm:"primaryKey"`
+	UserId             int    `gorm:"index"`
+	Key                string `gorm:"column:key;type:char(48);uniqueIndex"`
+	Status             int    `gorm:"default:1"`
+	Name               string `gorm:"index"`
+	CreatedTime        int64  `gorm:"bigint"`
+	AccessedTime       int64  `gorm:"bigint"`
+	ExpiredTime        int64  `gorm:"bigint;default:-1"`
+	RemainQuota        int    `gorm:"default:0"`
 	UnlimitedQuota     bool
 	ModelLimitsEnabled bool
-	ModelLimits        string         `gorm:"type:text"`
-	AllowIps           *string        `gorm:"default:''"`
-	UsedQuota          int            `gorm:"default:0"`
-	Group              string         `gorm:"column:group;default:''"`
+	ModelLimits        string  `gorm:"type:text"`
+	AllowIps           *string `gorm:"default:''"`
+	UsedQuota          int     `gorm:"default:0"`
+	Group              string  `gorm:"column:group;default:''"`
 	CrossGroupRetry    bool
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
@@ -79,6 +79,7 @@ func openTokenControllerTestDB(t *testing.T) *gorm.DB {
 	common.UsingMySQL = false
 	common.UsingPostgreSQL = false
 	common.RedisEnabled = false
+	model.InitColumnNames()
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -122,6 +123,7 @@ func openTokenControllerExternalDB(t *testing.T, dialect string, dsn string) (*g
 	common.UsingSQLite = false
 	common.UsingMySQL = dialect == "mysql"
 	common.UsingPostgreSQL = dialect == "postgres"
+	model.InitColumnNames()
 
 	var (
 		db  *gorm.DB

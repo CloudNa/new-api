@@ -64,6 +64,14 @@ func SetApiRouter(router *gin.Engine) {
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 
+		desktopRoute := apiRouter.Group("/desktop")
+		desktopRoute.Use(middleware.UserAuth())
+		{
+			desktopRoute.GET("/bootstrap", controller.GetDesktopBootstrap)
+			desktopRoute.GET("/status", controller.GetDesktopStatus)
+			desktopRoute.POST("/token/rotate", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.RotateDesktopToken)
+		}
+
 		userRoute := apiRouter.Group("/user")
 		{
 			userRoute.POST("/register", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), controller.Register)

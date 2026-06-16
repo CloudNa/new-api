@@ -263,6 +263,9 @@ func Register(c *gin.Context) {
 			return
 		}
 	}
+	if _, err := model.EnsureDesktopDefaultToken(insertedUser.Id, desktopTokenGroup(&insertedUser)); err != nil {
+		common.SysLog(fmt.Sprintf("failed to create desktop default token for user %d: %s", insertedUser.Id, err.Error()))
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -904,6 +907,9 @@ func CreateUser(c *gin.Context) {
 	if err := cleanUser.Insert(0); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if _, err := model.EnsureDesktopDefaultToken(cleanUser.Id, desktopTokenGroup(&cleanUser)); err != nil {
+		common.SysLog(fmt.Sprintf("failed to create desktop default token for user %d: %s", cleanUser.Id, err.Error()))
 	}
 
 	recordManageAuditFor(c, cleanUser.Id, "user.create", map[string]interface{}{
