@@ -160,3 +160,30 @@ func TestRotateDesktopTokenInvalidatesOldKey(t *testing.T) {
 		t.Fatalf("expected rotated desktop key to validate: %v", err)
 	}
 }
+
+func TestGetDesktopStatusReturnsStablePayloadBeforeBootstrap(t *testing.T) {
+	setupDesktopControllerTestDB(t)
+	seedDesktopUser(t, 1, "desktop-user", "default")
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/desktop/status", nil, 1)
+	GetDesktopStatus(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected desktop status success, got message: %s", response.Message)
+	}
+	var payload struct {
+		UserStatus     int `json:"user_status"`
+		DesktopEnabled bool `json:"desktop_enabled"`
+		Quota struct {
+			Remaining int `json:"remaining"`
+			Used      int `json:"used"`
+		} `json:"quota"`
+		WalletURL string `json:"wallet_url"`
+	}
+	if err := common.Unmarshal(response.Data, &payload); err != nil {
+		t.Fatalf("failed to decode desktop status payload: %v", err)
+	}
+	if payload.WalletURL == "" {
+		t.Fatalf("expected wallet url")
+	}
+}
