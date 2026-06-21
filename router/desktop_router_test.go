@@ -222,6 +222,15 @@ func TestDesktopRouterRequiresUserAuth(t *testing.T) {
 	}
 }
 
+func TestDesktopRouterRejectsAccessTokenUserMismatch(t *testing.T) {
+	engine, accessToken := setupDesktopRouterTest(t)
+
+	recorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/desktop/bootstrap", nil, accessToken, 2002, nil)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected user mismatch to be unauthorized, got %d with body %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestDesktopRouterBootstrapStatusAndRotateUseAccessTokenAuth(t *testing.T) {
 	engine, accessToken := setupDesktopRouterTest(t)
 
@@ -248,6 +257,9 @@ func TestDesktopRouterBootstrapStatusAndRotateUseAccessTokenAuth(t *testing.T) {
 	statusResponse := decodeDesktopRouterAPIResponse(t, statusRecorder)
 	if !statusResponse.Success {
 		t.Fatalf("expected router status success, got message: %s", statusResponse.Message)
+	}
+	if strings.Contains(statusRecorder.Body.String(), "desktop_api_key") {
+		t.Fatalf("desktop status response must not expose desktop API key: %s", statusRecorder.Body.String())
 	}
 
 	rotateRecorder := performDesktopRouterRequest(engine, http.MethodPost, "/api/desktop/token/rotate", accessToken)
@@ -301,6 +313,9 @@ func TestDesktopRouterRegisterLoginAndBootstrapFlow(t *testing.T) {
 	if loginData.ID != registeredUser.Id || loginData.Username != username {
 		t.Fatalf("unexpected login payload: %+v", loginData)
 	}
+	if strings.Contains(loginRecorder.Body.String(), "desktop_api_key") {
+		t.Fatalf("login response must not expose desktop API key: %s", loginRecorder.Body.String())
+	}
 
 	sessionCookies := loginRecorder.Result().Cookies()
 	bootstrapRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/desktop/bootstrap", nil, "", loginData.ID, sessionCookies)
@@ -314,6 +329,9 @@ func TestDesktopRouterRegisterLoginAndBootstrapFlow(t *testing.T) {
 	}
 	if bootstrap.Token.Name != model.DesktopDefaultTokenName {
 		t.Fatalf("expected desktop token name %q, got %q", model.DesktopDefaultTokenName, bootstrap.Token.Name)
+	}
+	if _, err := model.ValidateUserToken(bootstrap.DesktopAPIKey); err != nil {
+		t.Fatalf("expected session-backed bootstrap desktop API key to validate: %v", err)
 	}
 
 	accessTokenRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/user/token", nil, "", loginData.ID, sessionCookies)
@@ -333,5 +351,8 @@ func TestDesktopRouterRegisterLoginAndBootstrapFlow(t *testing.T) {
 	statusResponse := decodeDesktopRouterAPIResponse(t, statusRecorder)
 	if !statusResponse.Success {
 		t.Fatalf("expected access-token-backed desktop status success, got message: %s", statusResponse.Message)
+	}
+	if strings.Contains(statusRecorder.Body.String(), "desktop_api_key") {
+		t.Fatalf("desktop status response must not expose desktop API key: %s", statusRecorder.Body.String())
 	}
 }
