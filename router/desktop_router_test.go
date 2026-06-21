@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	system_setting "github.com/QuantumNous/new-api/setting/system_setting"
@@ -35,6 +37,11 @@ type desktopRouterBootstrap struct {
 	} `json:"token"`
 }
 
+type desktopRouterLoginData struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+}
+
 func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 	t.Helper()
 
@@ -46,6 +53,12 @@ func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 	originalRedisEnabled := common.RedisEnabled
 	originalServerAddress := system_setting.ServerAddress
 	originalDefaultUseAutoGroup := setting.DefaultUseAutoGroup
+	originalRegisterEnabled := common.RegisterEnabled
+	originalPasswordRegisterEnabled := common.PasswordRegisterEnabled
+	originalPasswordLoginEnabled := common.PasswordLoginEnabled
+	originalEmailVerificationEnabled := common.EmailVerificationEnabled
+	originalTurnstileCheckEnabled := common.TurnstileCheckEnabled
+	originalGenerateDefaultToken := constant.GenerateDefaultToken
 
 	gin.SetMode(gin.TestMode)
 	common.UsingSQLite = true
@@ -55,6 +68,12 @@ func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 	model.InitColumnNames()
 	system_setting.ServerAddress = "https://api.glart.cn"
 	setting.DefaultUseAutoGroup = false
+	common.RegisterEnabled = true
+	common.PasswordRegisterEnabled = true
+	common.PasswordLoginEnabled = true
+	common.EmailVerificationEnabled = false
+	common.TurnstileCheckEnabled = false
+	constant.GenerateDefaultToken = false
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -63,7 +82,7 @@ func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 	}
 	model.DB = db
 	model.LOG_DB = db
-	if err := db.AutoMigrate(&model.User{}, &model.Token{}, &model.Ability{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Token{}, &model.Ability{}, &model.Log{}); err != nil {
 		t.Fatalf("failed to migrate desktop router test tables: %v", err)
 	}
 
@@ -110,6 +129,12 @@ func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 		model.InitColumnNames()
 		system_setting.ServerAddress = originalServerAddress
 		setting.DefaultUseAutoGroup = originalDefaultUseAutoGroup
+		common.RegisterEnabled = originalRegisterEnabled
+		common.PasswordRegisterEnabled = originalPasswordRegisterEnabled
+		common.PasswordLoginEnabled = originalPasswordLoginEnabled
+		common.EmailVerificationEnabled = originalEmailVerificationEnabled
+		common.TurnstileCheckEnabled = originalTurnstileCheckEnabled
+		constant.GenerateDefaultToken = originalGenerateDefaultToken
 	})
 
 	return engine, accessToken
@@ -121,6 +146,38 @@ func performDesktopRouterRequest(engine *gin.Engine, method string, path string,
 	if accessToken != "" {
 		request.Header.Set("Authorization", "Bearer "+accessToken)
 		request.Header.Set("New-Api-User", "1001")
+	}
+	engine.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func performDesktopRouterJSONRequest(t *testing.T, engine *gin.Engine, method string, path string, body any, accessToken string, userID int, cookies []*http.Cookie) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var reader *bytes.Reader
+	if body == nil {
+		reader = bytes.NewReader(nil)
+	} else {
+		payload, err := common.Marshal(body)
+		if err != nil {
+			t.Fatalf("failed to marshal desktop router request body: %v", err)
+		}
+		reader = bytes.NewReader(payload)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, path, reader)
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if accessToken != "" {
+		request.Header.Set("Authorization", "Bearer "+accessToken)
+	}
+	if userID > 0 {
+		request.Header.Set("New-Api-User", fmt.Sprintf("%d", userID))
+	}
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
 	}
 	engine.ServeHTTP(recorder, request)
 	return recorder
@@ -142,6 +199,16 @@ func decodeDesktopRouterBootstrap(t *testing.T, response desktopRouterAPIRespons
 	var data desktopRouterBootstrap
 	if err := common.Unmarshal(response.Data, &data); err != nil {
 		t.Fatalf("failed to decode desktop router bootstrap payload: %v", err)
+	}
+	return data
+}
+
+func decodeDesktopRouterLoginData(t *testing.T, response desktopRouterAPIResponse) desktopRouterLoginData {
+	t.Helper()
+
+	var data desktopRouterLoginData
+	if err := common.Unmarshal(response.Data, &data); err != nil {
+		t.Fatalf("failed to decode desktop router login payload: %v", err)
 	}
 	return data
 }
@@ -197,5 +264,74 @@ func TestDesktopRouterBootstrapStatusAndRotateUseAccessTokenAuth(t *testing.T) {
 	}
 	if _, err := model.ValidateUserToken(rotated.DesktopAPIKey); err != nil {
 		t.Fatalf("expected rotated desktop API key to validate: %v", err)
+	}
+}
+
+func TestDesktopRouterRegisterLoginAndBootstrapFlow(t *testing.T) {
+	engine, _ := setupDesktopRouterTest(t)
+	username := "desktop-login-user"
+	password := "password123"
+
+	registerRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodPost, "/api/user/register", model.User{
+		Username: username,
+		Password: password,
+	}, "", 0, nil)
+	registerResponse := decodeDesktopRouterAPIResponse(t, registerRecorder)
+	if !registerResponse.Success {
+		t.Fatalf("expected register success, got message: %s", registerResponse.Message)
+	}
+
+	var registeredUser model.User
+	if err := model.DB.Where("username = ?", username).First(&registeredUser).Error; err != nil {
+		t.Fatalf("failed to load registered desktop user: %v", err)
+	}
+	if _, err := model.GetDesktopDefaultToken(registeredUser.Id); err != nil {
+		t.Fatalf("expected register to create desktop default token: %v", err)
+	}
+
+	loginRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodPost, "/api/user/login", map[string]string{
+		"username": username,
+		"password": password,
+	}, "", 0, nil)
+	loginResponse := decodeDesktopRouterAPIResponse(t, loginRecorder)
+	if !loginResponse.Success {
+		t.Fatalf("expected login success, got message: %s", loginResponse.Message)
+	}
+	loginData := decodeDesktopRouterLoginData(t, loginResponse)
+	if loginData.ID != registeredUser.Id || loginData.Username != username {
+		t.Fatalf("unexpected login payload: %+v", loginData)
+	}
+
+	sessionCookies := loginRecorder.Result().Cookies()
+	bootstrapRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/desktop/bootstrap", nil, "", loginData.ID, sessionCookies)
+	bootstrapResponse := decodeDesktopRouterAPIResponse(t, bootstrapRecorder)
+	if !bootstrapResponse.Success {
+		t.Fatalf("expected session-backed bootstrap success, got message: %s", bootstrapResponse.Message)
+	}
+	bootstrap := decodeDesktopRouterBootstrap(t, bootstrapResponse)
+	if bootstrap.DesktopAPIKey == "" {
+		t.Fatalf("expected session-backed bootstrap to return desktop API key")
+	}
+	if bootstrap.Token.Name != model.DesktopDefaultTokenName {
+		t.Fatalf("expected desktop token name %q, got %q", model.DesktopDefaultTokenName, bootstrap.Token.Name)
+	}
+
+	accessTokenRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/user/token", nil, "", loginData.ID, sessionCookies)
+	accessTokenResponse := decodeDesktopRouterAPIResponse(t, accessTokenRecorder)
+	if !accessTokenResponse.Success {
+		t.Fatalf("expected user access token generation success, got message: %s", accessTokenResponse.Message)
+	}
+	var accessToken string
+	if err := common.Unmarshal(accessTokenResponse.Data, &accessToken); err != nil {
+		t.Fatalf("failed to decode user access token: %v", err)
+	}
+	if accessToken == "" {
+		t.Fatalf("expected generated user access token")
+	}
+
+	statusRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/desktop/status", nil, accessToken, loginData.ID, nil)
+	statusResponse := decodeDesktopRouterAPIResponse(t, statusRecorder)
+	if !statusResponse.Success {
+		t.Fatalf("expected access-token-backed desktop status success, got message: %s", statusResponse.Message)
 	}
 }
