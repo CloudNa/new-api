@@ -315,7 +315,7 @@ func TestDesktopRouterBootstrapStatusAndRotateUseAccessTokenAuth(t *testing.T) {
 	}
 }
 
-func TestDesktopRouterRegisterLoginAndBootstrapFlow(t *testing.T) {
+func TestDesktopRouterRegisterLoginLogoutAndBootstrapFlow(t *testing.T) {
 	engine, _ := setupDesktopRouterTest(t)
 	username := "desktop-login-user"
 	password := "password123"
@@ -390,5 +390,16 @@ func TestDesktopRouterRegisterLoginAndBootstrapFlow(t *testing.T) {
 	}
 	if strings.Contains(statusRecorder.Body.String(), "desktop_api_key") || strings.Contains(statusRecorder.Body.String(), `"api_key"`) {
 		t.Fatalf("desktop status response must not expose desktop API key: %s", statusRecorder.Body.String())
+	}
+
+	logoutRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/user/logout", nil, "", loginData.ID, sessionCookies)
+	logoutResponse := decodeDesktopRouterAPIResponse(t, logoutRecorder)
+	if !logoutResponse.Success {
+		t.Fatalf("expected logout success, got message: %s", logoutResponse.Message)
+	}
+
+	afterLogoutRecorder := performDesktopRouterJSONRequest(t, engine, http.MethodGet, "/api/desktop/bootstrap", nil, "", loginData.ID, logoutRecorder.Result().Cookies())
+	if afterLogoutRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected session-backed bootstrap to be unauthorized after logout, got %d with body %s", afterLogoutRecorder.Code, afterLogoutRecorder.Body.String())
 	}
 }
