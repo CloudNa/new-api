@@ -46,13 +46,57 @@ func desktopUserModels(user *model.User) []string {
 	return models
 }
 
+func desktopDefaultModelFor(models []string) string {
+	if len(models) > 0 {
+		return models[0]
+	}
+	return desktopDefaultModel
+}
+
+func desktopDashboardPath() string {
+	if common.GetTheme() == "default" {
+		return "/dashboard"
+	}
+	return "/console"
+}
+
+func desktopAccountLinks(baseURL string) gin.H {
+	dashboardURL := baseURL + desktopDashboardPath()
+	walletURL := baseURL + common.ThemeAwarePath("/console/topup")
+	usageURL := baseURL + common.ThemeAwarePath("/console/log")
+	settingsURL := baseURL + common.ThemeAwarePath("/console/personal")
+	return gin.H{
+		"account_center": dashboardURL,
+		"dashboard":      dashboardURL,
+		"wallet":         walletURL,
+		"usage":          usageURL,
+		"settings":       settingsURL,
+	}
+}
+
+func desktopAPISettings(baseURL string, models []string, defaultModel string, token *model.Token, includeKey bool) gin.H {
+	settings := gin.H{
+		"base_url":          baseURL + "/v1",
+		"default_model":     defaultModel,
+		"models":            models,
+		"provider_managed":  true,
+		"user_configurable": false,
+	}
+	if token != nil {
+		settings["token_id"] = token.Id
+		settings["token_name"] = token.Name
+		if includeKey {
+			settings["api_key"] = token.GetFullKey()
+		}
+	}
+	return settings
+}
+
 func buildDesktopBootstrap(user *model.User, token *model.Token) gin.H {
 	baseURL := desktopPublicBaseURL()
 	models := desktopUserModels(user)
-	defaultModel := desktopDefaultModel
-	if len(models) > 0 {
-		defaultModel = models[0]
-	}
+	defaultModel := desktopDefaultModelFor(models)
+	links := desktopAccountLinks(baseURL)
 
 	return gin.H{
 		"user": gin.H{
@@ -77,6 +121,7 @@ func buildDesktopBootstrap(user *model.User, token *model.Token) gin.H {
 		"default_model":   defaultModel,
 		"models":          models,
 		"desktop_api_key": token.GetFullKey(),
+		"api_settings":    desktopAPISettings(baseURL, models, defaultModel, token, true),
 		"token": gin.H{
 			"id":                   token.Id,
 			"name":                 token.Name,
@@ -86,9 +131,12 @@ func buildDesktopBootstrap(user *model.User, token *model.Token) gin.H {
 			"remain_quota":         token.RemainQuota,
 			"model_limits_enabled": token.ModelLimitsEnabled,
 		},
-		"wallet_url":   baseURL + common.ThemeAwarePath("/console/topup"),
-		"usage_url":    baseURL + common.ThemeAwarePath("/console/log"),
-		"settings_url": baseURL + common.ThemeAwarePath("/console/personal"),
+		"account_center_url": links["account_center"],
+		"dashboard_url":      links["dashboard"],
+		"wallet_url":         links["wallet"],
+		"usage_url":          links["usage"],
+		"settings_url":       links["settings"],
+		"links":              links,
 		"errors": gin.H{
 			"quota_exhausted":      "余额不足，请前往钱包管理充值后继续使用。",
 			"subscription_expired": "订阅已失效，请前往账户中心续费后继续使用。",
@@ -131,6 +179,10 @@ func GetDesktopStatus(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	baseURL := desktopPublicBaseURL()
+	models := desktopUserModels(user)
+	defaultModel := desktopDefaultModelFor(models)
+	links := desktopAccountLinks(baseURL)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -140,8 +192,14 @@ func GetDesktopStatus(c *gin.Context) {
 				"remaining": user.Quota,
 				"used":      user.UsedQuota,
 			},
-			"desktop_enabled": user.Status == common.UserStatusEnabled,
-			"wallet_url":      desktopPublicBaseURL() + common.ThemeAwarePath("/console/topup"),
+			"desktop_enabled":    user.Status == common.UserStatusEnabled,
+			"api_settings":       desktopAPISettings(baseURL, models, defaultModel, nil, false),
+			"account_center_url": links["account_center"],
+			"dashboard_url":      links["dashboard"],
+			"wallet_url":         links["wallet"],
+			"usage_url":          links["usage"],
+			"settings_url":       links["settings"],
+			"links":              links,
 		},
 	})
 }

@@ -28,13 +28,28 @@ type desktopRouterAPIResponse struct {
 }
 
 type desktopRouterBootstrap struct {
-	BaseURL       string `json:"base_url"`
-	DefaultModel  string `json:"default_model"`
-	DesktopAPIKey string `json:"desktop_api_key"`
-	Token         struct {
+	BaseURL       string   `json:"base_url"`
+	DefaultModel  string   `json:"default_model"`
+	Models        []string `json:"models"`
+	DesktopAPIKey string   `json:"desktop_api_key"`
+	APISettings   struct {
+		BaseURL          string   `json:"base_url"`
+		DefaultModel     string   `json:"default_model"`
+		Models           []string `json:"models"`
+		APIKey           string   `json:"api_key"`
+		ProviderManaged  bool     `json:"provider_managed"`
+		UserConfigurable bool     `json:"user_configurable"`
+		TokenID          int      `json:"token_id"`
+		TokenName        string   `json:"token_name"`
+	} `json:"api_settings"`
+	Token struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
 	} `json:"token"`
+	AccountCenterURL string `json:"account_center_url"`
+	WalletURL        string `json:"wallet_url"`
+	UsageURL         string `json:"usage_url"`
+	SettingsURL      string `json:"settings_url"`
 }
 
 type desktopRouterLoginData struct {
@@ -52,6 +67,7 @@ func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 	originalUsingPostgreSQL := common.UsingPostgreSQL
 	originalRedisEnabled := common.RedisEnabled
 	originalServerAddress := system_setting.ServerAddress
+	originalTheme := common.GetTheme()
 	originalDefaultUseAutoGroup := setting.DefaultUseAutoGroup
 	originalRegisterEnabled := common.RegisterEnabled
 	originalPasswordRegisterEnabled := common.PasswordRegisterEnabled
@@ -66,6 +82,7 @@ func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 	common.UsingPostgreSQL = false
 	common.RedisEnabled = false
 	model.InitColumnNames()
+	common.SetTheme("default")
 	system_setting.ServerAddress = "https://api.glart.cn"
 	setting.DefaultUseAutoGroup = false
 	common.RegisterEnabled = true
@@ -127,6 +144,7 @@ func setupDesktopRouterTest(t *testing.T) (*gin.Engine, string) {
 		common.UsingPostgreSQL = originalUsingPostgreSQL
 		common.RedisEnabled = originalRedisEnabled
 		model.InitColumnNames()
+		common.SetTheme(originalTheme)
 		system_setting.ServerAddress = originalServerAddress
 		setting.DefaultUseAutoGroup = originalDefaultUseAutoGroup
 		common.RegisterEnabled = originalRegisterEnabled
@@ -246,11 +264,29 @@ func TestDesktopRouterBootstrapStatusAndRotateUseAccessTokenAuth(t *testing.T) {
 	if bootstrap.DefaultModel != "gpt-5.5" {
 		t.Fatalf("expected desktop default model from enabled group ability, got %q", bootstrap.DefaultModel)
 	}
+	if len(bootstrap.Models) != 1 || bootstrap.Models[0] != "gpt-5.5" {
+		t.Fatalf("expected desktop models from enabled group ability, got %+v", bootstrap.Models)
+	}
 	if bootstrap.DesktopAPIKey == "" {
 		t.Fatalf("expected desktop API key from bootstrap")
 	}
+	if bootstrap.APISettings.BaseURL != bootstrap.BaseURL || bootstrap.APISettings.APIKey != bootstrap.DesktopAPIKey {
+		t.Fatalf("expected bootstrap api settings to mirror base url and desktop api key")
+	}
+	if bootstrap.APISettings.DefaultModel != bootstrap.DefaultModel || !bootstrap.APISettings.ProviderManaged || bootstrap.APISettings.UserConfigurable {
+		t.Fatalf("unexpected bootstrap api settings: %+v", bootstrap.APISettings)
+	}
 	if bootstrap.Token.Name != model.DesktopDefaultTokenName {
 		t.Fatalf("expected desktop token name %q, got %q", model.DesktopDefaultTokenName, bootstrap.Token.Name)
+	}
+	if bootstrap.APISettings.TokenID != bootstrap.Token.ID || bootstrap.APISettings.TokenName != bootstrap.Token.Name {
+		t.Fatalf("expected bootstrap api settings token metadata to match token")
+	}
+	if bootstrap.AccountCenterURL != "https://api.glart.cn/dashboard" ||
+		bootstrap.WalletURL != "https://api.glart.cn/wallet" ||
+		bootstrap.UsageURL != "https://api.glart.cn/usage-logs" ||
+		bootstrap.SettingsURL != "https://api.glart.cn/profile" {
+		t.Fatalf("unexpected bootstrap account links: account=%q wallet=%q usage=%q settings=%q", bootstrap.AccountCenterURL, bootstrap.WalletURL, bootstrap.UsageURL, bootstrap.SettingsURL)
 	}
 
 	statusRecorder := performDesktopRouterRequest(engine, http.MethodGet, "/api/desktop/status", accessToken)
@@ -258,7 +294,7 @@ func TestDesktopRouterBootstrapStatusAndRotateUseAccessTokenAuth(t *testing.T) {
 	if !statusResponse.Success {
 		t.Fatalf("expected router status success, got message: %s", statusResponse.Message)
 	}
-	if strings.Contains(statusRecorder.Body.String(), "desktop_api_key") {
+	if strings.Contains(statusRecorder.Body.String(), "desktop_api_key") || strings.Contains(statusRecorder.Body.String(), `"api_key"`) {
 		t.Fatalf("desktop status response must not expose desktop API key: %s", statusRecorder.Body.String())
 	}
 
@@ -352,7 +388,7 @@ func TestDesktopRouterRegisterLoginAndBootstrapFlow(t *testing.T) {
 	if !statusResponse.Success {
 		t.Fatalf("expected access-token-backed desktop status success, got message: %s", statusResponse.Message)
 	}
-	if strings.Contains(statusRecorder.Body.String(), "desktop_api_key") {
+	if strings.Contains(statusRecorder.Body.String(), "desktop_api_key") || strings.Contains(statusRecorder.Body.String(), `"api_key"`) {
 		t.Fatalf("desktop status response must not expose desktop API key: %s", statusRecorder.Body.String())
 	}
 }

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -16,23 +17,48 @@ type desktopBootstrapResponse struct {
 		Username string `json:"username"`
 		Group    string `json:"group"`
 	} `json:"user"`
-	BaseURL       string `json:"base_url"`
-	DefaultModel  string `json:"default_model"`
-	DesktopAPIKey string `json:"desktop_api_key"`
-	Token         struct {
+	BaseURL       string   `json:"base_url"`
+	DefaultModel  string   `json:"default_model"`
+	Models        []string `json:"models"`
+	DesktopAPIKey string   `json:"desktop_api_key"`
+	APISettings   struct {
+		BaseURL          string   `json:"base_url"`
+		DefaultModel     string   `json:"default_model"`
+		Models           []string `json:"models"`
+		APIKey           string   `json:"api_key"`
+		ProviderManaged  bool     `json:"provider_managed"`
+		UserConfigurable bool     `json:"user_configurable"`
+		TokenID          int      `json:"token_id"`
+		TokenName        string   `json:"token_name"`
+	} `json:"api_settings"`
+	Token struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
 	} `json:"token"`
-	WalletURL string `json:"wallet_url"`
+	AccountCenterURL string `json:"account_center_url"`
+	DashboardURL     string `json:"dashboard_url"`
+	WalletURL        string `json:"wallet_url"`
+	UsageURL         string `json:"usage_url"`
+	SettingsURL      string `json:"settings_url"`
+	Links            struct {
+		AccountCenter string `json:"account_center"`
+		Dashboard     string `json:"dashboard"`
+		Wallet        string `json:"wallet"`
+		Usage         string `json:"usage"`
+		Settings      string `json:"settings"`
+	} `json:"links"`
 }
 
 func setupDesktopControllerTestDB(t *testing.T) {
 	t.Helper()
+	originalTheme := common.GetTheme()
 	db := setupTokenControllerTestDB(t)
 	if err := db.AutoMigrate(&model.User{}, &model.Ability{}); err != nil {
 		t.Fatalf("failed to migrate desktop test tables: %v", err)
 	}
+	common.SetTheme("default")
 	t.Cleanup(func() {
+		common.SetTheme(originalTheme)
 		system_setting.ServerAddress = "http://localhost:3000"
 		setting.DefaultUseAutoGroup = false
 	})
@@ -96,11 +122,38 @@ func TestGetDesktopBootstrapCreatesDefaultToken(t *testing.T) {
 	if data.DefaultModel != "gpt-5.5" {
 		t.Fatalf("expected seeded default model, got %q", data.DefaultModel)
 	}
+	if len(data.Models) != 1 || data.Models[0] != "gpt-5.5" {
+		t.Fatalf("expected seeded models in bootstrap, got %+v", data.Models)
+	}
 	if data.DesktopAPIKey == "" {
 		t.Fatalf("expected desktop api key")
 	}
+	if data.APISettings.BaseURL != data.BaseURL {
+		t.Fatalf("expected api settings base url %q, got %q", data.BaseURL, data.APISettings.BaseURL)
+	}
+	if data.APISettings.APIKey != data.DesktopAPIKey {
+		t.Fatalf("expected api settings to carry the desktop api key")
+	}
+	if data.APISettings.DefaultModel != data.DefaultModel {
+		t.Fatalf("expected api settings default model %q, got %q", data.DefaultModel, data.APISettings.DefaultModel)
+	}
+	if !data.APISettings.ProviderManaged || data.APISettings.UserConfigurable {
+		t.Fatalf("expected desktop api settings to be provider-managed and not user-configurable")
+	}
 	if data.Token.Name != model.DesktopDefaultTokenName {
 		t.Fatalf("expected desktop token name %q, got %q", model.DesktopDefaultTokenName, data.Token.Name)
+	}
+	if data.APISettings.TokenID != data.Token.ID || data.APISettings.TokenName != data.Token.Name {
+		t.Fatalf("expected api settings token metadata to match bootstrap token")
+	}
+	if data.AccountCenterURL != "https://api.glart.cn/dashboard" {
+		t.Fatalf("expected dashboard account center url, got %q", data.AccountCenterURL)
+	}
+	if data.DashboardURL != data.AccountCenterURL || data.Links.AccountCenter != data.AccountCenterURL || data.Links.Dashboard != data.DashboardURL {
+		t.Fatalf("expected account center and dashboard links to match")
+	}
+	if data.WalletURL != "https://api.glart.cn/wallet" || data.UsageURL != "https://api.glart.cn/usage-logs" || data.SettingsURL != "https://api.glart.cn/profile" {
+		t.Fatalf("unexpected desktop account links: wallet=%q usage=%q settings=%q", data.WalletURL, data.UsageURL, data.SettingsURL)
 	}
 
 	var count int64
@@ -226,12 +279,38 @@ func TestGetDesktopStatusReturnsStablePayloadBeforeBootstrap(t *testing.T) {
 			Remaining int `json:"remaining"`
 			Used      int `json:"used"`
 		} `json:"quota"`
-		WalletURL string `json:"wallet_url"`
+		APISettings struct {
+			BaseURL          string   `json:"base_url"`
+			DefaultModel     string   `json:"default_model"`
+			Models           []string `json:"models"`
+			ProviderManaged  bool     `json:"provider_managed"`
+			UserConfigurable bool     `json:"user_configurable"`
+		} `json:"api_settings"`
+		AccountCenterURL string `json:"account_center_url"`
+		DashboardURL     string `json:"dashboard_url"`
+		WalletURL        string `json:"wallet_url"`
+		UsageURL         string `json:"usage_url"`
+		SettingsURL      string `json:"settings_url"`
 	}
 	if err := common.Unmarshal(response.Data, &payload); err != nil {
 		t.Fatalf("failed to decode desktop status payload: %v", err)
 	}
-	if payload.WalletURL == "" {
-		t.Fatalf("expected wallet url")
+	if payload.APISettings.BaseURL != "http://localhost:3000/v1" {
+		t.Fatalf("expected status api settings base url, got %q", payload.APISettings.BaseURL)
+	}
+	if !payload.APISettings.ProviderManaged || payload.APISettings.UserConfigurable {
+		t.Fatalf("expected status api settings to be provider-managed and not user-configurable")
+	}
+	if payload.AccountCenterURL != "http://localhost:3000/dashboard" {
+		t.Fatalf("expected status account center url, got %q", payload.AccountCenterURL)
+	}
+	if payload.DashboardURL != payload.AccountCenterURL {
+		t.Fatalf("expected status dashboard url to match account center url")
+	}
+	if payload.WalletURL != "http://localhost:3000/wallet" || payload.UsageURL != "http://localhost:3000/usage-logs" || payload.SettingsURL != "http://localhost:3000/profile" {
+		t.Fatalf("unexpected status account links: wallet=%q usage=%q settings=%q", payload.WalletURL, payload.UsageURL, payload.SettingsURL)
+	}
+	if strings.Contains(recorder.Body.String(), `"api_key"`) || strings.Contains(recorder.Body.String(), "desktop_api_key") {
+		t.Fatalf("desktop status response must not expose API keys: %s", recorder.Body.String())
 	}
 }
