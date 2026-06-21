@@ -113,8 +113,18 @@ func GetDesktopDefaultToken(userId int) (*Token, error) {
 }
 
 func EnsureDesktopDefaultToken(userId int, group string) (*Token, error) {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		group = "default"
+	}
 	token, err := GetDesktopDefaultToken(userId)
 	if err == nil {
+		if strings.TrimSpace(token.Group) != group {
+			if err := DB.Model(token).Update("group", group).Error; err != nil {
+				return nil, err
+			}
+			token.Group = group
+		}
 		return token, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {

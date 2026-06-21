@@ -134,6 +134,54 @@ func TestGetDesktopBootstrapReusesDefaultToken(t *testing.T) {
 	}
 }
 
+func TestGetDesktopBootstrapRefreshesDesktopTokenGroup(t *testing.T) {
+	setupDesktopControllerTestDB(t)
+	seedDesktopUser(t, 1, "desktop-user", "default")
+
+	firstCtx, firstRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/desktop/bootstrap", nil, 1)
+	GetDesktopBootstrap(firstCtx)
+	firstData := decodeDesktopBootstrap(t, decodeAPIResponse(t, firstRecorder))
+	firstToken, err := model.GetDesktopDefaultToken(1)
+	if err != nil {
+		t.Fatalf("expected initial desktop token: %v", err)
+	}
+	if firstToken.Group != "default" {
+		t.Fatalf("expected initial desktop token group default, got %q", firstToken.Group)
+	}
+
+	if err := model.DB.Model(&model.User{}).Where("id = ?", 1).Update("group", "vip").Error; err != nil {
+		t.Fatalf("failed to update user group: %v", err)
+	}
+	secondCtx, secondRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/desktop/bootstrap", nil, 1)
+	GetDesktopBootstrap(secondCtx)
+	secondData := decodeDesktopBootstrap(t, decodeAPIResponse(t, secondRecorder))
+	secondToken, err := model.GetDesktopDefaultToken(1)
+	if err != nil {
+		t.Fatalf("expected reused desktop token: %v", err)
+	}
+	if secondData.Token.ID != firstData.Token.ID || secondData.DesktopAPIKey != firstData.DesktopAPIKey {
+		t.Fatalf("expected group refresh to reuse existing desktop token")
+	}
+	if secondToken.Group != "vip" {
+		t.Fatalf("expected desktop token group to follow user group vip, got %q", secondToken.Group)
+	}
+
+	setting.DefaultUseAutoGroup = true
+	thirdCtx, thirdRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/desktop/bootstrap", nil, 1)
+	GetDesktopBootstrap(thirdCtx)
+	thirdData := decodeDesktopBootstrap(t, decodeAPIResponse(t, thirdRecorder))
+	thirdToken, err := model.GetDesktopDefaultToken(1)
+	if err != nil {
+		t.Fatalf("expected auto-group desktop token: %v", err)
+	}
+	if thirdData.Token.ID != firstData.Token.ID || thirdData.DesktopAPIKey != firstData.DesktopAPIKey {
+		t.Fatalf("expected auto-group refresh to reuse existing desktop token")
+	}
+	if thirdToken.Group != "auto" {
+		t.Fatalf("expected desktop token group auto when DefaultUseAutoGroup is enabled, got %q", thirdToken.Group)
+	}
+}
+
 func TestRotateDesktopTokenInvalidatesOldKey(t *testing.T) {
 	setupDesktopControllerTestDB(t)
 	seedDesktopUser(t, 1, "desktop-user", "default")
@@ -172,9 +220,9 @@ func TestGetDesktopStatusReturnsStablePayloadBeforeBootstrap(t *testing.T) {
 		t.Fatalf("expected desktop status success, got message: %s", response.Message)
 	}
 	var payload struct {
-		UserStatus     int `json:"user_status"`
+		UserStatus     int  `json:"user_status"`
 		DesktopEnabled bool `json:"desktop_enabled"`
-		Quota struct {
+		Quota          struct {
 			Remaining int `json:"remaining"`
 			Used      int `json:"used"`
 		} `json:"quota"`
