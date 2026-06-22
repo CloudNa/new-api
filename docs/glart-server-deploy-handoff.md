@@ -1,6 +1,6 @@
 # Glart new-api 服务器部署交接
 
-最后核对时间：2026-06-15  
+最后核对时间：2026-06-22
 用途：让新的 Codex 会话或其他维护者可以立刻理解 `api.glart.cn` 的服务器连接方式、new-api 部署结构、更新/回滚流程，以及其他相关项目如何接入 new-api。
 
 ## 一句话结论
@@ -10,6 +10,32 @@
 - GPT-Load、CLIProxyAPI、CPA Manager Plus、Redis、updater 都只在 Docker 内网 `glart-internal` 中运行，不直接暴露管理端口。
 - 服务器项目路径是 `/opt/glart-api/app`，当前代码分支是 `codex/clean-newapi-gptload-cpa`，服务器 `origin` 指向 `https://github.com/CloudNa/new-api.git`。
 - 更新 new-api 使用服务器内置脚本：`sh deploy/glart-stack/scripts/update-glart-stack.sh update new-api`。
+
+## 2026-06-22 桌面端部署与验收记录
+
+本次只更新 `new-api` 单组件，未更新 sidecar：
+
+- 部署前服务器 HEAD：`9dc91ef5`。
+- 部署后服务器 HEAD：`f6f8f3ae`。
+- 目标分支：`codex/clean-newapi-gptload-cpa`。
+- 更新命令：`sh deploy/glart-stack/scripts/update-glart-stack.sh update new-api`。
+- 更新脚本已完成：Compose 配置检查、new-api runtime 备份、`git pull --ff-only`、Go 单测、Docker build、`glart-new-api` 重建启动、new-api/GPT-Load/CLIProxyAPI/CPA Manager Plus smoke。
+- 备份目录：`deploy/glart-stack/runtime/backups/new-api/20260622-082821-9dc91ef5`。
+- 首次更新时遇到 `.git/objects` ownership 问题，按本文档的 known issue 指引只修复代码仓库 ownership，排除 runtime 与 node_modules 后重跑成功。
+- 部署后公网 `/api/desktop/bootstrap` 未登录访问返回 401，不再是部署前的 404，说明 `/api/desktop/*` 路由已上线。
+
+桌面账号真实联网验收已通过，未输出或保存任何真实 username、password、access token、desktop API key 或 cookie：
+
+- 自动注册一次性测试账号：通过。
+- 登录：通过。
+- `/api/user/token`：通过。
+- session-backed `/api/desktop/bootstrap`：通过，并返回 desktop key。
+- `/api/user/logout` 后再次 session bootstrap：返回 401，符合预期。
+- 重新登录：通过。
+- access-token-backed `/api/desktop/bootstrap`：通过，并返回 desktop key。
+- `/api/desktop/status`：通过，且未暴露 `desktop_api_key` 或 nested `api_key`。
+- account center、wallet、usage、settings 链接：均返回。
+- bootstrap 模型列表返回 40 个模型，并包含默认模型。
 
 ## 连接服务器
 
@@ -527,4 +553,3 @@ sh deploy/glart-stack/scripts/update-glart-stack.sh rollback new-api
 ```bash
 curl -fsS https://api.glart.cn/api/status
 ```
-
