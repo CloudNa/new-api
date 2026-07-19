@@ -23,6 +23,42 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const eventStreamJSONProbeLimit = 512
+
+type prependReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r prependReadCloser) Close() error {
+	return r.closer.Close()
+}
+
+func normalizeMislabeledEventStreamResponse(info *relaycommon.RelayInfo, resp *http.Response) {
+	if info == nil || resp == nil || resp.Body == nil || info.IsStream {
+		return
+	}
+	if !strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		return
+	}
+
+	prefix := make([]byte, eventStreamJSONProbeLimit)
+	n, _ := resp.Body.Read(prefix)
+	prefix = prefix[:n]
+
+	if len(prefix) > 0 {
+		resp.Body = prependReadCloser{
+			Reader: io.MultiReader(bytes.NewReader(prefix), resp.Body),
+			closer: resp.Body,
+		}
+	}
+
+	trimmed := bytes.TrimLeft(prefix, " \t\r\n")
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+		resp.Header.Set("Content-Type", "application/json")
+	}
+}
+
 func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
 
@@ -44,6 +80,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
+
+	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
+	service.ApplyPromptCompressionForRelay(c, info, request, passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled)
+	service.ApplyOutputPolicyForRelay(c, info, request, passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled)
 
 	includeUsage := true
 	// 判断用户是否需要返回使用情况
@@ -71,7 +111,6 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 	adaptor.Init(info)
 
-	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
 	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
 		!passThroughGlobal &&
 		!info.ChannelSetting.PassThroughBodyEnabled &&
@@ -90,6 +129,16 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		} else {
 			service.PostTextConsumeQuota(c, info, usage, nil)
 		}
+		return nil
+	}
+
+	cacheDecision, cacheEntry := service.PrepareResponseCacheForRelay(c, info, request, passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled)
+	if cacheDecision != nil && cacheEntry != nil {
+		usage := service.ServeResponseCacheHit(c, cacheEntry)
+		if usage == nil {
+			return types.NewError(fmt.Errorf("invalid response cache entry"), types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+		}
+		service.PostTextConsumeQuota(c, info, usage, []string{"response cache hit"})
 		return nil
 	}
 
@@ -176,7 +225,14 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 		logger.LogDebug(c, "text request body: %s", jsonData)
 
-		requestBody = bytes.NewBuffer(jsonData)
+		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		defer closer.Close()
+		jsonData = nil
+		info.UpstreamRequestBodySize = size
+		requestBody = body
 	}
 
 	var httpResp *http.Response
@@ -189,6 +245,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	if resp != nil {
 		httpResp = resp.(*http.Response)
+		normalizeMislabeledEventStreamResponse(info, httpResp)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
 			newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
@@ -207,6 +264,8 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
+
+	service.StoreResponseCacheForRelay(c, info, request, usage.(*dto.Usage))
 
 	if containAudioTokens && containsAudioRatios {
 		service.PostAudioConsumeQuota(c, info, usage.(*dto.Usage), "")

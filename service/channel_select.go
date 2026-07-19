@@ -2,11 +2,14 @@ package service
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/profit"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
@@ -159,4 +162,112 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 	}
 	return channel, selectGroup, nil
+}
+
+func CacheGetProfitPreferredChannel(param *RetryParam, promptTokens int, completionTokens int, userQuota int) (*model.Channel, *profit.RouteSelection, error) {
+	if param == nil || param.Ctx == nil || param.TokenGroup == "auto" {
+		return nil, nil, nil
+	}
+	settings := profit.CurrentSettings().Normalize()
+	if settings.CostRoutingMode != profit.ModePreferMargin {
+		return nil, nil, nil
+	}
+
+	candidates, err := model.GetSatisfiedChannelCandidatesForProfitObservation(
+		param.TokenGroup,
+		param.ModelName,
+		profit.DefaultRouteCandidateLimit,
+	)
+	if err != nil || len(candidates) == 0 {
+		return nil, nil, err
+	}
+
+	usedChannels := usedChannelSet(param.Ctx.GetStringSlice("use_channel"))
+	channelIDs := make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, used := usedChannels[candidate.ChannelID]; used {
+			continue
+		}
+		channelIDs = append(channelIDs, candidate.ChannelID)
+	}
+	channelHealth, healthErr := perfmetrics.QueryChannelHealth(perfmetrics.ChannelHealthParams{
+		Model:      param.ModelName,
+		Group:      param.TokenGroup,
+		ChannelIDs: channelIDs,
+		Hours:      settings.CostRoutingHealthWindowHours,
+	})
+	if healthErr != nil {
+		logger.LogWarn(param.Ctx, "profit channel health skipped: "+healthErr.Error())
+		channelHealth = nil
+	}
+	routeCandidates := make([]profit.RouteCandidateInput, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, used := usedChannels[candidate.ChannelID]; used {
+			continue
+		}
+		latencyMs := candidate.ResponseTime
+		failureRate := 0.0
+		if health, ok := channelHealth[candidate.ChannelID]; ok && health.RequestCount > 0 {
+			failureRate = health.FailureRate / 100
+			if health.AvgLatencyMs > 0 {
+				latencyMs = int(health.AvgLatencyMs)
+			}
+		}
+		routeCandidates = append(routeCandidates, profit.RouteCandidateInput{
+			Provider:                       candidate.ChannelName,
+			ChannelID:                      candidate.ChannelID,
+			ChannelName:                    candidate.ChannelName,
+			ModelName:                      param.ModelName,
+			BillablePromptTokens:           promptTokens,
+			BillableCompletionTokens:       completionTokens,
+			UpstreamActualPromptTokens:     promptTokens,
+			UpstreamActualCompletionTokens: completionTokens,
+			UserQuota:                      userQuota,
+			LatencyMs:                      latencyMs,
+			FailureRate:                    failureRate,
+			HealthRequestCount:             channelHealth[candidate.ChannelID].RequestCount,
+			HealthSuccessRatePct:           channelHealth[candidate.ChannelID].SuccessRate,
+			Priority:                       candidate.Priority,
+			Weight:                         candidate.Weight,
+		})
+	}
+
+	selection := profit.SelectPreferMarginRoute(settings, profit.RouteDecisionInput{
+		Group:                          param.TokenGroup,
+		ModelName:                      param.ModelName,
+		BillablePromptTokens:           promptTokens,
+		BillableCompletionTokens:       completionTokens,
+		UpstreamActualPromptTokens:     promptTokens,
+		UpstreamActualCompletionTokens: completionTokens,
+		UserQuota:                      userQuota,
+		Candidates:                     routeCandidates,
+	})
+	param.Ctx.Set(profit.KeyRouteLiveRoutingUsed, selection.LiveRoutingUsed)
+	param.Ctx.Set(profit.KeyRouteBypassReason, selection.Reason)
+	if !selection.LiveRoutingUsed {
+		return nil, &selection, nil
+	}
+
+	channel, err := model.CacheGetChannel(selection.ChannelID)
+	if err != nil {
+		return nil, &selection, err
+	}
+	if channel.Status != common.ChannelStatusEnabled || !model.IsChannelEnabledForGroupModel(param.TokenGroup, param.ModelName, channel.Id) {
+		return nil, &selection, nil
+	}
+	return channel, &selection, nil
+}
+
+func usedChannelSet(values []string) map[int]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+	used := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		id, err := strconv.Atoi(value)
+		if err == nil && id > 0 {
+			used[id] = struct{}{}
+		}
+	}
+	return used
 }

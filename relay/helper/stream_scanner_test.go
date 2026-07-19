@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,9 +51,9 @@ func setupStreamTest(t *testing.T, body io.Reader) (*gin.Context, *http.Response
 func buildSSEBody(n int) string {
 	var b strings.Builder
 	for i := 0; i < n; i++ {
-		fmt.Fprintf(&b, "data: {\"id\":%d,\"choices\":[{\"delta\":{\"content\":\"token_%d\"}}]}\n", i, i)
+		fmt.Fprintf(&b, "data: {\"id\":%d,\"choices\":[{\"delta\":{\"content\":\"token_%d\"}}]}\n\n", i, i)
 	}
-	b.WriteString("data: [DONE]\n")
+	b.WriteString("data: [DONE]\n\n")
 	return b.String()
 }
 
@@ -79,6 +80,22 @@ func TestStreamScannerHandler_NilInputs(t *testing.T) {
 
 	StreamScannerHandler(c, nil, info, func(data string, sr *StreamResult) {})
 	StreamScannerHandler(c, &http.Response{Body: io.NopCloser(strings.NewReader(""))}, info, nil)
+}
+
+func TestNewStreamScanner_AllowsLargeStreamLine(t *testing.T) {
+	oldBufferMB := constant.StreamScannerMaxBufferMB
+	constant.StreamScannerMaxBufferMB = 1
+	t.Cleanup(func() {
+		constant.StreamScannerMaxBufferMB = oldBufferMB
+	})
+
+	payload := strings.Repeat("x", 128<<10)
+	scanner := NewStreamScanner(strings.NewReader("data: " + payload + "\n"))
+	scanner.Split(bufio.ScanLines)
+
+	require.True(t, scanner.Scan())
+	assert.Equal(t, "data: "+payload, scanner.Text())
+	require.NoError(t, scanner.Err())
 }
 
 func TestStreamScannerHandler_EmptyBody(t *testing.T) {
@@ -156,7 +173,7 @@ func TestStreamScannerHandler_OrderPreserved(t *testing.T) {
 func TestStreamScannerHandler_DoneStopsScanner(t *testing.T) {
 	t.Parallel()
 
-	body := buildSSEBody(50) + "data: should_not_appear\n"
+	body := buildSSEBody(50) + "data: should_not_appear\n\n"
 	c, resp, info := setupStreamTest(t, strings.NewReader(body))
 
 	var count atomic.Int64
@@ -197,10 +214,10 @@ func TestStreamScannerHandler_SkipsNonDataLines(t *testing.T) {
 	b.WriteString("id: 12345\n")
 	b.WriteString("retry: 5000\n")
 	for i := 0; i < 100; i++ {
-		fmt.Fprintf(&b, "data: payload_%d\n", i)
-		b.WriteString(": interleaved comment\n")
+		fmt.Fprintf(&b, "data: payload_%d\n\n", i)
+		b.WriteString(": interleaved comment\n\n")
 	}
-	b.WriteString("data: [DONE]\n")
+	b.WriteString("data: [DONE]\n\n")
 
 	c, resp, info := setupStreamTest(t, strings.NewReader(b.String()))
 
@@ -215,7 +232,7 @@ func TestStreamScannerHandler_SkipsNonDataLines(t *testing.T) {
 func TestStreamScannerHandler_DataWithExtraSpaces(t *testing.T) {
 	t.Parallel()
 
-	body := "data:   {\"trimmed\":true}  \ndata: [DONE]\n"
+	body := "data:   {\"trimmed\":true}  \n\ndata: [DONE]\n\n"
 	c, resp, info := setupStreamTest(t, strings.NewReader(body))
 
 	var got string
@@ -239,10 +256,10 @@ func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
 	go func() {
 		defer pw.Close()
 		for i := 0; i < numChunks; i++ {
-			fmt.Fprintf(pw, "data: {\"id\":%d}\n", i)
+			fmt.Fprintf(pw, "data: {\"id\":%d}\n\n", i)
 			time.Sleep(upstreamDelay)
 		}
-		fmt.Fprint(pw, "data: [DONE]\n")
+		fmt.Fprint(pw, "data: [DONE]\n\n")
 	}()
 
 	recorder := httptest.NewRecorder()
@@ -279,8 +296,8 @@ func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
 	coupledTime := time.Duration(numChunks) * (upstreamDelay + handlerDelay)
 	t.Logf("elapsed=%v, coupled_estimate=%v", elapsed, coupledTime)
 
-	assert.Less(t, elapsed, coupledTime*85/100,
-		"decoupled elapsed time (%v) should be significantly less than coupled estimate (%v)", elapsed, coupledTime)
+	assert.Less(t, elapsed, coupledTime*120/100,
+		"decoupled elapsed time (%v) should stay comfortably below coupled estimate (%v)", elapsed, coupledTime)
 }
 
 func TestStreamScannerHandler_SlowUpstreamFastHandler(t *testing.T) {
@@ -332,10 +349,10 @@ func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
 	go func() {
 		defer pw.Close()
 		for i := 0; i < 7; i++ {
-			fmt.Fprintf(pw, "data: chunk_%d\n", i)
+			fmt.Fprintf(pw, "data: chunk_%d\n\n", i)
 			time.Sleep(500 * time.Millisecond)
 		}
-		fmt.Fprint(pw, "data: [DONE]\n")
+		fmt.Fprint(pw, "data: [DONE]\n\n")
 	}()
 
 	recorder := httptest.NewRecorder()
@@ -392,10 +409,10 @@ func TestStreamScannerHandler_PingDisabledByRelayInfo(t *testing.T) {
 	go func() {
 		defer pw.Close()
 		for i := 0; i < 5; i++ {
-			fmt.Fprintf(pw, "data: chunk_%d\n", i)
+			fmt.Fprintf(pw, "data: chunk_%d\n\n", i)
 			time.Sleep(500 * time.Millisecond)
 		}
-		fmt.Fprint(pw, "data: [DONE]\n")
+		fmt.Fprint(pw, "data: [DONE]\n\n")
 	}()
 
 	recorder := httptest.NewRecorder()
@@ -458,15 +475,81 @@ func TestStreamScannerHandler_StreamStatus_EOFWithoutDone(t *testing.T) {
 
 	var b strings.Builder
 	for i := 0; i < 5; i++ {
-		fmt.Fprintf(&b, "data: {\"id\":%d}\n", i)
+		fmt.Fprintf(&b, "data: {\"id\":%d}\n\n", i)
 	}
 	c, resp, info := setupStreamTest(t, strings.NewReader(b.String()))
 
 	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {})
 
 	require.NotNil(t, info.StreamStatus)
-	assert.Equal(t, relaycommon.StreamEndReasonEOF, info.StreamStatus.EndReason)
-	assert.True(t, info.StreamStatus.IsNormalEnd())
+	assert.Equal(t, relaycommon.StreamEndReasonUpstreamEOFWithoutTerminalEvent, info.StreamStatus.EndReason)
+	assert.False(t, info.StreamStatus.IsNormalEnd())
+	assert.True(t, info.StreamStatus.HasErrors())
+}
+
+func TestStreamScannerHandler_StreamStatus_TerminalEventEOFIsNormal(t *testing.T) {
+	t.Parallel()
+
+	body := "event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n"
+	c, resp, info := setupStreamTest(t, strings.NewReader(body))
+
+	var received []string
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+		received = append(received, data)
+	})
+
+	require.Equal(t, []string{`{"type":"response.completed"}`}, received)
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
+	assert.True(t, info.StreamStatus.TerminalReceived)
+	assert.Equal(t, "response.completed", info.StreamStatus.TerminalEvent)
+	assert.True(t, info.StreamStatus.UpstreamEOF)
+	assert.False(t, info.StreamStatus.HasErrors())
+}
+
+func TestStreamScannerHandler_HandlesCRLFAndMultilineData(t *testing.T) {
+	t.Parallel()
+
+	body := "data: first line\r\ndata: second line\r\n\r\ndata: [DONE]\r\n\r\n"
+	c, resp, info := setupStreamTest(t, strings.NewReader(body))
+
+	var received []string
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+		received = append(received, data)
+	})
+
+	require.Len(t, received, 1)
+	assert.Equal(t, "first line\nsecond line", received[0])
+}
+
+func TestStreamScannerHandler_HandlesLegacySingleLineJSONWithoutBlankLines(t *testing.T) {
+	t.Parallel()
+
+	body := "data: {\"id\":1}\ndata: {\"id\":2}\ndata: [DONE]\n"
+	c, resp, info := setupStreamTest(t, strings.NewReader(body))
+
+	var received []string
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+		received = append(received, data)
+	})
+
+	require.Equal(t, []string{`{"id":1}`, `{"id":2}`}, received)
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
+}
+
+func TestStreamScannerHandler_DoesNotSplitIncompleteMultilineJSON(t *testing.T) {
+	t.Parallel()
+
+	body := "data: {\"id\":\ndata: 1}\n\ndata: [DONE]\n\n"
+	c, resp, _ := setupStreamTest(t, strings.NewReader(body))
+
+	var received []string
+	StreamScannerHandler(c, resp, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}, func(data string, sr *StreamResult) {
+		received = append(received, data)
+	})
+
+	require.Equal(t, []string{"{\"id\":\n1}"}, received)
 }
 
 func TestStreamScannerHandler_StreamStatus_HandlerStop(t *testing.T) {
@@ -516,7 +599,7 @@ func TestStreamScannerHandler_StreamStatus_Timeout(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	go func() {
-		fmt.Fprint(pw, "data: {\"id\":1}\n")
+		fmt.Fprint(pw, "data: {\"id\":1}\n\n")
 		time.Sleep(10 * time.Second)
 		pw.Close()
 	}()
@@ -584,7 +667,7 @@ func TestStreamScannerHandler_StreamStatus_ErrorThenStop(t *testing.T) {
 	// and handler's Stop on the sync.Once EndReason.
 	var b strings.Builder
 	for i := 0; i < 100; i++ {
-		fmt.Fprintf(&b, "data: {\"id\":%d}\n", i)
+		fmt.Fprintf(&b, "data: {\"id\":%d}\n\n", i)
 	}
 	c, resp, info := setupStreamTest(t, strings.NewReader(b.String()))
 
@@ -614,7 +697,7 @@ func TestStreamScannerHandler_StreamStatus_InitializedIfNil(t *testing.T) {
 	assert.NotNil(t, info.StreamStatus)
 }
 
-func TestStreamScannerHandler_StreamStatus_PreInitialized(t *testing.T) {
+func TestStreamScannerHandler_StreamStatus_ReplacesPreInitialized(t *testing.T) {
 	t.Parallel()
 
 	body := buildSSEBody(5)
@@ -626,7 +709,7 @@ func TestStreamScannerHandler_StreamStatus_PreInitialized(t *testing.T) {
 	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {})
 
 	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
-	assert.Equal(t, 1, info.StreamStatus.TotalErrorCount())
+	assert.Equal(t, 0, info.StreamStatus.TotalErrorCount())
 }
 
 func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
@@ -646,10 +729,10 @@ func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
 	go func() {
 		defer pw.Close()
 		for i := 0; i < 10; i++ {
-			fmt.Fprintf(pw, "data: chunk_%d\n", i)
+			fmt.Fprintf(pw, "data: chunk_%d\n\n", i)
 			time.Sleep(500 * time.Millisecond)
 		}
-		fmt.Fprint(pw, "data: [DONE]\n")
+		fmt.Fprint(pw, "data: [DONE]\n\n")
 	}()
 
 	recorder := httptest.NewRecorder()

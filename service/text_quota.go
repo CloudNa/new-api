@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/profit"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -327,6 +328,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if originUsage != nil {
 		ObserveChannelAffinityUsageCacheByRelayFormat(ctx, usage, relayInfo.GetFinalRequestRelayFormat())
 	}
+	usage = billingUsageForPromptCompression(relayInfo, usage)
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
@@ -458,6 +460,69 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	upstreamPromptTokens := summary.PromptTokens
+	upstreamCompletionTokens := summary.CompletionTokens
+	if originUsage != nil {
+		upstreamPromptTokens = originUsage.PromptTokens
+		upstreamCompletionTokens = originUsage.CompletionTokens
+	}
+	responseCacheDecision := ProfitResponseCacheObservationFromContext(ctx)
+	if responseCacheDecision != nil && responseCacheDecision.LiveServed {
+		upstreamPromptTokens = 0
+		upstreamCompletionTokens = 0
+	}
+	aliasDecision := profitModelAliasDecision(relayInfo)
+	profitRouteModel := profitRoutingModelName(relayInfo, summary.ModelName)
+	compressionSavedTokens := injectPromptCompressionOther(other, relayInfo)
+	retryCostUSD, retryAttemptCount, retryAttempts := ProfitRetryObservationFromContext(ctx)
+	routeDecision := buildProfitRouteDecision(ctx, profitRouteDecisionInput{
+		Group:                          relayInfo.UsingGroup,
+		Provider:                       ctx.GetString("channel_name"),
+		SelectedChannelID:              relayInfo.ChannelId,
+		SelectedChannelName:            ctx.GetString("channel_name"),
+		ModelName:                      profitRouteModel,
+		BillablePromptTokens:           summary.PromptTokens,
+		BillableCompletionTokens:       summary.CompletionTokens,
+		UpstreamActualPromptTokens:     upstreamPromptTokens,
+		UpstreamActualCompletionTokens: upstreamCompletionTokens,
+		CacheReadTokens:                summary.CacheTokens,
+		CacheWriteTokens:               cacheWriteTokens,
+		UserQuota:                      summary.Quota,
+		LatencyMs:                      int(summary.UseTimeSeconds * 1000),
+	})
+	outputPolicyDecision := MergeOutputPolicyCompletion(ProfitOutputPolicyDecisionFromContext(ctx), summary.CompletionTokens)
+	if outputPolicyDecision == nil {
+		outputPolicyDecision = profit.BuildOutputPolicyDecision(profit.OutputPolicyInput{
+			Group:            relayInfo.UsingGroup,
+			ModelName:        summary.ModelName,
+			ChannelID:        relayInfo.ChannelId,
+			ChannelName:      ctx.GetString("channel_name"),
+			CompletionTokens: summary.CompletionTokens,
+		})
+	}
+	profit.AppendObservation(other, profit.ObservationInput{
+		Group:                          relayInfo.UsingGroup,
+		Provider:                       ctx.GetString("channel_name"),
+		ChannelID:                      relayInfo.ChannelId,
+		ChannelName:                    ctx.GetString("channel_name"),
+		ModelName:                      summary.ModelName,
+		BillablePromptTokens:           summary.PromptTokens,
+		BillableCompletionTokens:       summary.CompletionTokens,
+		UpstreamActualPromptTokens:     upstreamPromptTokens,
+		UpstreamActualCompletionTokens: upstreamCompletionTokens,
+		CacheReadTokens:                summary.CacheTokens,
+		CacheWriteTokens:               cacheWriteTokens,
+		UserQuota:                      summary.Quota,
+		CompressionSavedTokens:         compressionSavedTokens,
+		LatencyMs:                      int(summary.UseTimeSeconds * 1000),
+		RouteDecision:                  routeDecision,
+		OutputPolicyDecision:           outputPolicyDecision,
+		RetryCostUSD:                   retryCostUSD,
+		RetryAttemptCount:              retryAttemptCount,
+		RetryAttempts:                  retryAttempts,
+		ModelAliasDecision:             aliasDecision,
+		ResponseCacheDecision:          responseCacheDecision,
+	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

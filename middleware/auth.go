@@ -153,7 +153,17 @@ func authHelper(c *gin.Context, minRole int) {
 	c.Set("user_group", session.Get("group"))
 	c.Set("use_access_token", useAccessToken)
 
+	// 管理/root 写操作审计兜底：内聚在鉴权链路里，保证任何经过 AdminAuth/RootAuth
+	// 的写接口都会自动留痕（无需在路由上单独挂审计中间件，避免漏挂）。
+	// handler 内手动埋点者会设置 ContextKeyAuditLogged，finishAdminAudit 据此跳过。
+	var auditWriter *auditResponseWriter
+	if minRole >= common.RoleAdminUser {
+		auditWriter = beginAdminAudit(c)
+	}
+
 	c.Next()
+
+	finishAdminAudit(c, auditWriter)
 }
 
 func TryUserAuth() func(c *gin.Context) {
@@ -182,6 +192,56 @@ func AdminAuth() func(c *gin.Context) {
 func RootAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		authHelper(c, common.RoleRootUser)
+	}
+}
+
+func CheckRootSession(c *gin.Context) bool {
+	session := sessions.Default(c)
+	username, _ := session.Get("username").(string)
+	role, _ := session.Get("role").(int)
+	status, _ := session.Get("status").(int)
+	id := session.Get("id")
+
+	if id == nil || !validUserInfo(username, role) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn),
+		})
+		c.Abort()
+		return false
+	}
+	if status != common.UserStatusEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgAuthUserBanned),
+		})
+		c.Abort()
+		return false
+	}
+	if role < common.RoleRootUser {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
+		})
+		c.Abort()
+		return false
+	}
+
+	c.Header("Auth-Version", "864b7076dbcd0a3c01b5520316720ebf")
+	c.Set("username", username)
+	c.Set("role", role)
+	c.Set("id", id)
+	c.Set("group", session.Get("group"))
+	c.Set("user_group", session.Get("group"))
+	c.Set("use_access_token", false)
+	return true
+}
+
+func RootSessionAuth() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		if CheckRootSession(c) {
+			c.Next()
+		}
 	}
 }
 

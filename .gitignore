@@ -13,6 +13,7 @@ web/classic/dist
 web/node_modules
 web/dist
 .env
+key.txt
 one-api
 new-api
 /__debug_bin*
@@ -35,3 +36,4 @@ data/
 .test
 token_estimator_test.go
 skills-lock.json
+.playwright-mcp

@@ -443,6 +443,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		case "response.function_call_arguments.done":
 
 		case "response.completed":
+			if info.StreamStatus != nil {
+				info.StreamStatus.MarkTerminalEvent(streamResp.Type)
+			}
 			if streamResp.Response != nil {
 				if streamResp.Response.Model != "" {
 					model = streamResp.Response.Model
@@ -494,8 +497,12 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				}
 				sentStop = true
 			}
+			sr.Done()
 
 		case "response.error", "response.failed":
+			if info.StreamStatus != nil {
+				info.StreamStatus.MarkTerminalEvent(streamResp.Type)
+			}
 			if streamResp.Response != nil {
 				if oaiErr := streamResp.Response.GetOpenAIError(); oaiErr != nil && oaiErr.Type != "" {
 					streamErr = types.WithOpenAIError(*oaiErr, http.StatusInternalServerError)
@@ -544,7 +551,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	}
 
 	if info.RelayFormat == types.RelayFormatOpenAI {
-		helper.Done(c)
+		if err := helper.Done(c); err != nil {
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+		}
 	}
 	return usage, nil
 }

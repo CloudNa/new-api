@@ -94,21 +94,47 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other map[string]inter
 		return
 	}
 	ss := relayInfo.StreamStatus
+	snapshot := ss.Snapshot()
 	status := "ok"
 	if !ss.IsNormalEnd() || ss.HasErrors() {
 		status = "error"
 	}
 	streamInfo := map[string]interface{}{
-		"status":     status,
-		"end_reason": string(ss.EndReason),
+		"status":            status,
+		"end_reason":        string(snapshot.EndReason),
+		"request_format":    snapshot.RequestFormat,
+		"group":             snapshot.Group,
+		"model":             snapshot.Model,
+		"channel":           snapshot.ChannelID,
+		"terminal_event":    snapshot.TerminalEvent,
+		"terminal_received": snapshot.TerminalReceived,
+		"chunk_count":       snapshot.ChunkCount,
+		"byte_count":        snapshot.ByteCount,
+		"upstream_eof":      snapshot.UpstreamEOF,
+		"client_gone":       snapshot.ClientGone,
 	}
-	if ss.EndError != nil {
-		streamInfo["end_error"] = ss.EndError.Error()
+	if !snapshot.StartedAt.IsZero() {
+		streamInfo["started_at"] = snapshot.StartedAt.UnixMilli()
 	}
-	if ss.ErrorCount > 0 {
-		streamInfo["error_count"] = ss.ErrorCount
-		messages := make([]string, 0, len(ss.Errors))
-		for _, e := range ss.Errors {
+	if !snapshot.FirstChunkAt.IsZero() {
+		streamInfo["first_chunk_at"] = snapshot.FirstChunkAt.UnixMilli()
+	}
+	if !snapshot.LastChunkAt.IsZero() {
+		streamInfo["last_chunk_at"] = snapshot.LastChunkAt.UnixMilli()
+	}
+	if snapshot.EndError != "" {
+		streamInfo["end_error"] = snapshot.EndError
+	}
+	if snapshot.ReadError != "" {
+		streamInfo["read_error"] = snapshot.ReadError
+	}
+	if snapshot.WriteError != "" {
+		streamInfo["write_error"] = snapshot.WriteError
+	}
+	if snapshot.ErrorCount > 0 {
+		streamInfo["error_count"] = snapshot.ErrorCount
+		messages := make([]string, 0, len(snapshot.Errors))
+		for _, e := range snapshot.Errors {
 			messages = append(messages, e.Message)
 		}
 		streamInfo["errors"] = messages

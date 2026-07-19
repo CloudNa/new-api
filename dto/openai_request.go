@@ -213,12 +213,22 @@ func (r *GeneralOpenAIRequest) ToMap() map[string]any {
 	return result
 }
 
+func IsOpenAIReasoningOModel(modelName string) bool {
+	return strings.HasPrefix(modelName, "o1") ||
+		strings.HasPrefix(modelName, "o3") ||
+		strings.HasPrefix(modelName, "o4")
+}
+
+func IsOpenAIGPT5Model(modelName string) bool {
+	return strings.HasPrefix(modelName, "gpt-5")
+}
+
 func (r *GeneralOpenAIRequest) GetSystemRoleName() string {
-	if strings.HasPrefix(r.Model, "o") {
+	if IsOpenAIReasoningOModel(r.Model) {
 		if !strings.HasPrefix(r.Model, "o1-mini") && !strings.HasPrefix(r.Model, "o1-preview") {
 			return "developer"
 		}
-	} else if strings.HasPrefix(r.Model, "gpt-5") {
+	} else if IsOpenAIGPT5Model(r.Model) {
 		return "developer"
 	}
 	return "system"
@@ -497,6 +507,11 @@ func (m *Message) SetNullContent() {
 }
 
 func (m *Message) SetStringContent(content string) {
+	m.Content = content
+	m.parsedContent = nil
+}
+
+func (m *Message) SetContent(content any) {
 	m.Content = content
 	m.parsedContent = nil
 }

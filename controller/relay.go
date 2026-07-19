@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/profit"
 	"github.com/QuantumNous/new-api/relay"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -88,7 +89,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
-			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
+			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
@@ -122,6 +123,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	applyProfitModelAlias(c, relayInfo)
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -161,6 +163,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
 	} else {
+		maxCompletionTokens := 0
+		if meta != nil {
+			maxCompletionTokens = meta.MaxTokens
+		}
+		newAPIError = service.EnforceProfitRiskBeforeRelay(c, relayInfo, tokens, maxCompletionTokens, priceData.QuotaToPreConsume)
+		if newAPIError != nil {
+			return
+		}
 		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
 		if newAPIError != nil {
 			return
@@ -181,7 +191,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	retryParam := &service.RetryParam{
 		Ctx:        c,
 		TokenGroup: relayInfo.TokenGroup,
-		ModelName:  relayInfo.OriginModelName,
+		ModelName:  relayRoutingModelName(relayInfo),
 		Retry:      common.GetPointer(0),
 	}
 	relayInfo.RetryIndex = 0
@@ -230,7 +240,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
-		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+		willRetry := shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
+		willRetry = service.RecordProfitRetryAttempt(c, relayInfo, channel, newAPIError, willRetry)
+		if !willRetry {
 			break
 		}
 	}
@@ -258,6 +270,55 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func applyProfitModelAlias(c *gin.Context, info *relaycommon.RelayInfo) {
+	if c == nil || info == nil {
+		return
+	}
+	var decision profit.ModelAliasDecision
+	if raw, ok := c.Get(profit.ContextKeyModelAliasDecision); ok {
+		if typed, ok := raw.(profit.ModelAliasDecision); ok {
+			decision = typed
+		}
+	}
+	if !decision.Applied {
+		group := info.UsingGroup
+		if group == "" {
+			group = info.TokenGroup
+		}
+		decision = profit.ResolveModelAlias(profit.CurrentSettings(), profit.ModelAliasInput{
+			Group: group,
+			SKU:   info.OriginModelName,
+		})
+		if decision.Applied {
+			c.Set(profit.ContextKeyModelAliasDecision, decision)
+		}
+	}
+	if !decision.Applied {
+		return
+	}
+	info.ModelAliasApplied = true
+	info.ModelAliasMode = decision.Mode
+	info.ModelAliasID = decision.AliasID
+	info.ModelAliasName = decision.AliasName
+	info.ModelAliasSKU = decision.SKU
+	info.ModelAliasUpstreamModelName = decision.UpstreamModelName
+	info.ModelAliasTargetChannelID = decision.TargetChannelID
+	info.ModelAliasTargetChannelName = decision.TargetChannelName
+	info.ModelAliasCandidateCount = decision.CandidateCount
+	info.ModelAliasObserveOnly = decision.ObserveOnly
+	info.ModelAliasBypassReason = decision.BypassReason
+}
+
+func relayRoutingModelName(info *relaycommon.RelayInfo) string {
+	if info == nil {
+		return ""
+	}
+	if info.ModelAliasApplied && info.ModelAliasUpstreamModelName != "" {
+		return info.ModelAliasUpstreamModelName
+	}
+	return info.OriginModelName
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
@@ -303,7 +364,24 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			AutoBan: &autoBanInt,
 		}, nil
 	}
-	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
+	channel, selection, err := service.CacheGetProfitPreferredChannel(
+		retryParam,
+		info.GetEstimatePromptTokens(),
+		0,
+		info.FinalPreConsumedQuota,
+	)
+	selectGroup := retryParam.TokenGroup
+	if err != nil {
+		logger.LogWarn(c, "profit prefer-margin route skipped: "+err.Error())
+		channel = nil
+	} else if channel != nil && selection != nil && selection.LiveRoutingUsed {
+		logger.LogInfo(c, fmt.Sprintf("profit prefer-margin route selected channel #%d for group %s model %s", channel.Id, retryParam.TokenGroup, info.OriginModelName))
+	} else {
+		channel = nil
+	}
+	if channel == nil {
+		channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+	}
 
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 
@@ -354,7 +432,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, err.Error()))
+	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
@@ -509,7 +587,7 @@ func RelayTask(c *gin.Context) {
 	retryParam := &service.RetryParam{
 		Ctx:        c,
 		TokenGroup: relayInfo.TokenGroup,
-		ModelName:  relayInfo.OriginModelName,
+		ModelName:  relayRoutingModelName(relayInfo),
 		Retry:      common.GetPointer(0),
 	}
 

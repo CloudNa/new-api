@@ -1,0 +1,728 @@
+package controller
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+const (
+	gptLoadBridgeAuthKey      = "SIDECAR_GPT_LOAD_AUTH_KEY"
+	gptLoadBridgeBrowserToken = "glart-new-api-gpt-load-bridge"
+	cpaBridgeManagementKey    = "SIDECAR_CLIPROXYAPI_MANAGEMENT_KEY"
+	cpaBridgeBrowserToken     = "glart-new-api-cliproxyapi-bridge"
+	cpaManagerBridgeAdminKey  = "SIDECAR_CPA_MANAGER_PLUS_ADMIN_KEY"
+	cpaManagerBridgeToken     = "glart-new-api-cpa-manager-plus-bridge"
+)
+
+var cpaManagerAdminAuthPaths = []string{
+	"/setup",
+	"/status",
+	"/usage-service/config",
+	"/usage-service/info",
+	"/v0/management/",
+}
+
+var cpaManagerCPAProxyPaths = []string{
+	"/ampcode",
+	"/api-call",
+	"/api-key-usage",
+	"/api-keys",
+	"/anthropic-auth-url",
+	"/antigravity-auth-url",
+	"/auth-files",
+	"/auth-auto-refresh-workers",
+	"/claude-api-key",
+	"/commercial-mode",
+	"/codex-api-key",
+	"/codex-auth-url",
+	"/config",
+	"/config.yaml",
+	"/debug",
+	"/disable-cooling",
+	"/disable-image-generation",
+	"/enable-gemini-cli-endpoint",
+	"/force-model-prefix",
+	"/gemini-api-key",
+	"/gemini-cli-auth-url",
+	"/get-auth-status",
+	"/latest-version",
+	"/logging-to-file",
+	"/logs",
+	"/logs-max-total-size-mb",
+	"/max-retry-credentials",
+	"/max-retry-interval",
+	"/oauth-callback",
+	"/oauth-excluded-models",
+	"/oauth-model-alias",
+	"/openai-compatibility",
+	"/passthrough-headers",
+	"/payload",
+	"/proxy-url",
+	"/quota-exceeded/switch-preview-model",
+	"/quota-exceeded/switch-project",
+	"/request-error-logs",
+	"/request-log",
+	"/request-log-by-id",
+	"/request-retry",
+	"/routing/strategy",
+	"/usage-queue",
+	"/usage-statistics-enabled",
+	"/vertex-api-key",
+	"/vertex/import",
+	"/ws-auth",
+	"/xai-auth-url",
+}
+
+const sidecarHTMLShellCacheTTL = 10 * time.Minute
+
+type sidecarHTMLShellCacheEntry struct {
+	body        []byte
+	contentType string
+	expiresAt   time.Time
+}
+
+var sidecarHTMLShellCache = struct {
+	sync.RWMutex
+	items map[string]sidecarHTMLShellCacheEntry
+}{
+	items: make(map[string]sidecarHTMLShellCacheEntry),
+}
+
+type sidecarProxyTarget struct {
+	baseURL *url.URL
+	prefix  string
+	service string
+}
+
+func GPTLoadProxy(c *gin.Context) {
+	proxySidecarByService(c, "gpt-load", "/gl")
+}
+
+func CLIProxyAPIProxy(c *gin.Context) {
+	proxySidecarByService(c, "cliproxyapi", "/cpa-native")
+}
+
+func CPAManagerPlusProxy(c *gin.Context) {
+	proxySidecarByService(c, "cpa-manager-plus", "/cpa")
+}
+
+func CPAManagerPlusRootProxy(c *gin.Context) {
+	proxySidecarByService(c, "cpa-manager-plus", "")
+}
+
+func proxySidecarByService(c *gin.Context, service string, prefix string) {
+	target, ok := getSidecarProxyTarget(service, prefix)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"message": "sidecar service is not available",
+		})
+		return
+	}
+
+	proxySidecarRequest(c, target, stripSidecarProxyPrefix(c.Request.URL.Path, target.prefix))
+}
+
+func getSidecarProxyTarget(service string, prefix string) (sidecarProxyTarget, bool) {
+	targetRaw := sidecarProxyBaseURL(service)
+	baseURL, err := url.Parse(targetRaw)
+	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
+		return sidecarProxyTarget{}, false
+	}
+	return sidecarProxyTarget{
+		baseURL: baseURL,
+		prefix:  strings.TrimRight(prefix, "/"),
+		service: service,
+	}, true
+}
+
+func sidecarProxyBaseURL(service string) string {
+	switch service {
+	case "gpt-load":
+		return envOrDefault("GPT_LOAD_INTERNAL_URL", "http://gpt-load:3001")
+	case "cliproxyapi":
+		return envOrDefault("CLIPROXYAPI_INTERNAL_URL", "http://cliproxyapi:8317")
+	case "cpa-manager-plus":
+		return envOrDefault("CPA_MANAGER_PLUS_INTERNAL_URL", "http://cpa-manager-plus:18317")
+	default:
+		return ""
+	}
+}
+
+func proxySidecarRequest(c *gin.Context, target sidecarProxyTarget, requestPath string) {
+	if serveSidecarHTMLShellCache(c, target, requestPath) {
+		return
+	}
+
+	passThroughBody := shouldPassThroughSidecarBody(requestPath, target)
+	proxy := httputil.NewSingleHostReverseProxy(target.baseURL)
+	proxy.Director = func(req *http.Request) {
+		req.URL.Scheme = target.baseURL.Scheme
+		req.URL.Host = target.baseURL.Host
+		req.URL.Path = joinSidecarPath(target.baseURL.Path, normalizeSidecarRequestPath(requestPath, target))
+		req.URL.RawPath = ""
+		req.Host = target.baseURL.Host
+		req.Header.Set("X-Forwarded-Host", c.Request.Host)
+		req.Header.Set("X-Forwarded-Prefix", target.prefix)
+		req.Header.Set("X-Forwarded-Proto", forwardedProto(c.Request))
+		if !passThroughBody {
+			req.Header.Del("Accept-Encoding")
+			req.Header.Del("If-None-Match")
+			req.Header.Del("If-Modified-Since")
+			req.Header.Del("If-Range")
+		}
+		req.Header.Set("Cookie", filterSidecarRequestCookies(req.Header.Get("Cookie")))
+		applySidecarBridgeAuth(req, target)
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		rewriteSidecarLocation(resp, target)
+		return rewriteSidecarBody(resp, target, requestPath, passThroughBody)
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprintf(w, `{"success":false,"message":"sidecar proxy failed: %s"}`, err.Error())
+	}
+
+	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func joinSidecarPath(basePath string, requestPath string) string {
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	if !strings.HasPrefix(requestPath, "/") {
+		requestPath = "/" + requestPath
+	}
+	if basePath == "" || basePath == "/" {
+		return requestPath
+	}
+	return strings.TrimRight(basePath, "/") + requestPath
+}
+
+func stripSidecarProxyPrefix(path string, prefix string) string {
+	if path == prefix {
+		return "/"
+	}
+	if strings.HasPrefix(path, prefix+"/") {
+		return strings.TrimPrefix(path, prefix)
+	}
+	return path
+}
+
+func normalizeSidecarRequestPath(requestPath string, target sidecarProxyTarget) string {
+	requestPath = stripSidecarProxyPrefix(requestPath, target.prefix)
+	if requestPath == "" {
+		requestPath = "/"
+	}
+
+	if (target.service == "cliproxyapi" || target.service == "cpa-manager-plus") && requestPath == "/" {
+		return "/management.html"
+	}
+
+	if target.service == "cpa-manager-plus" {
+		return normalizeCPAManagerPlusRequestPath(requestPath)
+	}
+
+	if target.service == "gpt-load" {
+		duplicatedPrefix := "/api" + target.prefix
+		if requestPath == duplicatedPrefix {
+			return "/api"
+		}
+		if strings.HasPrefix(requestPath, duplicatedPrefix+"/") {
+			rest := strings.TrimPrefix(requestPath, duplicatedPrefix+"/")
+			if rest == "api" || strings.HasPrefix(rest, "api/") {
+				return "/" + rest
+			}
+			return "/api/" + rest
+		}
+	}
+
+	return requestPath
+}
+
+func normalizeCPAManagerPlusRequestPath(requestPath string) string {
+	if strings.HasPrefix(requestPath, "/v0/management/") ||
+		strings.HasPrefix(requestPath, "/usage-service/") ||
+		requestPath == "/status" ||
+		requestPath == "/setup" ||
+		requestPath == "/management.html" {
+		return requestPath
+	}
+	for _, cpaPath := range cpaManagerCPAProxyPaths {
+		if requestPath == cpaPath || strings.HasPrefix(requestPath, cpaPath+"/") {
+			return "/v0/management" + requestPath
+		}
+	}
+	return requestPath
+}
+
+func forwardedProto(req *http.Request) string {
+	if proto := req.Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
+	if req.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func filterSidecarRequestCookies(cookieHeader string) string {
+	cookies := strings.Split(cookieHeader, ";")
+	filtered := make([]string, 0, len(cookies))
+	for _, cookie := range cookies {
+		cookie = strings.TrimSpace(cookie)
+		if cookie == "" || strings.HasPrefix(cookie, "session=") {
+			continue
+		}
+		filtered = append(filtered, cookie)
+	}
+	return strings.Join(filtered, "; ")
+}
+
+func applySidecarBridgeAuth(req *http.Request, target sidecarProxyTarget) {
+	switch target.service {
+	case "gpt-load":
+		authKey := strings.TrimSpace(os.Getenv(gptLoadBridgeAuthKey))
+		if authKey == "" {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+authKey)
+		req.Header.Set("X-Auth-Token", authKey)
+		replaceBridgeQueryToken(req, authKey, gptLoadBridgeBrowserToken)
+	case "cliproxyapi":
+		managementKey := strings.TrimSpace(os.Getenv(cpaBridgeManagementKey))
+		if managementKey == "" {
+			return
+		}
+		if req.Header.Get("Authorization") == "Bearer "+cpaBridgeBrowserToken ||
+			strings.HasPrefix(req.URL.Path, "/v0/management") {
+			req.Header.Set("Authorization", "Bearer "+managementKey)
+		}
+	case "cpa-manager-plus":
+		adminKey := strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey))
+		if adminKey == "" {
+			return
+		}
+		if req.Header.Get("Authorization") == "Bearer "+cpaManagerBridgeToken ||
+			shouldInjectCPAManagerAdminAuth(req.URL.Path) {
+			req.Header.Set("Authorization", "Bearer "+adminKey)
+		}
+	}
+}
+
+func shouldInjectCPAManagerAdminAuth(path string) bool {
+	for _, bridgePath := range cpaManagerAdminAuthPaths {
+		if strings.HasSuffix(bridgePath, "/") {
+			if strings.HasPrefix(path, bridgePath) {
+				return true
+			}
+			continue
+		}
+		if path == bridgePath {
+			return true
+		}
+	}
+	return false
+}
+
+func replaceBridgeQueryToken(req *http.Request, realToken string, browserToken string) {
+	query := req.URL.Query()
+	updated := false
+	for _, key := range []string{"key", "auth_key", "token"} {
+		if query.Get(key) == browserToken {
+			query.Set(key, realToken)
+			updated = true
+		}
+	}
+	if updated {
+		req.URL.RawQuery = query.Encode()
+	}
+}
+
+func rewriteSidecarLocation(resp *http.Response, target sidecarProxyTarget) {
+	location := resp.Header.Get("Location")
+	if location == "" {
+		return
+	}
+	if strings.HasPrefix(location, target.baseURL.String()) {
+		resp.Header.Set("Location", target.prefix+strings.TrimPrefix(location, target.baseURL.String()))
+		return
+	}
+	if strings.HasPrefix(location, "/") && !strings.HasPrefix(location, target.prefix+"/") {
+		resp.Header.Set("Location", target.prefix+location)
+	}
+}
+
+func rewriteSidecarBody(resp *http.Response, target sidecarProxyTarget, requestPath string, passThroughBody bool) error {
+	resp.Header.Del("Content-Security-Policy")
+	resp.Header.Del("X-Frame-Options")
+	rewriteSidecarCookies(resp, target)
+
+	if passThroughBody {
+		return nil
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if !shouldRewriteSidecarBody(contentType) {
+		resp.Header.Set("Cache-Control", sidecarBodyCacheControl(contentType, resp.StatusCode, target))
+		resp.Header.Del("Etag")
+		resp.Header.Del("Last-Modified")
+		return nil
+	}
+
+	cacheKey, useHTMLShellCache := sidecarHTMLShellCacheKey(target, requestPath, contentType, resp.StatusCode)
+	if useHTMLShellCache {
+		if entry, ok := getSidecarHTMLShellCache(cacheKey); ok {
+			_ = resp.Body.Close()
+			resp.Body = io.NopCloser(bytes.NewReader(entry.body))
+			resp.ContentLength = int64(len(entry.body))
+			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(entry.body)))
+			resp.Header.Set("Cache-Control", sidecarBodyCacheControl(contentType, resp.StatusCode, target))
+			resp.Header.Set("X-Glart-Sidecar-Cache", "HIT")
+			resp.Header.Del("Etag")
+			resp.Header.Del("Last-Modified")
+			resp.Header.Del("Content-Encoding")
+			return nil
+		}
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+
+	body = replaceSidecarAbsolutePaths(body, target)
+	body = rewriteSidecarRuntimeBody(body, resp.Header.Get("Content-Type"), target)
+	body = injectSidecarBridgeState(body, resp.Header.Get("Content-Type"), target)
+	if useHTMLShellCache {
+		setSidecarHTMLShellCache(cacheKey, body, contentType, time.Now().Add(sidecarHTMLShellCacheTTL))
+		resp.Header.Set("X-Glart-Sidecar-Cache", "MISS")
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
+	resp.Header.Set("Cache-Control", sidecarBodyCacheControl(contentType, resp.StatusCode, target))
+	resp.Header.Del("Etag")
+	resp.Header.Del("Last-Modified")
+	resp.Header.Del("Content-Encoding")
+	return nil
+}
+
+func serveSidecarHTMLShellCache(c *gin.Context, target sidecarProxyTarget, requestPath string) bool {
+	if c.Request.Method != http.MethodGet {
+		return false
+	}
+	cacheKey, ok := sidecarHTMLShellCacheKeyForRequest(target, requestPath)
+	if !ok {
+		return false
+	}
+	entry, ok := getSidecarHTMLShellCache(cacheKey)
+	if !ok {
+		return false
+	}
+	c.Header("Cache-Control", sidecarBodyCacheControl(entry.contentType, http.StatusOK, target))
+	c.Header("X-Glart-Sidecar-Cache", "HIT")
+	c.Data(http.StatusOK, entry.contentType, entry.body)
+	return true
+}
+
+func sidecarHTMLShellCacheKey(target sidecarProxyTarget, requestPath string, contentType string, statusCode int) (string, bool) {
+	if statusCode != http.StatusOK {
+		return "", false
+	}
+	if !strings.Contains(strings.ToLower(contentType), "text/html") {
+		return "", false
+	}
+	return sidecarHTMLShellCacheKeyForRequest(target, requestPath)
+}
+
+func sidecarHTMLShellCacheKeyForRequest(target sidecarProxyTarget, requestPath string) (string, bool) {
+	if target.service != "cpa-manager-plus" {
+		return "", false
+	}
+	normalizedPath := normalizeSidecarRequestPath(requestPath, target)
+	if normalizedPath != "/management.html" {
+		return "", false
+	}
+	bridgeState := "bridge-off"
+	if strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey)) != "" {
+		bridgeState = "bridge-on"
+	}
+	return target.service + ":" + target.prefix + ":" + normalizedPath + ":" + bridgeState, true
+}
+
+func getSidecarHTMLShellCache(key string) (sidecarHTMLShellCacheEntry, bool) {
+	now := time.Now()
+	sidecarHTMLShellCache.RLock()
+	entry, ok := sidecarHTMLShellCache.items[key]
+	sidecarHTMLShellCache.RUnlock()
+	if !ok || now.After(entry.expiresAt) {
+		if ok {
+			sidecarHTMLShellCache.Lock()
+			if current, exists := sidecarHTMLShellCache.items[key]; exists && now.After(current.expiresAt) {
+				delete(sidecarHTMLShellCache.items, key)
+			}
+			sidecarHTMLShellCache.Unlock()
+		}
+		return sidecarHTMLShellCacheEntry{}, false
+	}
+	entry.body = append([]byte(nil), entry.body...)
+	return entry, true
+}
+
+func setSidecarHTMLShellCache(key string, body []byte, contentType string, expiresAt time.Time) {
+	sidecarHTMLShellCache.Lock()
+	sidecarHTMLShellCache.items[key] = sidecarHTMLShellCacheEntry{
+		body:        append([]byte(nil), body...),
+		contentType: contentType,
+		expiresAt:   expiresAt,
+	}
+	sidecarHTMLShellCache.Unlock()
+}
+
+func rewriteSidecarCookies(resp *http.Response, target sidecarProxyTarget) {
+	cookies := resp.Header.Values("Set-Cookie")
+	if len(cookies) == 0 {
+		return
+	}
+
+	resp.Header.Del("Set-Cookie")
+	for _, cookie := range cookies {
+		updated := cookie
+		if strings.Contains(strings.ToLower(cookie), "path=/") {
+			updated = strings.Replace(cookie, "Path=/", "Path="+target.prefix+"/", 1)
+			updated = strings.Replace(updated, "path=/", "Path="+target.prefix+"/", 1)
+		} else {
+			updated += "; Path=" + target.prefix + "/"
+		}
+		resp.Header.Add("Set-Cookie", updated)
+	}
+}
+
+func shouldPassThroughSidecarBody(requestPath string, target sidecarProxyTarget) bool {
+	normalizedPath := normalizeSidecarRequestPath(requestPath, target)
+	if normalizedPath == "" {
+		normalizedPath = "/"
+	}
+
+	switch target.service {
+	case "gpt-load":
+		return false
+	case "cliproxyapi":
+		return strings.HasSuffix(normalizedPath, ".svg") ||
+			strings.HasSuffix(normalizedPath, ".png") ||
+			strings.HasSuffix(normalizedPath, ".jpg") ||
+			strings.HasSuffix(normalizedPath, ".jpeg") ||
+			strings.HasSuffix(normalizedPath, ".webp") ||
+			strings.HasSuffix(normalizedPath, ".ico") ||
+			strings.HasSuffix(normalizedPath, ".woff2")
+	case "cpa-manager-plus":
+		return strings.HasSuffix(normalizedPath, ".svg") ||
+			strings.HasSuffix(normalizedPath, ".png") ||
+			strings.HasSuffix(normalizedPath, ".jpg") ||
+			strings.HasSuffix(normalizedPath, ".jpeg") ||
+			strings.HasSuffix(normalizedPath, ".webp") ||
+			strings.HasSuffix(normalizedPath, ".ico") ||
+			strings.HasSuffix(normalizedPath, ".woff2")
+	default:
+		return false
+	}
+}
+
+func shouldRewriteSidecarBody(contentType string) bool {
+	contentType = strings.ToLower(contentType)
+	return strings.Contains(contentType, "text/html") ||
+		strings.Contains(contentType, "text/css") ||
+		strings.Contains(contentType, "javascript") ||
+		strings.Contains(contentType, "text/x-component")
+}
+
+func sidecarBodyCacheControl(contentType string, statusCode int, target sidecarProxyTarget) string {
+	if statusCode >= http.StatusBadRequest {
+		return "no-store"
+	}
+	contentType = strings.ToLower(contentType)
+	if (target.service == "cliproxyapi" || target.service == "cpa-manager-plus") && strings.Contains(contentType, "text/html") {
+		return "private, max-age=300"
+	}
+	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "text/x-component") {
+		return "no-store"
+	}
+	if strings.Contains(contentType, "text/css") ||
+		strings.Contains(contentType, "javascript") ||
+		strings.HasPrefix(contentType, "image/") ||
+		strings.Contains(contentType, "font/") ||
+		strings.Contains(contentType, "application/font") ||
+		strings.Contains(contentType, "application/octet-stream") {
+		return "private, max-age=3600"
+	}
+	return "no-store"
+}
+
+var gptLoadHistoryBasePattern = regexp.MustCompile(`history:([A-Za-z_$][A-Za-z0-9_$]*)\("/"\)`)
+
+func rewriteSidecarRuntimeBody(body []byte, contentType string, target sidecarProxyTarget) []byte {
+	if !strings.Contains(strings.ToLower(contentType), "javascript") {
+		return body
+	}
+
+	switch target.service {
+	case "gpt-load":
+		return gptLoadHistoryBasePattern.ReplaceAll(body, []byte(`history:${1}("`+target.prefix+`/")`))
+	default:
+		return body
+	}
+}
+
+func replaceSidecarAbsolutePaths(body []byte, target sidecarProxyTarget) []byte {
+	rewritten := string(body)
+	prefix := target.prefix
+	for _, marker := range []string{
+		`href="`,
+		`src="`,
+		`action="`,
+		`url(`,
+		`fetch("`,
+		`fetch('`,
+		`axios.get("`,
+		`axios.get('`,
+		`axios.post("`,
+		`axios.post('`,
+		`axios.put("`,
+		`axios.put('`,
+		`axios.delete("`,
+		`axios.delete('`,
+	} {
+		rewritten = rewriteSidecarPathAfterMarker(rewritten, marker, prefix, true)
+	}
+
+	for _, marker := range []string{`"`, `'`, "`"} {
+		rewritten = rewriteSidecarPathAfterMarker(rewritten, marker, prefix, false)
+	}
+
+	if target.service == "gpt-load" {
+		rewritten = rewriteGPTLoadAPIRootPath(rewritten, prefix)
+	}
+	rewritten = rewriteRelativeAssetDeps(rewritten, prefix)
+	return []byte(rewritten)
+}
+
+func rewriteSidecarPathAfterMarker(value string, marker string, prefix string, allowAnyAbsolutePath bool) string {
+	var builder strings.Builder
+	searchFrom := 0
+	for {
+		index := strings.Index(value[searchFrom:], marker)
+		if index < 0 {
+			builder.WriteString(value[searchFrom:])
+			break
+		}
+
+		index += searchFrom
+		pathStart := index + len(marker)
+		builder.WriteString(value[searchFrom:pathStart])
+
+		remaining := value[pathStart:]
+		shouldRewrite := strings.HasPrefix(remaining, "/api/") ||
+			strings.HasPrefix(remaining, "/assets/") ||
+			strings.HasPrefix(remaining, "/management.html") ||
+			(allowAnyAbsolutePath && strings.HasPrefix(remaining, "/"))
+		if strings.HasPrefix(remaining, prefix+"/") || !shouldRewrite {
+			searchFrom = pathStart
+			continue
+		}
+
+		builder.WriteString(prefix)
+		searchFrom = pathStart
+	}
+	return builder.String()
+}
+
+func rewriteRelativeAssetDeps(value string, prefix string) string {
+	assetPrefix := strings.TrimLeft(prefix, "/") + "/assets/"
+	for _, quote := range []string{`"`, `'`, "`"} {
+		value = strings.ReplaceAll(value, quote+"assets/", quote+assetPrefix)
+	}
+	return value
+}
+
+func rewriteGPTLoadAPIRootPath(value string, prefix string) string {
+	for _, quote := range []string{`"`, `'`, "`"} {
+		value = strings.ReplaceAll(value, quote+"/api"+quote, quote+prefix+"/api"+quote)
+	}
+	return value
+}
+
+func injectSidecarBridgeState(body []byte, contentType string, target sidecarProxyTarget) []byte {
+	if !strings.Contains(strings.ToLower(contentType), "text/html") {
+		return body
+	}
+
+	switch target.service {
+	case "gpt-load":
+		if strings.TrimSpace(os.Getenv(gptLoadBridgeAuthKey)) == "" {
+			return body
+		}
+		script := `<script>(function(){try{window.localStorage.setItem("authKey","` + gptLoadBridgeBrowserToken + `");window.localStorage.setItem("glart:sidecar:gpt-load:bridge","new-api");}catch(e){}})();</script>`
+		return injectHTMLHeadScript(body, script)
+	case "cliproxyapi":
+		if strings.TrimSpace(os.Getenv(cpaBridgeManagementKey)) == "" {
+			return body
+		}
+		script := `<script>(function(){try{var payload={state:{apiBase:window.location.origin+"` + target.prefix + `",managementKey:"` + cpaBridgeBrowserToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,serverRuntimeKind:"unknown"},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));}catch(e){}})();</script>`
+		return injectHTMLHeadScript(body, script)
+	case "cpa-manager-plus":
+		if strings.TrimSpace(os.Getenv(cpaManagerBridgeAdminKey)) == "" {
+			return body
+		}
+		script := buildCPAManagerPlusBridgeScript(target.prefix)
+		return injectHTMLHeadScript(body, script)
+	default:
+		return body
+	}
+}
+
+func buildCPAManagerPlusBridgeScript(prefix string) string {
+	paths := append([]string{
+		"/setup",
+		"/status",
+		"/usage-service",
+		"/v0/management",
+	}, cpaManagerCPAProxyPaths...)
+	for i, path := range paths {
+		paths[i] = `"` + path + `"`
+	}
+	pathList := strings.Join(paths, ",")
+
+	return `<script>(function(){try{var prefix="` + prefix + `";var apiPaths=[` + pathList + `];function shouldPrefixPath(path){if(!path||path.indexOf(prefix+"/")===0){return false;}for(var i=0;i<apiPaths.length;i++){var p=apiPaths[i];if(path===p||path.indexOf(p+"/")===0||path.indexOf(p+"?")===0){return true;}}return false;}function prefixURL(value){try{if(typeof value!=="string"||value.indexOf("#")===0){return value;}if(value.indexOf("/")===0){return shouldPrefixPath(value)?prefix+value:value;}var origin=window.location.origin;if(value.indexOf(origin+"/")===0){var path=value.slice(origin.length);return shouldPrefixPath(path)?origin+prefix+path:value;}return value;}catch(e){return value;}}var originalFetch=window.fetch;if(originalFetch&&!window.__glartCpaManagerFetchPatched){window.__glartCpaManagerFetchPatched=true;window.fetch=function(input,init){try{if(typeof input==="string"){input=prefixURL(input);}else if(input&&input.url){var next=prefixURL(input.url);if(next!==input.url){input=new Request(next,input);}}}catch(e){}return originalFetch.call(this,input,init);};}var xhr=window.XMLHttpRequest;if(xhr&&xhr.prototype&&xhr.prototype.open&&!xhr.prototype.__glartCpaManagerOpenPatched){var originalOpen=xhr.prototype.open;xhr.prototype.__glartCpaManagerOpenPatched=true;xhr.prototype.open=function(){try{arguments[1]=prefixURL(arguments[1]);}catch(e){}return originalOpen.apply(this,arguments);};}var base=window.location.origin+prefix;var payload={state:{isAuthenticated:true,apiBase:base,managementKey:"` + cpaManagerBridgeToken + `",rememberPassword:true,serverVersion:null,serverBuildDate:null,sessionMode:"manager_embedded",sessionPanelBase:base,connectionStatus:"connected",connectionError:null},version:0};window.localStorage.setItem("isLoggedIn","true");window.localStorage.setItem("cli-proxy-auth",JSON.stringify(payload));window.localStorage.setItem("glart:sidecar:cpa-manager-plus:bridge","new-api");}catch(e){}})();</script>`
+}
+
+func injectHTMLHeadScript(body []byte, script string) []byte {
+	const marker = "</head>"
+	if !bytes.Contains(body, []byte(marker)) {
+		return body
+	}
+	if bytes.Contains(body, []byte(script)) {
+		return body
+	}
+	return bytes.Replace(body, []byte(marker), []byte(script+marker), 1)
+}
+
+func envOrDefault(key string, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}

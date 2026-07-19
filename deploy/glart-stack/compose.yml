@@ -1,0 +1,218 @@
+services:
+  new-api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: glart/new-api:${NEW_API_VERSION:-clean}
+    container_name: glart-new-api
+    restart: unless-stopped
+    command: --log-dir /app/logs
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      VERSION: ${NEW_API_VERSION:-glart-clean}
+      SQLITE_PATH: ${SQLITE_PATH:-/data/new-api.db?_busy_timeout=30000}
+      REDIS_CONN_STRING: redis://:${REDIS_PASSWORD}@redis:6379/0
+      ERROR_LOG_ENABLED: "true"
+      MEMORY_CACHE_ENABLED: "true"
+      NODE_NAME: glart-new-api
+      GPT_LOAD_INTERNAL_URL: http://gpt-load:3001
+      CLIPROXYAPI_INTERNAL_URL: http://cliproxyapi:8317
+      CPA_MANAGER_PLUS_INTERNAL_URL: http://cpa-manager-plus:18317
+      SIDECAR_GPT_LOAD_AUTH_KEY: ${GPT_LOAD_AUTH_KEY}
+      SIDECAR_CLIPROXYAPI_MANAGEMENT_KEY: ${CLIPROXYAPI_MANAGEMENT_KEY}
+      SIDECAR_CPA_MANAGER_PLUS_ADMIN_KEY: ${CPA_MANAGER_ADMIN_KEY}
+      GLART_STACK_UPDATER_URL: http://glart-stack-updater:8787
+      GLART_STACK_UPDATER_TOKEN: ${GLART_STACK_UPDATER_TOKEN}
+    volumes:
+      - ./runtime/new-api/data:/data
+      - ./runtime/new-api/logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      gpt-load:
+        condition: service_started
+      cliproxyapi:
+        condition: service_started
+      cpa-manager-plus:
+        condition: service_started
+      glart-stack-updater:
+        condition: service_started
+    expose:
+      - "3000"
+    networks:
+      - glart-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -q '\"success\"[[:space:]]*:[[:space:]]*true'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  redis:
+    image: redis:7-alpine
+    container_name: glart-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - ./runtime/redis:/data
+    expose:
+      - "6379"
+    networks:
+      - glart-internal
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gpt-load:
+    image: ghcr.io/tbphp/gpt-load:latest
+    container_name: glart-gpt-load
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "3001"
+      HOST: 0.0.0.0
+      TZ: ${TZ:-Asia/Shanghai}
+      AUTH_KEY: ${GPT_LOAD_AUTH_KEY}
+      ENCRYPTION_KEY: ${GPT_LOAD_ENCRYPTION_KEY}
+      DATABASE_DSN: ./data/gpt-load.db
+      REDIS_DSN: ""
+      ENABLE_CORS: "true"
+      ALLOWED_ORIGINS: https://${GLART_DOMAIN}
+      LOG_ENABLE_FILE: "true"
+      LOG_FILE_PATH: ./data/logs/app.log
+    volumes:
+      - ./runtime/gpt-load:/app/data
+    expose:
+      - "3001"
+    networks:
+      - glart-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider -T 10 -O /dev/null http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  cliproxyapi:
+    image: eceasy/cli-proxy-api:latest
+    container_name: glart-cliproxyapi
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./runtime/cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml
+      - ./runtime/cliproxyapi/auths:/root/.cli-proxy-api
+      - ./runtime/cliproxyapi/logs:/CLIProxyAPI/logs
+    expose:
+      - "8317"
+    networks:
+      - glart-internal
+    healthcheck:
+      test: ["CMD-SHELL", "grep -E '[0-9A-Fa-f]{8}:207D' /proc/net/tcp /proc/net/tcp6 | grep -q ' 0A '"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  cpa-manager-plus:
+    image: seakee/cpa-manager-plus:latest
+    container_name: glart-cpa-manager-plus
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      HTTP_ADDR: 0.0.0.0:18317
+      USAGE_DB_PATH: /data/usage.sqlite
+      CPA_MANAGER_DATA_KEY_PATH: /data/data.key
+      CPA_MANAGER_ADMIN_KEY: ${CPA_MANAGER_ADMIN_KEY}
+      CPA_UPSTREAM_URL: http://cliproxyapi:8317
+      CPA_MANAGEMENT_KEY: ${CLIPROXYAPI_MANAGEMENT_KEY}
+      USAGE_COLLECTOR_MODE: http
+      USAGE_BATCH_SIZE: "100"
+      USAGE_POLL_INTERVAL_MS: "500"
+      USAGE_QUERY_LIMIT: "50000"
+      USAGE_CORS_ORIGINS: https://${GLART_DOMAIN}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./runtime/cpa-manager-plus:/data
+    depends_on:
+      cliproxyapi:
+        condition: service_started
+    expose:
+      - "18317"
+    networks:
+      - glart-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:18317/health | grep -q 'cpa-manager-plus'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: glart-caddy
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./runtime/caddy/data:/data
+      - ./runtime/caddy/config:/config
+    depends_on:
+      new-api:
+        condition: service_started
+    networks:
+      - glart-internal
+
+  glart-stack-updater:
+    build:
+      context: ./updater
+    image: glart/stack-updater:clean
+    container_name: glart-stack-updater
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      GLART_STACK_UPDATER_TOKEN: ${GLART_STACK_UPDATER_TOKEN}
+      GLART_STACK_ROOT: ${GLART_STACK_HOST_ROOT:-/workspace}
+      GLART_STACK_COMPOSE_DIR: ${GLART_STACK_HOST_ROOT:-/workspace}/deploy/glart-stack
+      GLART_STACK_COMPOSE_FILE: compose.yml
+      GLART_STACK_UPSTREAM_URL: ${GLART_STACK_UPSTREAM_URL:-https://github.com/QuantumNous/new-api.git}
+      GLART_STACK_UPSTREAM_BRANCH: ${GLART_STACK_UPSTREAM_BRANCH:-main}
+      GLART_STACK_UPSTREAM_CHECK_TIMEOUT_SECONDS: ${GLART_STACK_UPSTREAM_CHECK_TIMEOUT_SECONDS:-12}
+      GLART_STACK_CUSTOM_REMOTE: ${GLART_STACK_CUSTOM_REMOTE:-origin}
+      GLART_STACK_CUSTOM_BRANCH: ${GLART_STACK_CUSTOM_BRANCH:-}
+      GLART_STACK_STAGING_ROOT: ${GLART_STACK_HOST_ROOT:-/workspace}/deploy/glart-stack/runtime/staging
+      GLART_STACK_UPSTREAM_MERGE_DIR: ${GLART_STACK_HOST_ROOT:-/workspace}/deploy/glart-stack/runtime/staging/new-api-upstream-merge
+      GLART_STACK_UPSTREAM_MERGE_RUN_TESTS: ${GLART_STACK_UPSTREAM_MERGE_RUN_TESTS:-1}
+      GLART_STACK_UPSTREAM_MERGE_BUILD_IMAGE: ${GLART_STACK_UPSTREAM_MERGE_BUILD_IMAGE:-1}
+      GLART_STACK_UPSTREAM_MERGE_PUSH: ${GLART_STACK_UPSTREAM_MERGE_PUSH:-1}
+      GLART_STACK_GO_TEST_IMAGE: ${GLART_STACK_GO_TEST_IMAGE:-golang:1.26.1}
+      GLART_STACK_CLEANUP_KEEP_ROLLBACK_IMAGES: ${GLART_STACK_CLEANUP_KEEP_ROLLBACK_IMAGES:-5}
+      GLART_STACK_CLEANUP_KEEP_BACKUPS: ${GLART_STACK_CLEANUP_KEEP_BACKUPS:-5}
+      GLART_STACK_CLEANUP_KEEP_LEGACY_IMAGES: ${GLART_STACK_CLEANUP_KEEP_LEGACY_IMAGES:-2}
+      GLART_STACK_CLEANUP_BUILD_CACHE_MAX_AGE_HOURS: ${GLART_STACK_CLEANUP_BUILD_CACHE_MAX_AGE_HOURS:-168}
+    volumes:
+      - ${GLART_STACK_HOST_ROOT:-../..}:${GLART_STACK_HOST_ROOT:-/workspace}
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "8787"
+    networks:
+      - glart-internal
+
+networks:
+  glart-internal:
+    name: glart-internal
+    driver: bridge

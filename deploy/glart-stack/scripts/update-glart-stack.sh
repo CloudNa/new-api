@@ -1,0 +1,534 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT_DIR="${GLART_STACK_ROOT:-/opt/glart-api/app}"
+COMPOSE_DIR="${GLART_STACK_COMPOSE_DIR:-$ROOT_DIR/deploy/glart-stack}"
+COMPOSE_FILE="${GLART_STACK_COMPOSE_FILE:-compose.yml}"
+BACKUP_ROOT="${GLART_STACK_BACKUP_DIR:-$COMPOSE_DIR/runtime/backups}"
+RUN_TESTS="${GLART_STACK_RUN_TESTS:-1}"
+GO_TEST_IMAGE="${GLART_STACK_GO_TEST_IMAGE:-golang:1.26.1}"
+ACTION="${1:-${GLART_STACK_ACTION:-update}}"
+COMPONENT="${2:-${GLART_STACK_COMPONENT:-all}}"
+BACKUP_ID="${3:-${GLART_STACK_BACKUP_ID:-latest}}"
+RESTORE_RUNTIME_ON_ROLLBACK="${GLART_STACK_RESTORE_RUNTIME_ON_ROLLBACK:-0}"
+STAGE="init"
+GIT_UPDATED=0
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*"
+}
+
+fail() {
+  log "failed stage: $STAGE"
+  exit 1
+}
+
+trap 'code=$?; if [ "$code" -ne 0 ]; then log "failed stage: $STAGE exit=$code"; fi' EXIT
+
+run() {
+  log "+ $*"
+  "$@"
+}
+
+compose() {
+  docker compose -f "$COMPOSE_DIR/$COMPOSE_FILE" "$@"
+}
+
+git_root() {
+  git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" "$@"
+}
+
+require_file() {
+  if [ ! -f "$1" ]; then
+    log "missing required file: $1"
+    fail
+  fi
+}
+
+load_env() {
+  require_file "$COMPOSE_DIR/.env"
+  set -a
+  # shellcheck disable=SC1090
+  . "$COMPOSE_DIR/.env"
+  set +a
+}
+
+normalize_component() {
+  case "$1" in
+    all|new-api|gpt-load|cliproxyapi|cpa-manager-plus) printf '%s' "$1" ;;
+    *) log "invalid component: $1"; fail ;;
+  esac
+}
+
+component_service() {
+  case "$1" in
+    new-api) printf '%s' "new-api" ;;
+    gpt-load) printf '%s' "gpt-load" ;;
+    cliproxyapi) printf '%s' "cliproxyapi" ;;
+    cpa-manager-plus) printf '%s' "cpa-manager-plus" ;;
+    *) printf '%s' "" ;;
+  esac
+}
+
+component_container() {
+  case "$1" in
+    new-api) printf '%s' "glart-new-api" ;;
+    gpt-load) printf '%s' "glart-gpt-load" ;;
+    cliproxyapi) printf '%s' "glart-cliproxyapi" ;;
+    cpa-manager-plus) printf '%s' "glart-cpa-manager-plus" ;;
+    *) printf '%s' "" ;;
+  esac
+}
+
+component_image() {
+  case "$1" in
+    new-api) printf 'glart/new-api:%s' "${NEW_API_VERSION:-clean}" ;;
+    gpt-load) printf '%s' "ghcr.io/tbphp/gpt-load:latest" ;;
+    cliproxyapi) printf '%s' "eceasy/cli-proxy-api:latest" ;;
+    cpa-manager-plus) printf '%s' "seakee/cpa-manager-plus:latest" ;;
+    *) printf '%s' "" ;;
+  esac
+}
+
+component_runtime_path() {
+  case "$1" in
+    new-api) printf '%s' "runtime/new-api" ;;
+    gpt-load) printf '%s' "runtime/gpt-load" ;;
+    cliproxyapi) printf '%s' "runtime/cliproxyapi" ;;
+    cpa-manager-plus) printf '%s' "runtime/cpa-manager-plus" ;;
+    all) printf '%s' "runtime" ;;
+    *) printf '%s' "" ;;
+  esac
+}
+
+precheck_common() {
+  STAGE="precheck"
+  require_file "$COMPOSE_DIR/.env"
+  require_file "$COMPOSE_DIR/$COMPOSE_FILE"
+  require_file "$ROOT_DIR/controller/sidecar_proxy.go"
+  require_file "$ROOT_DIR/router/web-router.go"
+  require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.sh"
+  require_file "$ROOT_DIR/pkg/profit/response_cache.go"
+  require_file "$ROOT_DIR/service/response_cache.go"
+  require_file "$ROOT_DIR/service/output_policy.go"
+  grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q '"/cpa-native"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA Manager Plus" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA_MANAGER_PLUS_INTERNAL_URL" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "CPAManagerPlusProxy" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "PrepareUpstreamMerge" "$ROOT_DIR/controller/system_update.go" || fail
+  grep -q "prepare_upstream_merge" "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "prepareSystemUpstreamMerge" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "准备上游合并" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/update-checker-section.tsx" || fail
+  grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  run docker compose -f "$COMPOSE_DIR/$COMPOSE_FILE" config --quiet
+}
+
+create_backup() {
+  component="$(normalize_component "$1")"
+  STAGE="backup-$component"
+  backup_stamp="$(date '+%Y%m%d-%H%M%S')"
+  before_commit="$(git_root rev-parse HEAD 2>/dev/null || printf 'unknown')"
+  before_short_commit="$(git_root rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+  backup_dir="$BACKUP_ROOT/$component/$backup_stamp-$before_short_commit"
+  rollback_tag="glart/rollback-$component:$backup_stamp"
+  container="$(component_container "$component")"
+  service_image="$(component_image "$component")"
+  runtime_path="$(component_runtime_path "$component")"
+
+  mkdir -p "$backup_dir"
+  log "writing $component backup to $backup_dir"
+
+  current_image_id=""
+  if [ -n "$container" ]; then
+    current_image_id="$(docker inspect -f '{{.Image}}' "$container" 2>/dev/null || true)"
+  fi
+  if [ -n "$current_image_id" ]; then
+    docker tag "$current_image_id" "$rollback_tag" 2>/dev/null || true
+  fi
+
+  git_root rev-parse HEAD > "$backup_dir/before_commit.txt" 2>/dev/null || true
+  git_root status --short --branch > "$backup_dir/git_status.txt" 2>/dev/null || true
+  compose ps > "$backup_dir/compose_ps_before.txt" 2>/dev/null || true
+
+  if [ -n "$runtime_path" ] && [ -e "$COMPOSE_DIR/$runtime_path" ]; then
+    tar --exclude='runtime/backups' -czf "$backup_dir/runtime.tar.gz" -C "$COMPOSE_DIR" .env "$runtime_path" Caddyfile compose.yml
+  else
+    tar --exclude='runtime/backups' -czf "$backup_dir/runtime.tar.gz" -C "$COMPOSE_DIR" .env Caddyfile compose.yml
+  fi
+
+  {
+    printf 'COMPONENT=%s\n' "$component"
+    printf 'CREATED_AT=%s\n' "$backup_stamp"
+    printf 'BEFORE_COMMIT=%s\n' "$before_commit"
+    printf 'SERVICE_IMAGE=%s\n' "$service_image"
+    printf 'CURRENT_IMAGE_ID=%s\n' "$current_image_id"
+    printf 'ROLLBACK_TAG=%s\n' "$rollback_tag"
+    printf 'RUNTIME_PATH=%s\n' "$runtime_path"
+  } > "$backup_dir/manifest.env"
+
+  log "$component backup completed: $backup_dir"
+}
+
+latest_backup_dir() {
+  component="$(normalize_component "$1")"
+  if [ "$BACKUP_ID" = "latest" ] || [ -z "$BACKUP_ID" ]; then
+    ls -1dt "$BACKUP_ROOT/$component"/* 2>/dev/null | head -n 1
+    return
+  fi
+  printf '%s/%s/%s\n' "$BACKUP_ROOT" "$component" "$BACKUP_ID"
+}
+
+git_update_and_tests() {
+  if [ "$GIT_UPDATED" = "1" ]; then
+    return
+  fi
+
+  STAGE="git-update"
+  run git_root fetch --prune origin
+  branch="$(git_root rev-parse --abbrev-ref HEAD)"
+  run git_root pull --ff-only origin "$branch"
+  GIT_UPDATED=1
+
+  STAGE="custom-smoke-source"
+  require_file "$ROOT_DIR/controller/sidecar_proxy.go"
+  require_file "$ROOT_DIR/router/web-router.go"
+  require_file "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py"
+  require_file "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.sh"
+  grep -q '"/gl"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q '"/cpa"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q '"/cpa-native"' "$ROOT_DIR/router/web-router.go" || fail
+  grep -q "GPT-Load" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA Manager Plus" "$ROOT_DIR/web/default/src/hooks/use-top-nav-links.ts" || fail
+  grep -q "CPA_MANAGER_PLUS_INTERNAL_URL" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "CPAManagerPlusProxy" "$ROOT_DIR/controller/sidecar_proxy.go" || fail
+  grep -q "PrepareUpstreamMerge" "$ROOT_DIR/controller/system_update.go" || fail
+  grep -q "prepare_upstream_merge" "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "prepareSystemUpstreamMerge" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "准备上游合并" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/update-checker-section.tsx" || fail
+  grep -q "OmniRoute-style stacked compression preview" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit event diagnostic fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "profit analytics aggregation fields" "$ROOT_DIR/deploy/glart-stack/scripts/v2-smoke.py" || fail
+  grep -q "GetSystemUpdateStatus" "$ROOT_DIR/controller/system_update.go" || fail
+  grep -q 'apiRouter.Group("/profit")' "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "GetProfitAnalytics" "$ROOT_DIR/controller/profit.go" || fail
+  grep -q "UpdateProfitCostProfiles" "$ROOT_DIR/controller/profit.go" || fail
+  grep -q "PreviewProfitRoute" "$ROOT_DIR/controller/profit.go" || fail
+  grep -q "CostProfilesOptionKey" "$ROOT_DIR/pkg/profit/settings.go" || fail
+  grep -q "PreviewRoute" "$ROOT_DIR/pkg/profit/cost.go" || fail
+  grep -q 'apiRouter.Group("/settings/compression")' "$ROOT_DIR/router/api-router.go" || fail
+  grep -q "PreviewCompression" "$ROOT_DIR/controller/compression.go" || fail
+  require_file "$ROOT_DIR/pkg/promptcompress/compressor.go"
+  grep -q "ApplyPromptCompressionForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
+  grep -q "PromptCompressionStats" "$ROOT_DIR/relay/common/relay_info.go" || fail
+  grep -q "compression_rules_version" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "ProfitCenterSection" "$ROOT_DIR/web/default/src/features/system-settings/operations/section-registry.tsx" || fail
+  require_file "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx"
+  grep -q "PromptCompressionSection" "$ROOT_DIR/web/default/src/features/system-settings/operations/section-registry.tsx" || fail
+  require_file "$ROOT_DIR/web/default/src/features/system-settings/maintenance/prompt-compression-section.tsx"
+  grep -q "ResponseCacheRule" "$ROOT_DIR/pkg/profit/settings.go" || fail
+  grep -q "BuildResponseCacheDecision" "$ROOT_DIR/pkg/profit/response_cache.go" || fail
+  grep -q "PutResponseCache" "$ROOT_DIR/pkg/profit/response_cache.go" || fail
+  grep -q "PrepareResponseCacheForRelay" "$ROOT_DIR/service/response_cache.go" || fail
+  grep -q "ServeResponseCacheHit" "$ROOT_DIR/service/response_cache.go" || fail
+  grep -q "StoreResponseCacheForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
+  grep -q "ProfitResponseCacheObservationFromContext" "$ROOT_DIR/service/text_quota.go" || fail
+  grep -q "response_cache_saved_usd" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "ResponseCacheModeSelect" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx" || fail
+  grep -q "profit-response-cache-rules-json" "$ROOT_DIR/web/default/src/features/system-settings/maintenance/profit-center-section.tsx" || fail
+  grep -q "BuildOutputPolicyRequestDecision" "$ROOT_DIR/pkg/profit/output_policy.go" || fail
+  grep -q "ApplyOutputPolicyForRelay" "$ROOT_DIR/service/output_policy.go" || fail
+  grep -q "ProfitOutputPolicyDecisionFromContext" "$ROOT_DIR/service/output_policy.go" || fail
+  grep -q "ApplyOutputPolicyForRelay" "$ROOT_DIR/relay/compatible_handler.go" || fail
+  grep -q "MergeOutputPolicyCompletion" "$ROOT_DIR/service/text_quota.go" || fail
+  grep -q "output_policy_requested_max_tokens" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "output_policy_applied_max_tokens" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "output_policy_enforced_limit_exceeded" "$ROOT_DIR/pkg/profit/observation.go" || fail
+  grep -q "output_policy_requested_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "output_policy_applied_max_tokens" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "output_policy_enforced_limit_exceeded" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  grep -q "validRiskMode" "$ROOT_DIR/pkg/profit/settings.go" || fail
+  grep -q "EnforceProfitRiskBeforeRelay" "$ROOT_DIR/service/profit_risk_enforcement.go" || fail
+  grep -q "EnforceProfitRiskBeforeRelay" "$ROOT_DIR/controller/relay.go" || fail
+  grep -q "profit_risk_live_enforced_count" "$ROOT_DIR/model/profit.go" || fail
+  grep -q "profit_risk_live_enforced_count" "$ROOT_DIR/web/default/src/features/system-settings/api.ts" || fail
+  require_file "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go"
+  require_file "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go"
+  grep -q 'OmniRouteParityCommit = "630baa6"' "$ROOT_DIR/pkg/promptcompress/attribution.go" || fail
+  grep -q "omniroute/caveman_rules/_schema.json" "$ROOT_DIR/pkg/promptcompress/omniroute_embed.go" || fail
+  grep -q "TestOmniRouteVendoredRuleBlobParity" "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go" || fail
+  grep -q "omniRouteExpectedBlobSHA" "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go" || fail
+  grep -q "gitBlobSHA" "$ROOT_DIR/pkg/promptcompress/omniroute_manifest_test.go" || fail
+  grep -q "TestOmniRouteOfficialRTKSmartTruncateBehavior" "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go" || fail
+  grep -q "TestOmniRouteOfficialCavemanEngineBehavior" "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go" || fail
+  grep -q "TestOmniRouteOfficialStackedPipelineBehavior" "$ROOT_DIR/pkg/promptcompress/omniroute_behavior_test.go" || fail
+
+  if [ "$RUN_TESTS" != "0" ] && [ "${GLART_STACK_SKIP_TESTS:-0}" != "1" ]; then
+    STAGE="go-test"
+    mkdir -p "$COMPOSE_DIR/runtime/cache/go-build" "$COMPOSE_DIR/runtime/cache/gomod"
+    run docker run --rm \
+      -v "$ROOT_DIR:/workspace" \
+      -v "$COMPOSE_DIR/runtime/cache/go-build:/tmp/go-cache" \
+      -v "$COMPOSE_DIR/runtime/cache/gomod:/tmp/gomodcache" \
+      -w /workspace \
+      -e GOCACHE=/tmp/go-cache \
+      -e GOMODCACHE=/tmp/gomodcache \
+      "$GO_TEST_IMAGE" \
+      sh -c 'git config --global --add safe.directory /workspace && go test ./service ./controller ./model ./router ./relay ./pkg/billingexpr ./setting/billing_setting ./pkg/profit ./pkg/promptcompress -count=1'
+  else
+    log "go test stage skipped by configuration"
+  fi
+}
+
+retry_smoke() {
+  label="$1"
+  attempts="$2"
+  delay_seconds="$3"
+  shift 3
+
+  attempt=1
+  while [ "$attempt" -le "$attempts" ]; do
+    if "$@"; then
+      log "$label smoke passed on attempt $attempt/$attempts"
+      return 0
+    fi
+    if [ "$attempt" -lt "$attempts" ]; then
+      log "$label smoke not ready (attempt $attempt/$attempts); retrying in ${delay_seconds}s"
+      sleep "$delay_seconds"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  log "$label smoke failed after $attempts attempts"
+  return 1
+}
+
+stack_curl() {
+  url="$1"
+  shift
+
+  if [ -f /.dockerenv ]; then
+    curl -fsS --connect-timeout 5 --max-time "${GLART_STACK_SMOKE_MAX_TIME:-20}" "$@" "$url"
+  else
+    docker exec glart-stack-updater curl -fsS --connect-timeout 5 --max-time "${GLART_STACK_SMOKE_MAX_TIME:-20}" "$@" "$url"
+  fi
+}
+
+stack_curl_ok() {
+  url="$1"
+  shift
+  stack_curl "$url" "$@" >/dev/null
+}
+
+stack_curl_grep() {
+  url="$1"
+  pattern="$2"
+  shift 2
+  stack_curl "$url" "$@" | grep -q "$pattern"
+}
+
+smoke_new_api() {
+  STAGE="smoke-new-api"
+  retry_smoke "new-api" 40 3 stack_curl_grep http://new-api:3000/api/status '"success"[[:space:]]*:[[:space:]]*true'
+}
+
+smoke_gpt_load() {
+  STAGE="smoke-gpt-load"
+  retry_smoke "gpt-load" 30 2 stack_curl_ok http://gpt-load:3001/health
+}
+
+smoke_cliproxyapi() {
+  STAGE="smoke-cliproxyapi"
+  retry_smoke "cliproxyapi" 30 2 stack_curl_ok http://cliproxyapi:8317/management.html
+}
+
+smoke_cpa_manager_plus() {
+  STAGE="smoke-cpa-manager-plus"
+  retry_smoke "cpa-manager-plus health" 30 2 stack_curl_grep http://cpa-manager-plus:18317/health cpa-manager-plus
+  retry_smoke "cpa-manager-plus manager info" 30 2 stack_curl_ok http://cpa-manager-plus:18317/usage-service/info
+}
+
+ensure_runtime_services() {
+  STAGE="ensure-runtime-services"
+  run compose up -d redis gpt-load cliproxyapi cpa-manager-plus caddy
+}
+
+smoke_runtime_services() {
+  smoke_gpt_load
+  smoke_cliproxyapi
+  smoke_cpa_manager_plus
+}
+
+optional_proxy_test_chat_smoke() {
+  if [ -n "${GLART_SMOKE_API_KEY:-}" ] && [ -n "${GLART_SMOKE_MODEL:-}" ]; then
+    STAGE="proxy-test-chat-smoke"
+    log "running optional proxy-test chat smoke with configured model"
+    stack_curl_ok \
+      http://new-api:3000/v1/chat/completions \
+      -H "Authorization: Bearer $GLART_SMOKE_API_KEY" \
+      -H "Content-Type: application/json" \
+      --data "{\"model\":\"$GLART_SMOKE_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Return exactly: ok\"}],\"max_tokens\":8}"
+  else
+    log "optional proxy-test chat smoke skipped: GLART_SMOKE_API_KEY or GLART_SMOKE_MODEL is not configured"
+  fi
+}
+
+rollback_after_failed_update() {
+  component="$(normalize_component "$1")"
+  STAGE="auto-rollback-$component"
+  log "$component post-update smoke failed; attempting automatic image rollback"
+  BACKUP_ID="latest"
+  RESTORE_RUNTIME_ON_ROLLBACK="0"
+  rollback_component "$component"
+  STAGE="post-update-smoke-$component"
+  fail
+}
+
+update_new_api() {
+  create_backup new-api
+  git_update_and_tests
+  STAGE="build-new-api"
+  run compose build new-api
+  ensure_runtime_services
+  STAGE="up-new-api"
+  run compose up -d --no-deps new-api
+  if ! smoke_new_api; then
+    rollback_after_failed_update new-api
+  fi
+  if ! smoke_runtime_services; then
+    rollback_after_failed_update new-api
+  fi
+  if ! optional_proxy_test_chat_smoke; then
+    rollback_after_failed_update new-api
+  fi
+}
+
+update_gpt_load() {
+  create_backup gpt-load
+  STAGE="pull-gpt-load"
+  run compose pull gpt-load
+  STAGE="up-gpt-load"
+  run compose up -d --no-deps gpt-load
+  if ! smoke_gpt_load; then
+    rollback_after_failed_update gpt-load
+  fi
+}
+
+update_cliproxyapi() {
+  create_backup cliproxyapi
+  STAGE="pull-cliproxyapi"
+  run compose pull cliproxyapi
+  STAGE="up-cliproxyapi"
+  run compose up -d --no-deps cliproxyapi
+  if ! smoke_cliproxyapi; then
+    rollback_after_failed_update cliproxyapi
+  fi
+}
+
+update_cpa_manager_plus() {
+  create_backup cpa-manager-plus
+  STAGE="pull-cpa-manager-plus"
+  run compose pull cpa-manager-plus
+  STAGE="up-cpa-manager-plus"
+  run compose up -d --no-deps cpa-manager-plus
+  if ! smoke_cpa_manager_plus; then
+    rollback_after_failed_update cpa-manager-plus
+  fi
+}
+
+update_updater() {
+  STAGE="build-updater"
+  run compose build glart-stack-updater
+  STAGE="up-updater"
+  run compose up -d --no-deps glart-stack-updater || log "updater self-refresh will apply on next run"
+}
+
+update_all() {
+  update_new_api
+  update_gpt_load
+  update_cliproxyapi
+  update_cpa_manager_plus
+  update_updater
+}
+
+rollback_component() {
+  component="$(normalize_component "$1")"
+  if [ "$component" = "all" ]; then
+    log "rollback all is intentionally disabled; rollback each component explicitly"
+    fail
+  fi
+
+  backup_dir="$(latest_backup_dir "$component")"
+  if [ ! -d "$backup_dir" ]; then
+    log "backup not found for $component: $backup_dir"
+    fail
+  fi
+  manifest="$backup_dir/manifest.env"
+  require_file "$manifest"
+
+  # shellcheck disable=SC1090
+  . "$manifest"
+  service="$(component_service "$component")"
+  service_image="$(component_image "$component")"
+  rollback_image="${ROLLBACK_TAG:-}"
+  if [ -z "$rollback_image" ]; then
+    rollback_image="${CURRENT_IMAGE_ID:-}"
+  fi
+  if [ -z "$rollback_image" ]; then
+    log "backup has no rollback image reference: $backup_dir"
+    fail
+  fi
+
+  STAGE="rollback-image-$component"
+  run docker image inspect "$rollback_image"
+  run docker tag "$rollback_image" "$service_image"
+
+  if [ "$RESTORE_RUNTIME_ON_ROLLBACK" = "1" ]; then
+    STAGE="rollback-runtime-$component"
+    require_file "$backup_dir/runtime.tar.gz"
+    log "restoring runtime archive for $component from $backup_dir"
+    run tar -xzf "$backup_dir/runtime.tar.gz" -C "$COMPOSE_DIR"
+  else
+    log "runtime restore skipped for $component; set GLART_STACK_RESTORE_RUNTIME_ON_ROLLBACK=1 to restore runtime archive"
+  fi
+
+  STAGE="rollback-up-$component"
+  run compose up -d --no-deps "$service"
+  case "$component" in
+    new-api) smoke_new_api ;;
+    gpt-load) smoke_gpt_load ;;
+    cliproxyapi) smoke_cliproxyapi ;;
+    cpa-manager-plus) smoke_cpa_manager_plus ;;
+  esac
+  log "$component rollback completed from $backup_dir"
+}
+
+main() {
+  cd "$ROOT_DIR"
+  load_env
+  precheck_common
+  COMPONENT="$(normalize_component "$COMPONENT")"
+  case "$ACTION:$COMPONENT" in
+    update:all) update_all ;;
+    update:new-api) update_new_api ;;
+    update:gpt-load) update_gpt_load ;;
+    update:cliproxyapi) update_cliproxyapi ;;
+    update:cpa-manager-plus) update_cpa_manager_plus ;;
+    rollback:new-api) rollback_component new-api ;;
+    rollback:gpt-load) rollback_component gpt-load ;;
+    rollback:cliproxyapi) rollback_component cliproxyapi ;;
+    rollback:cpa-manager-plus) rollback_component cpa-manager-plus ;;
+    *) log "unsupported action/component: $ACTION $COMPONENT"; fail ;;
+  esac
+  STAGE="done"
+  log "glart stack $ACTION $COMPONENT completed successfully"
+}
+
+main "$@"

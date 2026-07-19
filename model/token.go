@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const DesktopDefaultTokenName = "快易点AI助手"
+
 type Token struct {
 	Id                 int            `json:"id"`
 	UserId             int            `json:"user_id" gorm:"index"`
@@ -83,6 +85,110 @@ func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
 	var err error
 	err = DB.Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
 	return tokens, err
+}
+
+func BuildUserToken(userId int, name string, key string) Token {
+	return Token{
+		UserId:             userId,
+		Name:               name,
+		Key:                key,
+		Status:             common.TokenStatusEnabled,
+		CreatedTime:        common.GetTimestamp(),
+		AccessedTime:       common.GetTimestamp(),
+		ExpiredTime:        -1,
+		UnlimitedQuota:     true,
+		ModelLimitsEnabled: false,
+	}
+}
+
+func GetDesktopDefaultToken(userId int) (*Token, error) {
+	if userId == 0 {
+		return nil, errors.New("userId 为空！")
+	}
+	token := &Token{}
+	err := DB.Where("user_id = ? AND name = ?", userId, DesktopDefaultTokenName).
+		Order("id asc").
+		First(token).Error
+	return token, err
+}
+
+func EnsureDesktopDefaultToken(userId int, group string) (*Token, error) {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		group = "default"
+	}
+	token, err := GetDesktopDefaultToken(userId)
+	if err == nil {
+		if strings.TrimSpace(token.Group) != group {
+			if err := DB.Model(token).Update("group", group).Error; err != nil {
+				return nil, err
+			}
+			token.Group = group
+		}
+		return token, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	key, err := common.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+	newToken := BuildUserToken(userId, DesktopDefaultTokenName, key)
+	newToken.Group = group
+	if err := newToken.Insert(); err != nil {
+		return nil, err
+	}
+	return &newToken, nil
+}
+
+func RotateDesktopDefaultToken(userId int, group string) (*Token, error) {
+	if userId == 0 {
+		return nil, errors.New("userId 为空！")
+	}
+	key, err := common.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+
+	var oldTokens []Token
+	if err := tx.Where("user_id = ? AND name = ?", userId, DesktopDefaultTokenName).Find(&oldTokens).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if len(oldTokens) > 0 {
+		if err := tx.Where("user_id = ? AND name = ?", userId, DesktopDefaultTokenName).Delete(&Token{}).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
+
+	newToken := BuildUserToken(userId, DesktopDefaultTokenName, key)
+	newToken.Group = group
+	if err := tx.Create(&newToken).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+
+	if common.RedisEnabled {
+		gopool.Go(func() {
+			for _, t := range oldTokens {
+				if t.Key != "" {
+					_ = cacheDeleteToken(t.Key)
+				}
+			}
+			_ = cacheSetToken(newToken)
+		})
+	}
+	return &newToken, nil
 }
 
 // sanitizeLikePattern 校验并清洗用户输入的 LIKE 搜索模式。
