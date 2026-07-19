@@ -116,9 +116,12 @@ type glartStackBackups struct {
 type glartStackCleanupPolicy struct {
 	KeepRollbackImages    int  `json:"keep_rollback_images"`
 	KeepBackups           int  `json:"keep_backups"`
+	KeepLegacyImages      int  `json:"keep_legacy_images"`
 	BuildCacheMaxAgeHours int  `json:"build_cache_max_age_hours"`
 	PruneDanglingImages   bool `json:"prune_dangling_images"`
 	PruneBuildCache       bool `json:"prune_build_cache"`
+	PruneBuildCacheAll    bool `json:"prune_build_cache_all"`
+	PruneLegacyImages     bool `json:"prune_legacy_images"`
 }
 
 type glartStackDiskUsage struct {
@@ -150,8 +153,10 @@ type glartStackCleanupResult struct {
 	CompletedAt           string                    `json:"completed_at,omitempty"`
 	RemovedRollbackImages int                       `json:"removed_rollback_images"`
 	RemovedBackups        int                       `json:"removed_backups"`
+	RemovedLegacyImages   int                       `json:"removed_legacy_images"`
 	DanglingImagesPruned  bool                      `json:"dangling_images_pruned"`
 	BuildCachePruned      bool                      `json:"build_cache_pruned"`
+	BuildCacheAllPruned   bool                      `json:"build_cache_all_pruned"`
 	FreeBytesBefore       int64                     `json:"free_bytes_before"`
 	FreeBytesAfter        int64                     `json:"free_bytes_after"`
 	FreedBytes            int64                     `json:"freed_bytes"`
@@ -172,9 +177,12 @@ type systemUpdateRollbackRequest struct {
 type systemCleanupRequest struct {
 	KeepRollbackImages    *int  `json:"keep_rollback_images,omitempty"`
 	KeepBackups           *int  `json:"keep_backups,omitempty"`
+	KeepLegacyImages      *int  `json:"keep_legacy_images,omitempty"`
 	BuildCacheMaxAgeHours *int  `json:"build_cache_max_age_hours,omitempty"`
 	PruneDanglingImages   *bool `json:"prune_dangling_images,omitempty"`
 	PruneBuildCache       *bool `json:"prune_build_cache,omitempty"`
+	PruneBuildCacheAll    *bool `json:"prune_build_cache_all,omitempty"`
+	PruneLegacyImages     *bool `json:"prune_legacy_images,omitempty"`
 }
 
 var validSystemUpdateComponents = map[string]bool{
@@ -272,6 +280,9 @@ func callGlartStackUpdaterCleanupPreview(request systemCleanupRequest) (*glartSt
 	if request.KeepBackups != nil {
 		params.Set("keep_backups", fmt.Sprintf("%d", *request.KeepBackups))
 	}
+	if request.KeepLegacyImages != nil {
+		params.Set("keep_legacy_images", fmt.Sprintf("%d", *request.KeepLegacyImages))
+	}
 	if request.BuildCacheMaxAgeHours != nil {
 		params.Set("build_cache_max_age_hours", fmt.Sprintf("%d", *request.BuildCacheMaxAgeHours))
 	}
@@ -280,6 +291,12 @@ func callGlartStackUpdaterCleanupPreview(request systemCleanupRequest) (*glartSt
 	}
 	if request.PruneBuildCache != nil {
 		params.Set("prune_build_cache", strconv.FormatBool(*request.PruneBuildCache))
+	}
+	if request.PruneBuildCacheAll != nil {
+		params.Set("prune_build_cache_all", strconv.FormatBool(*request.PruneBuildCacheAll))
+	}
+	if request.PruneLegacyImages != nil {
+		params.Set("prune_legacy_images", strconv.FormatBool(*request.PruneLegacyImages))
 	}
 	path := "/cleanup/preview"
 	if encoded := params.Encode(); encoded != "" {
@@ -553,6 +570,14 @@ func PreviewSystemCleanup(c *gin.Context) {
 		}
 		request.KeepBackups = &parsed
 	}
+	if value := c.Query("keep_legacy_images"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "keep_legacy_images must be an integer"})
+			return
+		}
+		request.KeepLegacyImages = &parsed
+	}
 	if value := c.Query("build_cache_max_age_hours"); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil {
@@ -576,6 +601,22 @@ func PreviewSystemCleanup(c *gin.Context) {
 			return
 		}
 		request.PruneBuildCache = &parsed
+	}
+	if value := c.Query("prune_build_cache_all"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "prune_build_cache_all must be a boolean"})
+			return
+		}
+		request.PruneBuildCacheAll = &parsed
+	}
+	if value := c.Query("prune_legacy_images"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "prune_legacy_images must be a boolean"})
+			return
+		}
+		request.PruneLegacyImages = &parsed
 	}
 	preview, _, err := callGlartStackUpdaterCleanupPreview(request)
 	if err != nil {

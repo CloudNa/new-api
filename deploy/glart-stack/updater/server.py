@@ -57,16 +57,22 @@ VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi", "cpa-man
 VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
 CLEANUP_KEEP_ROLLBACK_IMAGES = int(os.environ.get("GLART_STACK_CLEANUP_KEEP_ROLLBACK_IMAGES", "5"))
 CLEANUP_KEEP_BACKUPS = int(os.environ.get("GLART_STACK_CLEANUP_KEEP_BACKUPS", "5"))
+CLEANUP_KEEP_LEGACY_IMAGES = int(os.environ.get("GLART_STACK_CLEANUP_KEEP_LEGACY_IMAGES", "2"))
 CLEANUP_BUILD_CACHE_MAX_AGE_HOURS = int(
     os.environ.get("GLART_STACK_CLEANUP_BUILD_CACHE_MAX_AGE_HOURS", "168")
 )
 CLEANUP_MIN_KEEP = 1
 CLEANUP_MAX_KEEP = 20
+CLEANUP_MAX_LEGACY_KEEP = 10
 CLEANUP_MIN_CACHE_AGE_HOURS = 24
 CLEANUP_MAX_CACHE_AGE_HOURS = 24 * 90
 ROLLBACK_TAG_PATTERN = re.compile(r"^\d{8}-\d{6}$")
 ROLLBACK_IMAGE_REPOSITORIES = {
     f"glart/rollback-{component}": component for component in VALID_ROLLBACK_COMPONENTS
+}
+LEGACY_IMAGE_TAG_PATTERNS = {
+    "glart/new-api": re.compile(r"^glart-clean-[A-Za-z0-9._-]+$"),
+    "glart-new-api": re.compile(r"^clean-combo-[A-Za-z0-9._-]+$"),
 }
 
 state_lock = threading.Lock()
@@ -575,6 +581,13 @@ def cleanup_policy(payload: dict | None = None) -> dict:
             CLEANUP_MAX_KEEP,
             "keep_backups",
         ),
+        "keep_legacy_images": bounded_int(
+            payload.get("keep_legacy_images"),
+            CLEANUP_KEEP_LEGACY_IMAGES,
+            CLEANUP_MIN_KEEP,
+            CLEANUP_MAX_LEGACY_KEEP,
+            "keep_legacy_images",
+        ),
         "build_cache_max_age_hours": bounded_int(
             payload.get("build_cache_max_age_hours"),
             CLEANUP_BUILD_CACHE_MAX_AGE_HOURS,
@@ -584,6 +597,8 @@ def cleanup_policy(payload: dict | None = None) -> dict:
         ),
         "prune_dangling_images": boolean("prune_dangling_images", True),
         "prune_build_cache": boolean("prune_build_cache", True),
+        "prune_build_cache_all": boolean("prune_build_cache_all", False),
+        "prune_legacy_images": boolean("prune_legacy_images", False),
     }
 
 
@@ -658,6 +673,57 @@ def rollback_image_candidates(keep: int) -> list[dict]:
     return candidates
 
 
+def active_image_ids() -> set[str]:
+    ids = set()
+    for row in docker_json_lines(["ps", "-a", "--format", "{{json .}}"]):
+        image_ref = str(row.get("Image") or "").strip()
+        if not image_ref:
+            continue
+        for image in docker_json_lines(["image", "inspect", image_ref, "--format", "{{json .}}"]):
+            image_id = str(image.get("Id") or image.get("ID") or "").strip()
+            if image_id:
+                ids.add(image_id.removeprefix("sha256:")[:64])
+    return ids
+
+
+def legacy_image_candidates(keep: int) -> list[dict]:
+    rows = docker_json_lines(["image", "ls", "--format", "{{json .}}"])
+    active_ids = active_image_ids()
+    grouped: dict[str, list[dict]] = {repository: [] for repository in LEGACY_IMAGE_TAG_PATTERNS}
+    for row in rows:
+        repository = str(row.get("Repository") or "")
+        tag = str(row.get("Tag") or "")
+        pattern = LEGACY_IMAGE_TAG_PATTERNS.get(repository)
+        if not pattern or not pattern.fullmatch(tag):
+            continue
+        image_id = str(row.get("ID") or row.get("Id") or "").strip()
+        grouped[repository].append(
+            {
+                "repository": repository,
+                "tag": tag,
+                "reference": f"{repository}:{tag}",
+                "image_id": image_id,
+                "created_at": str(row.get("CreatedAt") or ""),
+                "size": str(row.get("Size") or ""),
+                "active": bool(
+                    image_id
+                    and any(
+                        active_id.startswith(image_id) or image_id.startswith(active_id[:12])
+                        for active_id in active_ids
+                    )
+                ),
+            }
+        )
+
+    candidates = []
+    for images in grouped.values():
+        images.sort(key=lambda item: (item["created_at"], item["tag"]), reverse=True)
+        for item in images[keep:]:
+            if not item["active"]:
+                candidates.append(item)
+    return candidates
+
+
 def backup_candidates(keep: int) -> list[dict]:
     candidates = []
     for component in sorted(VALID_ROLLBACK_COMPONENTS):
@@ -698,9 +764,11 @@ def disk_usage() -> dict:
 def cleanup_plan(policy: dict) -> dict:
     rollback = rollback_image_candidates(policy["keep_rollback_images"])
     backups = backup_candidates(policy["keep_backups"])
+    legacy_images = legacy_image_candidates(policy["keep_legacy_images"])
     return {
         "rollback_images": rollback,
         "backups": backups,
+        "legacy_images": legacy_images,
     }
 
 
@@ -730,6 +798,10 @@ def cleanup_preview(policy: dict | None = None) -> dict:
             "candidate_count": len(plan["backups"]),
             "estimated_bytes": backup_bytes,
             "by_component": backup_by_component,
+        },
+        "legacy_images": {
+            "candidate_count": len(plan["legacy_images"]),
+            "keep": policy["keep_legacy_images"],
         },
         "estimated_backup_reclaimable_bytes": backup_bytes,
     }
@@ -762,6 +834,7 @@ def run_cleanup_operation(policy: dict) -> None:
         plan = cleanup_plan(policy)
         removed_rollback_images = 0
         removed_backups = 0
+        removed_legacy_images = 0
 
         for item in plan["rollback_images"]:
             ok, output = cleanup_command(["docker", "image", "rm", item["reference"]])
@@ -781,6 +854,14 @@ def run_cleanup_operation(policy: dict) -> None:
             except Exception as exc:
                 errors.append(f"backup {item['component']}/{item['id']}: {exc}")
 
+        if policy["prune_legacy_images"]:
+            for item in plan["legacy_images"]:
+                ok, output = cleanup_command(["docker", "image", "rm", item["reference"]])
+                if ok:
+                    removed_legacy_images += 1
+                else:
+                    errors.append(f"legacy image {item['reference']}: {output}")
+
         dangling_pruned = False
         if policy["prune_dangling_images"]:
             ok, output = cleanup_command(["docker", "image", "prune", "--force"])
@@ -789,19 +870,23 @@ def run_cleanup_operation(policy: dict) -> None:
                 errors.append(f"dangling images: {output}")
 
         build_cache_pruned = False
+        build_cache_all_pruned = False
         if policy["prune_build_cache"]:
-            ok, output = cleanup_command(
+            build_cache_command = ["docker", "builder", "prune", "--force"]
+            if policy["prune_build_cache_all"]:
+                build_cache_command.append("--all")
+            build_cache_command.extend(
                 [
-                    "docker",
-                    "builder",
-                    "prune",
-                    "--force",
                     "--filter",
                     f"until={policy['build_cache_max_age_hours']}h",
-                ],
+                ]
+            )
+            ok, output = cleanup_command(
+                build_cache_command,
                 300,
             )
             build_cache_pruned = ok
+            build_cache_all_pruned = ok and policy["prune_build_cache_all"]
             if not ok:
                 errors.append(f"build cache: {output}")
 
@@ -810,8 +895,10 @@ def run_cleanup_operation(policy: dict) -> None:
             "completed_at": now(),
             "removed_rollback_images": removed_rollback_images,
             "removed_backups": removed_backups,
+            "removed_legacy_images": removed_legacy_images,
             "dangling_images_pruned": dangling_pruned,
             "build_cache_pruned": build_cache_pruned,
+            "build_cache_all_pruned": build_cache_all_pruned,
             "free_bytes_before": before["disk"]["free_bytes"],
             "free_bytes_after": after["disk"]["free_bytes"],
             "freed_bytes": max(0, after["disk"]["free_bytes"] - before["disk"]["free_bytes"]),
@@ -836,8 +923,10 @@ def run_cleanup_operation(policy: dict) -> None:
                 "completed_at": now(),
                 "removed_rollback_images": 0,
                 "removed_backups": 0,
+                "removed_legacy_images": 0,
                 "dangling_images_pruned": False,
                 "build_cache_pruned": False,
+                "build_cache_all_pruned": False,
                 "free_bytes_before": 0,
                 "free_bytes_after": 0,
                 "freed_bytes": 0,

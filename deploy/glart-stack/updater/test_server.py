@@ -13,9 +13,12 @@ class CleanupPolicyTests(unittest.TestCase):
 
         self.assertEqual(policy["keep_rollback_images"], 5)
         self.assertEqual(policy["keep_backups"], 5)
+        self.assertEqual(policy["keep_legacy_images"], 2)
         self.assertEqual(policy["build_cache_max_age_hours"], 168)
         self.assertTrue(policy["prune_dangling_images"])
         self.assertTrue(policy["prune_build_cache"])
+        self.assertFalse(policy["prune_build_cache_all"])
+        self.assertFalse(policy["prune_legacy_images"])
 
     def test_rejects_unsafe_retention_values(self) -> None:
         with self.assertRaises(ValueError):
@@ -23,9 +26,24 @@ class CleanupPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             server.cleanup_policy({"keep_backups": 21})
         with self.assertRaises(ValueError):
+            server.cleanup_policy({"keep_legacy_images": 11})
+        with self.assertRaises(ValueError):
             server.cleanup_policy({"build_cache_max_age_hours": 1})
         with self.assertRaises(ValueError):
             server.cleanup_policy({"prune_build_cache": "yes"})
+
+    def test_deep_cleanup_options_preserve_explicit_values(self) -> None:
+        policy = server.cleanup_policy(
+            {
+                "keep_legacy_images": 3,
+                "prune_build_cache_all": True,
+                "prune_legacy_images": False,
+            }
+        )
+
+        self.assertEqual(policy["keep_legacy_images"], 3)
+        self.assertTrue(policy["prune_build_cache_all"])
+        self.assertFalse(policy["prune_legacy_images"])
 
 
 class CleanupPreviewTests(unittest.TestCase):
@@ -123,6 +141,24 @@ class CleanupPreviewTests(unittest.TestCase):
             ],
         ):
             self.assertEqual(len(server.rollback_image_candidates(1)), 0)
+
+    def test_legacy_image_candidates_are_allowlisted_and_keep_running_images(self) -> None:
+        with patch.object(
+            server,
+            "docker_json_lines",
+            side_effect=[
+                [
+                    {"Repository": "glart/new-api", "Tag": "glart-clean-current", "ID": "active-id", "CreatedAt": "2026-07-05"},
+                    {"Repository": "glart/new-api", "Tag": "glart-clean-old", "ID": "old-id", "CreatedAt": "2026-07-04"},
+                    {"Repository": "unrelated/image", "Tag": "latest", "ID": "other-id", "CreatedAt": "2026-07-03"},
+                ],
+                [{"Image": "glart/new-api:glart-clean-current"}],
+                [{"Id": "sha256:active-id"}],
+            ],
+        ):
+            candidates = server.legacy_image_candidates(1)
+
+        self.assertEqual([item["reference"] for item in candidates], ["glart/new-api:glart-clean-old"])
 
     def test_cleanup_failure_releases_running_state(self) -> None:
         policy = server.cleanup_policy()

@@ -359,9 +359,12 @@ export type SystemUpdateStatus = {
 export type SystemCleanupRequest = {
   keep_rollback_images?: number
   keep_backups?: number
+  keep_legacy_images?: number
   build_cache_max_age_hours?: number
   prune_dangling_images?: boolean
   prune_build_cache?: boolean
+  prune_build_cache_all?: boolean
+  prune_legacy_images?: boolean
 }
 
 export type SystemCleanupPreview = {
@@ -372,9 +375,12 @@ export type SystemCleanupPreview = {
       SystemCleanupRequest,
       | 'keep_rollback_images'
       | 'keep_backups'
+      | 'keep_legacy_images'
       | 'build_cache_max_age_hours'
       | 'prune_dangling_images'
       | 'prune_build_cache'
+      | 'prune_build_cache_all'
+      | 'prune_legacy_images'
     >
   >
   disk: {
@@ -402,14 +408,20 @@ export type SystemCleanupPreview = {
     by_component?: Record<string, number>
   }
   estimated_backup_reclaimable_bytes: number
+  legacy_images?: {
+    candidate_count: number
+    keep: number
+  }
 }
 
 export type SystemCleanupResult = {
   completed_at?: string
   removed_rollback_images: number
   removed_backups: number
+  removed_legacy_images: number
   dangling_images_pruned: boolean
   build_cache_pruned: boolean
+  build_cache_all_pruned: boolean
   free_bytes_before: number
   free_bytes_after: number
   freed_bytes: number

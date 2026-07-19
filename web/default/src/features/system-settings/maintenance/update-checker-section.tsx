@@ -75,9 +75,12 @@ const ROLLBACK_COMPONENTS: SystemRollbackComponent[] = [
 const DEFAULT_CLEANUP_POLICY: SystemCleanupRequest = {
   keep_rollback_images: 5,
   keep_backups: 5,
+  keep_legacy_images: 2,
   build_cache_max_age_hours: 168,
   prune_dangling_images: true,
   prune_build_cache: true,
+  prune_build_cache_all: false,
+  prune_legacy_images: false,
 }
 
 function formatBytes(bytes: number) {
@@ -263,7 +266,11 @@ export function UpdateCheckerSection({
   }, [updaterRunning, status?.last_exit])
 
   const updateCleanupNumber = (
-    key: 'keep_rollback_images' | 'keep_backups' | 'build_cache_max_age_hours',
+    key:
+      | 'keep_rollback_images'
+      | 'keep_backups'
+      | 'keep_legacy_images'
+      | 'build_cache_max_age_hours',
     value: string,
     minimum: number,
     maximum: number
@@ -415,9 +422,12 @@ export function UpdateCheckerSection({
     pendingOperation?.action === 'prepare-upstream-merge'
   const cleanupDescription = [
     `每个组件保留 ${cleanupPolicy.keep_rollback_images ?? 5} 个回滚镜像和 ${cleanupPolicy.keep_backups ?? 5} 个备份`,
+    cleanupPolicy.prune_legacy_images
+      ? `保留 ${cleanupPolicy.keep_legacy_images ?? 2} 个旧版应用镜像`
+      : '不清理旧版应用镜像',
     cleanupPolicy.prune_dangling_images ? '清理悬空镜像' : '保留悬空镜像',
     cleanupPolicy.prune_build_cache
-      ? `清理超过 ${cleanupPolicy.build_cache_max_age_hours ?? 168} 小时的未使用构建缓存`
+      ? `${cleanupPolicy.prune_build_cache_all ? '深度清理' : '清理'}超过 ${cleanupPolicy.build_cache_max_age_hours ?? 168} 小时的未使用构建缓存`
       : '保留构建缓存',
   ].join('，')
 
@@ -624,7 +634,7 @@ export function UpdateCheckerSection({
             )}
           </div>
 
-          <div className='mt-4 grid gap-4 md:grid-cols-3'>
+          <div className='mt-4 grid gap-4 md:grid-cols-4'>
             <label className='space-y-2 text-sm'>
               <span className='font-medium'>每个组件保留回滚镜像</span>
               <Input
@@ -652,6 +662,24 @@ export function UpdateCheckerSection({
                 value={cleanupPolicy.keep_backups ?? 5}
                 onChange={(event) =>
                   updateCleanupNumber('keep_backups', event.target.value, 1, 20)
+                }
+                disabled={updaterRunning || cleanupLoading}
+              />
+            </label>
+            <label className='space-y-2 text-sm'>
+              <span className='font-medium'>旧版应用镜像保留数量</span>
+              <Input
+                type='number'
+                min={1}
+                max={10}
+                value={cleanupPolicy.keep_legacy_images ?? 2}
+                onChange={(event) =>
+                  updateCleanupNumber(
+                    'keep_legacy_images',
+                    event.target.value,
+                    1,
+                    10
+                  )
                 }
                 disabled={updaterRunning || cleanupLoading}
               />
@@ -704,6 +732,36 @@ export function UpdateCheckerSection({
               />
               清理过期构建缓存
             </label>
+            <label className='flex items-center gap-2'>
+              <Switch
+                checked={cleanupPolicy.prune_build_cache_all ?? false}
+                onCheckedChange={(checked) =>
+                  setCleanupPolicy((current) => ({
+                    ...current,
+                    prune_build_cache_all: checked,
+                  }))
+                }
+                disabled={
+                  updaterRunning ||
+                  cleanupLoading ||
+                  !cleanupPolicy.prune_build_cache
+                }
+              />
+              深度清理全部未使用构建缓存
+            </label>
+            <label className='flex items-center gap-2'>
+              <Switch
+                checked={cleanupPolicy.prune_legacy_images ?? false}
+                onCheckedChange={(checked) =>
+                  setCleanupPolicy((current) => ({
+                    ...current,
+                    prune_legacy_images: checked,
+                  }))
+                }
+                disabled={updaterRunning || cleanupLoading}
+              />
+              清理旧版应用镜像
+            </label>
           </div>
 
           {cleanupPreview && (
@@ -734,7 +792,8 @@ export function UpdateCheckerSection({
                 <div className='font-medium'>
                   {cleanupPreview.rollback_images?.candidate_count ?? 0}{' '}
                   个回滚镜像，{cleanupPreview.backups?.candidate_count ?? 0}{' '}
-                  个备份
+                  个备份，{cleanupPreview.legacy_images?.candidate_count ?? 0}{' '}
+                  个旧版镜像
                 </div>
               </div>
             </div>
@@ -744,7 +803,8 @@ export function UpdateCheckerSection({
             <div className='text-muted-foreground mt-3 text-sm'>
               上次清理释放 {formatBytes(status.last_cleanup.freed_bytes)}，删除{' '}
               {status.last_cleanup.removed_rollback_images} 个回滚镜像和{' '}
-              {status.last_cleanup.removed_backups} 个备份。
+              {status.last_cleanup.removed_backups} 个备份、{' '}
+              {status.last_cleanup.removed_legacy_images} 个旧版镜像。
             </div>
           )}
 
