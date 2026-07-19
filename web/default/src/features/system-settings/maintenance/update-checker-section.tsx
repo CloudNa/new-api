@@ -16,31 +16,39 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
+import type { TFunction } from 'i18next'
 import {
   CheckCircle2Icon,
   ClipboardCheckIcon,
   GitBranchIcon,
+  HardDriveIcon,
   RefreshCcwIcon,
   RocketIcon,
   SendIcon,
+  Trash2Icon,
   XCircleIcon,
 } from 'lucide-react'
-import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatTimestamp } from '@/lib/format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
+  getSystemCleanupPreview,
   getSystemUpdateBackups,
   getSystemUpdateStatus,
   precheckSystemUpdate,
   prepareSystemUpstreamMerge,
   rollbackSystemUpdate,
   smokeSystemUpdate,
+  startSystemCleanup,
   startSystemUpdate,
+  type SystemCleanupPreview,
+  type SystemCleanupRequest,
   type SystemRollbackComponent,
   type SystemUpdateBackup,
   type SystemUpdatePrecheck,
@@ -63,6 +71,24 @@ const ROLLBACK_COMPONENTS: SystemRollbackComponent[] = [
   'cliproxyapi',
   'cpa-manager-plus',
 ]
+
+const DEFAULT_CLEANUP_POLICY: SystemCleanupRequest = {
+  keep_rollback_images: 5,
+  keep_backups: 5,
+  build_cache_max_age_hours: 168,
+  prune_dangling_images: true,
+  prune_build_cache: true,
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  )
+  return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 2)} ${units[index]}`
+}
 
 type PendingOperation =
   | {
@@ -105,6 +131,13 @@ export function UpdateCheckerSection({
   const [loading, setLoading] = useState(false)
   const [prechecking, setPrechecking] = useState(false)
   const [smoking, setSmoking] = useState(false)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false)
+  const [cleanupPolicy, setCleanupPolicy] = useState<SystemCleanupRequest>(
+    DEFAULT_CLEANUP_POLICY
+  )
+  const [cleanupPreview, setCleanupPreview] =
+    useState<SystemCleanupPreview | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingOperation, setPendingOperation] =
     useState<PendingOperation | null>(null)
@@ -136,6 +169,8 @@ export function UpdateCheckerSection({
   const canStartRollback = updaterEnabled && !updaterRunning && !loading
   const canPrepareUpstreamMerge =
     updaterEnabled && !updaterRunning && !loading && upstreamNeedsUpdate
+  const canStartCleanup =
+    updaterEnabled && !updaterRunning && !cleanupLoading && !!cleanupPreview
 
   const refreshBackups = async () => {
     if (!updaterEnabled && status) return
@@ -178,23 +213,92 @@ export function UpdateCheckerSection({
     }
   }
 
+  const refreshCleanupPreview = async () => {
+    setCleanupLoading(true)
+    try {
+      const res = await getSystemCleanupPreview(cleanupPolicy)
+      if (!res.success || !res.data) {
+        throw new Error(res.message || '无法获取服务器空间清理预览')
+      }
+      setCleanupPreview(res.data)
+      return res.data
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '无法获取服务器空间清理预览'
+      toast.error(message)
+      return null
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
+  const refreshStatusEvent = useEffectEvent(refreshStatus)
+  const refreshBackupsEvent = useEffectEvent(refreshBackups)
+  const refreshCleanupPreviewEvent = useEffectEvent(refreshCleanupPreview)
+
   useEffect(() => {
-    void refreshStatus()
-    void refreshBackups()
+    const timer = window.setTimeout(() => {
+      void refreshStatusEvent()
+      void refreshBackupsEvent()
+      void refreshCleanupPreviewEvent()
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(() => {
     if (!updaterRunning) return
     const timer = window.setInterval(() => {
-      void refreshStatus()
+      void refreshStatusEvent()
     }, 5000)
     return () => window.clearInterval(timer)
   }, [updaterRunning])
 
   useEffect(() => {
     if (updaterRunning || status?.last_exit !== 0) return
-    void refreshBackups()
+    const timer = window.setTimeout(() => {
+      void refreshBackupsEvent()
+      void refreshCleanupPreviewEvent()
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [updaterRunning, status?.last_exit])
+
+  const updateCleanupNumber = (
+    key: 'keep_rollback_images' | 'keep_backups' | 'build_cache_max_age_hours',
+    value: string,
+    minimum: number,
+    maximum: number
+  ) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return
+    setCleanupPolicy((current) => ({
+      ...current,
+      [key]: Math.min(maximum, Math.max(minimum, Math.round(parsed))),
+    }))
+  }
+
+  const handleStartCleanup = async () => {
+    setCleanupLoading(true)
+    try {
+      const res = await startSystemCleanup(cleanupPolicy)
+      if (res.data) setStatus(res.data)
+      if (!res.success) {
+        throw new Error(res.message || '无法启动服务器空间清理任务')
+      }
+      setCleanupConfirmOpen(false)
+      toast.success('服务器空间清理任务已启动。')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '无法启动服务器空间清理任务'
+      toast.error(message)
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
+  const handleOpenCleanupConfirm = async () => {
+    const preview = await refreshCleanupPreview()
+    if (preview) setCleanupConfirmOpen(true)
+  }
 
   const handlePrecheck = async () => {
     setPrechecking(true)
@@ -244,7 +348,10 @@ export function UpdateCheckerSection({
   }
 
   const openPrepareUpstreamMergeConfirm = () => {
-    setPendingOperation({ action: 'prepare-upstream-merge', component: 'new-api' })
+    setPendingOperation({
+      action: 'prepare-upstream-merge',
+      component: 'new-api',
+    })
     setConfirmOpen(true)
   }
 
@@ -306,6 +413,13 @@ export function UpdateCheckerSection({
   const pendingIsRollback = pendingOperation?.action === 'rollback'
   const pendingIsPrepareMerge =
     pendingOperation?.action === 'prepare-upstream-merge'
+  const cleanupDescription = [
+    `每个组件保留 ${cleanupPolicy.keep_rollback_images ?? 5} 个回滚镜像和 ${cleanupPolicy.keep_backups ?? 5} 个备份`,
+    cleanupPolicy.prune_dangling_images ? '清理悬空镜像' : '保留悬空镜像',
+    cleanupPolicy.prune_build_cache
+      ? `清理超过 ${cleanupPolicy.build_cache_max_age_hours ?? 168} 小时的未使用构建缓存`
+      : '保留构建缓存',
+  ].join('，')
 
   return (
     <SettingsSection title={t('System maintenance')}>
@@ -366,7 +480,7 @@ export function UpdateCheckerSection({
                 : '当前定制分支的上游基线已经等于官方最新提交，暂时不需要合并官方上游。'}
           </div>
           {upstream?.source_url && (
-            <div className='text-muted-foreground mt-2 break-all text-xs'>
+            <div className='text-muted-foreground mt-2 text-xs break-all'>
               官方来源：{upstream.source_url}，分支：{upstream.branch || 'main'}
             </div>
           )}
@@ -381,7 +495,8 @@ export function UpdateCheckerSection({
               准备上游合并
             </Button>
             <div className='text-muted-foreground text-xs'>
-              在服务器 staging worktree 合并官方上游，测试通过后推送定制分支；生产目录不会被直接合并。
+              在服务器 staging worktree
+              合并官方上游，测试通过后推送定制分支；生产目录不会被直接合并。
             </div>
           </div>
         </div>
@@ -428,15 +543,14 @@ export function UpdateCheckerSection({
         <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
           {UPDATE_COMPONENTS.map((component) => {
             const rollbackComponent =
-              component === 'all' ? null : (component as SystemRollbackComponent)
+              component === 'all'
+                ? null
+                : (component as SystemRollbackComponent)
             const latestBackup = rollbackComponent
               ? backups[rollbackComponent]?.[0]
               : null
             return (
-              <div
-                key={component}
-                className='space-y-3 rounded-lg border p-4'
-              >
+              <div key={component} className='space-y-3 rounded-lg border p-4'>
                 <div>
                   <div className='font-medium'>
                     {getSystemUpdateComponentLabel(t, component)}
@@ -484,6 +598,190 @@ export function UpdateCheckerSection({
           })}
         </div>
 
+        <div className='rounded-lg border p-4'>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <div>
+              <div className='flex items-center gap-2 font-medium'>
+                <HardDriveIcon className='h-4 w-4' />
+                服务器空间清理
+              </div>
+              <div className='text-muted-foreground mt-1 text-sm'>
+                仅清理超出保留数量的回滚镜像和备份、悬空镜像及过期构建缓存，不触碰运行中容器和业务数据。
+              </div>
+            </div>
+            {cleanupPreview && (
+              <Badge
+                variant={
+                  cleanupPreview.disk.used_percent >= 90
+                    ? 'destructive'
+                    : cleanupPreview.disk.used_percent >= 80
+                      ? 'secondary'
+                      : 'default'
+                }
+              >
+                磁盘已用 {cleanupPreview.disk.used_percent}%
+              </Badge>
+            )}
+          </div>
+
+          <div className='mt-4 grid gap-4 md:grid-cols-3'>
+            <label className='space-y-2 text-sm'>
+              <span className='font-medium'>每个组件保留回滚镜像</span>
+              <Input
+                type='number'
+                min={1}
+                max={20}
+                value={cleanupPolicy.keep_rollback_images ?? 5}
+                onChange={(event) =>
+                  updateCleanupNumber(
+                    'keep_rollback_images',
+                    event.target.value,
+                    1,
+                    20
+                  )
+                }
+                disabled={updaterRunning || cleanupLoading}
+              />
+            </label>
+            <label className='space-y-2 text-sm'>
+              <span className='font-medium'>每个组件保留备份</span>
+              <Input
+                type='number'
+                min={1}
+                max={20}
+                value={cleanupPolicy.keep_backups ?? 5}
+                onChange={(event) =>
+                  updateCleanupNumber('keep_backups', event.target.value, 1, 20)
+                }
+                disabled={updaterRunning || cleanupLoading}
+              />
+            </label>
+            <label className='space-y-2 text-sm'>
+              <span className='font-medium'>构建缓存最长保留（小时）</span>
+              <Input
+                type='number'
+                min={24}
+                max={2160}
+                step={24}
+                value={cleanupPolicy.build_cache_max_age_hours ?? 168}
+                onChange={(event) =>
+                  updateCleanupNumber(
+                    'build_cache_max_age_hours',
+                    event.target.value,
+                    24,
+                    2160
+                  )
+                }
+                disabled={updaterRunning || cleanupLoading}
+              />
+            </label>
+          </div>
+
+          <div className='mt-4 flex flex-wrap gap-6 text-sm'>
+            <label className='flex items-center gap-2'>
+              <Switch
+                checked={cleanupPolicy.prune_dangling_images ?? true}
+                onCheckedChange={(checked) =>
+                  setCleanupPolicy((current) => ({
+                    ...current,
+                    prune_dangling_images: checked,
+                  }))
+                }
+                disabled={updaterRunning || cleanupLoading}
+              />
+              清理悬空镜像
+            </label>
+            <label className='flex items-center gap-2'>
+              <Switch
+                checked={cleanupPolicy.prune_build_cache ?? true}
+                onCheckedChange={(checked) =>
+                  setCleanupPolicy((current) => ({
+                    ...current,
+                    prune_build_cache: checked,
+                  }))
+                }
+                disabled={updaterRunning || cleanupLoading}
+              />
+              清理过期构建缓存
+            </label>
+          </div>
+
+          {cleanupPreview && (
+            <div className='mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4'>
+              <div>
+                <div className='text-muted-foreground'>磁盘可用</div>
+                <div className='font-medium'>
+                  {formatBytes(cleanupPreview.disk.free_bytes)} /{' '}
+                  {formatBytes(cleanupPreview.disk.total_bytes)}
+                </div>
+              </div>
+              <div>
+                <div className='text-muted-foreground'>Docker 镜像</div>
+                <div className='font-medium'>
+                  {cleanupPreview.docker?.images?.size ?? '未知'}，可回收{' '}
+                  {cleanupPreview.docker?.images?.reclaimable ?? '未知'}
+                </div>
+              </div>
+              <div>
+                <div className='text-muted-foreground'>构建缓存</div>
+                <div className='font-medium'>
+                  {cleanupPreview.docker?.build_cache?.size ?? '未知'}，可回收{' '}
+                  {cleanupPreview.docker?.build_cache?.reclaimable ?? '未知'}
+                </div>
+              </div>
+              <div>
+                <div className='text-muted-foreground'>本次候选</div>
+                <div className='font-medium'>
+                  {cleanupPreview.rollback_images?.candidate_count ?? 0}{' '}
+                  个回滚镜像，{cleanupPreview.backups?.candidate_count ?? 0}{' '}
+                  个备份
+                </div>
+              </div>
+            </div>
+          )}
+
+          {status?.last_cleanup && (
+            <div className='text-muted-foreground mt-3 text-sm'>
+              上次清理释放 {formatBytes(status.last_cleanup.freed_bytes)}，删除{' '}
+              {status.last_cleanup.removed_rollback_images} 个回滚镜像和{' '}
+              {status.last_cleanup.removed_backups} 个备份。
+            </div>
+          )}
+
+          <div className='mt-4 flex flex-wrap gap-2'>
+            <Button
+              type='button'
+              variant='secondary'
+              onClick={() => void refreshCleanupPreview()}
+              disabled={!updaterEnabled || updaterRunning || cleanupLoading}
+            >
+              <RefreshCcwIcon className='me-2 h-4 w-4' />
+              {cleanupLoading ? '正在读取...' : '刷新清理预览'}
+            </Button>
+            <Button
+              type='button'
+              variant='destructive'
+              onClick={() => void handleOpenCleanupConfirm()}
+              disabled={!updaterEnabled || updaterRunning || cleanupLoading}
+            >
+              <Trash2Icon className='me-2 h-4 w-4' />
+              执行安全清理
+            </Button>
+          </div>
+        </div>
+
+        <ConfirmDialog
+          open={cleanupConfirmOpen}
+          onOpenChange={setCleanupConfirmOpen}
+          title='执行服务器空间清理？'
+          desc={`${cleanupDescription}。当前预览包含 ${cleanupPreview?.rollback_images?.candidate_count ?? 0} 个回滚镜像和 ${cleanupPreview?.backups?.candidate_count ?? 0} 个备份。`}
+          confirmText='确认清理'
+          destructive
+          isLoading={cleanupLoading}
+          disabled={!canStartCleanup}
+          handleConfirm={handleStartCleanup}
+        />
+
         <ConfirmDialog
           open={confirmOpen}
           onOpenChange={(open) => {
@@ -506,13 +804,13 @@ export function UpdateCheckerSection({
                 )
               : pendingIsPrepareMerge
                 ? '这会在服务器独立 staging worktree 中合并 QuantumNous/new-api 官方上游，运行检查和构建验证，成功后推送到当前定制分支。它不会在生产目录直接执行 merge；完成后你还需要执行 new-api 单独更新来部署已验证提交。'
-              : pendingOperation?.component === 'all'
-                ? t(
-                    'This will update new-api, GPT-Load, CLIProxyAPI, and CPA Manager Plus together while preserving separate backups for each component.'
-                  )
-                : t(
-                    'This will update only the selected component and create a component-specific rollback point.'
-                  )
+                : pendingOperation?.component === 'all'
+                  ? t(
+                      'This will update new-api, GPT-Load, CLIProxyAPI, and CPA Manager Plus together while preserving separate backups for each component.'
+                    )
+                  : t(
+                      'This will update only the selected component and create a component-specific rollback point.'
+                    )
           }
           confirmText={
             pendingIsRollback
@@ -552,7 +850,9 @@ export function UpdateCheckerSection({
             </div>
             <div>
               <div className='text-muted-foreground'>{t('Last message')}</div>
-              <div className='font-medium'>{status?.message || t('Unknown')}</div>
+              <div className='font-medium'>
+                {status?.message || t('Unknown')}
+              </div>
             </div>
             {status?.started_at && (
               <div>
@@ -571,16 +871,17 @@ export function UpdateCheckerSection({
                 </div>
               </div>
             )}
-            {status?.current_backup_id && status.current_backup_id !== 'latest' && (
-              <div>
-                <div className='text-muted-foreground'>{t('Backup ID')}</div>
-                <div className='font-medium'>{status.current_backup_id}</div>
-              </div>
-            )}
+            {status?.current_backup_id &&
+              status.current_backup_id !== 'latest' && (
+                <div>
+                  <div className='text-muted-foreground'>{t('Backup ID')}</div>
+                  <div className='font-medium'>{status.current_backup_id}</div>
+                </div>
+              )}
             {status?.current_staging_dir && (
               <div>
                 <div className='text-muted-foreground'>Staging 目录</div>
-                <div className='break-all font-medium'>
+                <div className='font-medium break-all'>
                   {status.current_staging_dir}
                 </div>
               </div>
@@ -767,7 +1068,7 @@ function CommitInfoBlock({
   return (
     <div className='rounded-md border p-3'>
       <div className='text-muted-foreground'>{label}</div>
-      <div className='mt-1 break-words font-medium'>{displayVersion}</div>
+      <div className='mt-1 font-medium break-words'>{displayVersion}</div>
       {shortCommit && (
         <div className='text-muted-foreground mt-1 font-mono text-xs'>
           {shortCommit}

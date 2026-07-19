@@ -55,6 +55,19 @@ UPSTREAM_MERGE_PUSH = env_flag("GLART_STACK_UPSTREAM_MERGE_PUSH", True)
 GO_TEST_IMAGE = os.environ.get("GLART_STACK_GO_TEST_IMAGE", "golang:1.26.1")
 VALID_UPDATE_COMPONENTS = {"all", "new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
 VALID_ROLLBACK_COMPONENTS = {"new-api", "gpt-load", "cliproxyapi", "cpa-manager-plus"}
+CLEANUP_KEEP_ROLLBACK_IMAGES = int(os.environ.get("GLART_STACK_CLEANUP_KEEP_ROLLBACK_IMAGES", "5"))
+CLEANUP_KEEP_BACKUPS = int(os.environ.get("GLART_STACK_CLEANUP_KEEP_BACKUPS", "5"))
+CLEANUP_BUILD_CACHE_MAX_AGE_HOURS = int(
+    os.environ.get("GLART_STACK_CLEANUP_BUILD_CACHE_MAX_AGE_HOURS", "168")
+)
+CLEANUP_MIN_KEEP = 1
+CLEANUP_MAX_KEEP = 20
+CLEANUP_MIN_CACHE_AGE_HOURS = 24
+CLEANUP_MAX_CACHE_AGE_HOURS = 24 * 90
+ROLLBACK_TAG_PATTERN = re.compile(r"^\d{8}-\d{6}$")
+ROLLBACK_IMAGE_REPOSITORIES = {
+    f"glart/rollback-{component}": component for component in VALID_ROLLBACK_COMPONENTS
+}
 
 state_lock = threading.Lock()
 upstream_cache_lock = threading.Lock()
@@ -72,6 +85,7 @@ state = {
     "current_component": "",
     "current_backup_id": "",
     "current_staging_dir": "",
+    "last_cleanup": None,
     "log_tail": [],
 }
 
@@ -523,6 +537,315 @@ def normalize_component(value: object, valid_components: set[str], default: str)
     return component
 
 
+def bounded_int(value: object, default: int, minimum: int, maximum: int, name: str) -> int:
+    if value is None or value == "":
+        value = default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return parsed
+
+
+def cleanup_policy(payload: dict | None = None) -> dict:
+    payload = payload or {}
+
+    def boolean(name: str, default: bool) -> bool:
+        value = payload.get(name, default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+            return value.strip().lower() == "true"
+        raise ValueError(f"{name} must be a boolean")
+
+    return {
+        "keep_rollback_images": bounded_int(
+            payload.get("keep_rollback_images"),
+            CLEANUP_KEEP_ROLLBACK_IMAGES,
+            CLEANUP_MIN_KEEP,
+            CLEANUP_MAX_KEEP,
+            "keep_rollback_images",
+        ),
+        "keep_backups": bounded_int(
+            payload.get("keep_backups"),
+            CLEANUP_KEEP_BACKUPS,
+            CLEANUP_MIN_KEEP,
+            CLEANUP_MAX_KEEP,
+            "keep_backups",
+        ),
+        "build_cache_max_age_hours": bounded_int(
+            payload.get("build_cache_max_age_hours"),
+            CLEANUP_BUILD_CACHE_MAX_AGE_HOURS,
+            CLEANUP_MIN_CACHE_AGE_HOURS,
+            CLEANUP_MAX_CACHE_AGE_HOURS,
+            "build_cache_max_age_hours",
+        ),
+        "prune_dangling_images": boolean("prune_dangling_images", True),
+        "prune_build_cache": boolean("prune_build_cache", True),
+    }
+
+
+def directory_size(path: Path) -> int:
+    total = 0
+    if not path.exists():
+        return total
+    for child in path.rglob("*"):
+        try:
+            if child.is_file():
+                total += child.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def docker_json_lines(args: list[str]) -> list[dict]:
+    ok, output = run_command(["docker", *args], ROOT, 60)
+    if not ok:
+        append_log(f"[{now()}] docker query failed: {output}")
+        return []
+    rows = []
+    for line in output.splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            rows.append(value)
+    return rows
+
+
+def docker_system_df() -> dict:
+    rows = docker_json_lines(["system", "df", "--format", "{{json .}}"])
+    result = {}
+    for row in rows:
+        row_type = str(row.get("Type") or "").lower().replace(" ", "_")
+        if not row_type:
+            continue
+        result[row_type] = {
+            "total": row.get("TotalCount", "0"),
+            "active": row.get("Active", "0"),
+            "size": row.get("Size", "0B"),
+            "reclaimable": row.get("Reclaimable", "0B"),
+        }
+    return result
+
+
+def rollback_image_candidates(keep: int) -> list[dict]:
+    rows = docker_json_lines(["image", "ls", "--format", "{{json .}}"])
+    grouped: dict[str, list[dict]] = {component: [] for component in VALID_ROLLBACK_COMPONENTS}
+    for row in rows:
+        repository = str(row.get("Repository") or "")
+        tag = str(row.get("Tag") or "")
+        component = ROLLBACK_IMAGE_REPOSITORIES.get(repository)
+        if not component or not ROLLBACK_TAG_PATTERN.fullmatch(tag):
+            continue
+        grouped[component].append(
+            {
+                "component": component,
+                "repository": repository,
+                "tag": tag,
+                "reference": f"{repository}:{tag}",
+                "created_at": str(row.get("CreatedAt") or ""),
+            }
+        )
+
+    candidates = []
+    for images in grouped.values():
+        images.sort(key=lambda item: (item["tag"], item["created_at"]), reverse=True)
+        candidates.extend(images[keep:])
+    return candidates
+
+
+def backup_candidates(keep: int) -> list[dict]:
+    candidates = []
+    for component in sorted(VALID_ROLLBACK_COMPONENTS):
+        component_dir = BACKUP_DIR / component
+        if not component_dir.exists():
+            continue
+        entries = [
+            path
+            for path in component_dir.iterdir()
+            if path.is_dir()
+            and not path.is_symlink()
+            and ROLLBACK_TAG_PATTERN.fullmatch(path.name)
+        ]
+        entries.sort(key=lambda item: item.name, reverse=True)
+        for path in entries[keep:]:
+            candidates.append(
+                {
+                    "component": component,
+                    "id": path.name,
+                    "path": path,
+                    "bytes": directory_size(path),
+                }
+            )
+    return candidates
+
+
+def disk_usage() -> dict:
+    usage = shutil.disk_usage(ROOT)
+    used = usage.total - usage.free
+    return {
+        "total_bytes": usage.total,
+        "used_bytes": used,
+        "free_bytes": usage.free,
+        "used_percent": round((used / usage.total) * 100, 2) if usage.total else 0,
+    }
+
+
+def cleanup_plan(policy: dict) -> dict:
+    rollback = rollback_image_candidates(policy["keep_rollback_images"])
+    backups = backup_candidates(policy["keep_backups"])
+    return {
+        "rollback_images": rollback,
+        "backups": backups,
+    }
+
+
+def cleanup_preview(policy: dict | None = None) -> dict:
+    policy = policy or cleanup_policy()
+    plan = cleanup_plan(policy)
+    rollback_by_component = {
+        component: sum(1 for item in plan["rollback_images"] if item["component"] == component)
+        for component in VALID_ROLLBACK_COMPONENTS
+    }
+    backup_by_component = {
+        component: sum(1 for item in plan["backups"] if item["component"] == component)
+        for component in VALID_ROLLBACK_COMPONENTS
+    }
+    backup_bytes = sum(item["bytes"] for item in plan["backups"])
+    return {
+        "enabled": bool(TOKEN),
+        "checked_at": now(),
+        "policy": policy,
+        "disk": disk_usage(),
+        "docker": docker_system_df(),
+        "rollback_images": {
+            "candidate_count": len(plan["rollback_images"]),
+            "by_component": rollback_by_component,
+        },
+        "backups": {
+            "candidate_count": len(plan["backups"]),
+            "estimated_bytes": backup_bytes,
+            "by_component": backup_by_component,
+        },
+        "estimated_backup_reclaimable_bytes": backup_bytes,
+    }
+
+
+def cleanup_command(cmd: list[str], timeout: int = 120) -> tuple[bool, str]:
+    append_log(f"[{now()}] + {format_cmd(cmd)}")
+    ok, output = run_command(cmd, ROOT, timeout)
+    for line in output.splitlines():
+        append_log(line)
+    return ok, output
+
+
+def run_cleanup_operation(policy: dict) -> None:
+    set_state(
+        running=True,
+        started_at=now(),
+        finished_at="",
+        last_exit=None,
+        message="cleanup running",
+        current_action="cleanup",
+        current_component="",
+        current_backup_id="",
+        current_staging_dir="",
+        log_tail=[],
+    )
+    try:
+        errors = []
+        before = cleanup_preview(policy)
+        plan = cleanup_plan(policy)
+        removed_rollback_images = 0
+        removed_backups = 0
+
+        for item in plan["rollback_images"]:
+            ok, output = cleanup_command(["docker", "image", "rm", item["reference"]])
+            if ok:
+                removed_rollback_images += 1
+            else:
+                errors.append(f"rollback image {item['reference']}: {output}")
+
+        for item in plan["backups"]:
+            try:
+                target = resolved(item["path"])
+                backup_root = resolved(BACKUP_DIR)
+                if not is_relative_to(target, backup_root) or target == backup_root:
+                    raise RuntimeError("backup path escaped backup root")
+                shutil.rmtree(target)
+                removed_backups += 1
+            except Exception as exc:
+                errors.append(f"backup {item['component']}/{item['id']}: {exc}")
+
+        dangling_pruned = False
+        if policy["prune_dangling_images"]:
+            ok, output = cleanup_command(["docker", "image", "prune", "--force"])
+            dangling_pruned = ok
+            if not ok:
+                errors.append(f"dangling images: {output}")
+
+        build_cache_pruned = False
+        if policy["prune_build_cache"]:
+            ok, output = cleanup_command(
+                [
+                    "docker",
+                    "builder",
+                    "prune",
+                    "--force",
+                    "--filter",
+                    f"until={policy['build_cache_max_age_hours']}h",
+                ],
+                300,
+            )
+            build_cache_pruned = ok
+            if not ok:
+                errors.append(f"build cache: {output}")
+
+        after = cleanup_preview(policy)
+        result = {
+            "completed_at": now(),
+            "removed_rollback_images": removed_rollback_images,
+            "removed_backups": removed_backups,
+            "dangling_images_pruned": dangling_pruned,
+            "build_cache_pruned": build_cache_pruned,
+            "free_bytes_before": before["disk"]["free_bytes"],
+            "free_bytes_after": after["disk"]["free_bytes"],
+            "freed_bytes": max(0, after["disk"]["free_bytes"] - before["disk"]["free_bytes"]),
+            "errors": errors,
+            "preview": after,
+        }
+        set_state(
+            running=False,
+            last_exit=1 if errors else 0,
+            finished_at=now(),
+            message="cleanup completed" if not errors else "cleanup completed with errors",
+            last_cleanup=result,
+        )
+    except Exception as exc:
+        append_log(f"[{now()}] cleanup failed: {exc}")
+        set_state(
+            running=False,
+            last_exit=1,
+            finished_at=now(),
+            message=f"cleanup failed: {exc}",
+            last_cleanup={
+                "completed_at": now(),
+                "removed_rollback_images": 0,
+                "removed_backups": 0,
+                "dangling_images_pruned": False,
+                "build_cache_pruned": False,
+                "free_bytes_before": 0,
+                "free_bytes_after": 0,
+                "freed_bytes": 0,
+                "errors": [str(exc)],
+            },
+        )
+
+
 def list_backups(component: str) -> dict:
     component = normalize_component(component, VALID_ROLLBACK_COMPONENTS, "new-api")
     component_dir = BACKUP_DIR / component
@@ -960,6 +1283,18 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/precheck":
             self.write_json(precheck())
             return
+        if parsed.path == "/cleanup/preview":
+            params = parse_qs(parsed.query)
+            payload = {
+                key: values[-1]
+                for key, values in params.items()
+                if values
+            }
+            try:
+                self.write_json(cleanup_preview(cleanup_policy(payload)))
+            except ValueError as exc:
+                self.write_json({"message": str(exc)}, 400)
+            return
         if parsed.path == "/backups":
             params = parse_qs(parsed.query)
             try:
@@ -980,6 +1315,25 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/smoke":
             self.write_json(smoke())
+            return
+        if parsed.path == "/cleanup":
+            try:
+                policy = cleanup_policy(parse_json_body(self))
+            except ValueError as exc:
+                self.write_json({"message": str(exc)}, 400)
+                return
+            with state_lock:
+                if state["running"]:
+                    self.write_json(snapshot(), 409)
+                    return
+                state["running"] = True
+            threading.Thread(
+                target=run_cleanup_operation,
+                args=(policy,),
+                daemon=True,
+            ).start()
+            time.sleep(0.2)
+            self.write_json(snapshot())
             return
         if parsed.path == "/update":
             try:

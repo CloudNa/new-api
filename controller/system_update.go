@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type glartStackUpdaterStatus struct {
 	CurrentComponent  string                    `json:"current_component,omitempty"`
 	CurrentBackupID   string                    `json:"current_backup_id,omitempty"`
 	CurrentStagingDir string                    `json:"current_staging_dir,omitempty"`
+	LastCleanup       *glartStackCleanupResult  `json:"last_cleanup,omitempty"`
 	LogTail           []string                  `json:"log_tail,omitempty"`
 	Upstream          *glartStackUpstreamStatus `json:"upstream,omitempty"`
 }
@@ -111,6 +113,52 @@ type glartStackBackups struct {
 	Message   string             `json:"message,omitempty"`
 }
 
+type glartStackCleanupPolicy struct {
+	KeepRollbackImages    int  `json:"keep_rollback_images"`
+	KeepBackups           int  `json:"keep_backups"`
+	BuildCacheMaxAgeHours int  `json:"build_cache_max_age_hours"`
+	PruneDanglingImages   bool `json:"prune_dangling_images"`
+	PruneBuildCache       bool `json:"prune_build_cache"`
+}
+
+type glartStackDiskUsage struct {
+	TotalBytes  int64   `json:"total_bytes"`
+	UsedBytes   int64   `json:"used_bytes"`
+	FreeBytes   int64   `json:"free_bytes"`
+	UsedPercent float64 `json:"used_percent"`
+}
+
+type glartStackDockerUsage struct {
+	Total       string `json:"total"`
+	Active      string `json:"active"`
+	Size        string `json:"size"`
+	Reclaimable string `json:"reclaimable"`
+}
+
+type glartStackCleanupPreview struct {
+	Enabled                         bool                             `json:"enabled"`
+	CheckedAt                       string                           `json:"checked_at,omitempty"`
+	Policy                          glartStackCleanupPolicy          `json:"policy"`
+	Disk                            glartStackDiskUsage              `json:"disk"`
+	Docker                          map[string]glartStackDockerUsage `json:"docker,omitempty"`
+	RollbackImages                  map[string]any                   `json:"rollback_images,omitempty"`
+	Backups                         map[string]any                   `json:"backups,omitempty"`
+	EstimatedBackupReclaimableBytes int64                            `json:"estimated_backup_reclaimable_bytes"`
+}
+
+type glartStackCleanupResult struct {
+	CompletedAt           string                    `json:"completed_at,omitempty"`
+	RemovedRollbackImages int                       `json:"removed_rollback_images"`
+	RemovedBackups        int                       `json:"removed_backups"`
+	DanglingImagesPruned  bool                      `json:"dangling_images_pruned"`
+	BuildCachePruned      bool                      `json:"build_cache_pruned"`
+	FreeBytesBefore       int64                     `json:"free_bytes_before"`
+	FreeBytesAfter        int64                     `json:"free_bytes_after"`
+	FreedBytes            int64                     `json:"freed_bytes"`
+	Errors                []string                  `json:"errors,omitempty"`
+	Preview               *glartStackCleanupPreview `json:"preview,omitempty"`
+}
+
 type systemUpdateStartRequest struct {
 	Component string `json:"component,omitempty"`
 }
@@ -119,6 +167,14 @@ type systemUpdateRollbackRequest struct {
 	Component      string `json:"component,omitempty"`
 	BackupID       string `json:"backup_id,omitempty"`
 	RestoreRuntime bool   `json:"restore_runtime,omitempty"`
+}
+
+type systemCleanupRequest struct {
+	KeepRollbackImages    *int  `json:"keep_rollback_images,omitempty"`
+	KeepBackups           *int  `json:"keep_backups,omitempty"`
+	BuildCacheMaxAgeHours *int  `json:"build_cache_max_age_hours,omitempty"`
+	PruneDanglingImages   *bool `json:"prune_dangling_images,omitempty"`
+	PruneBuildCache       *bool `json:"prune_build_cache,omitempty"`
 }
 
 var validSystemUpdateComponents = map[string]bool{
@@ -207,6 +263,32 @@ func callGlartStackUpdaterBackups(component string) (*glartStackBackups, int, er
 	return backups, code, err
 }
 
+func callGlartStackUpdaterCleanupPreview(request systemCleanupRequest) (*glartStackCleanupPreview, int, error) {
+	preview := &glartStackCleanupPreview{}
+	params := url.Values{}
+	if request.KeepRollbackImages != nil {
+		params.Set("keep_rollback_images", fmt.Sprintf("%d", *request.KeepRollbackImages))
+	}
+	if request.KeepBackups != nil {
+		params.Set("keep_backups", fmt.Sprintf("%d", *request.KeepBackups))
+	}
+	if request.BuildCacheMaxAgeHours != nil {
+		params.Set("build_cache_max_age_hours", fmt.Sprintf("%d", *request.BuildCacheMaxAgeHours))
+	}
+	if request.PruneDanglingImages != nil {
+		params.Set("prune_dangling_images", strconv.FormatBool(*request.PruneDanglingImages))
+	}
+	if request.PruneBuildCache != nil {
+		params.Set("prune_build_cache", strconv.FormatBool(*request.PruneBuildCache))
+	}
+	path := "/cleanup/preview"
+	if encoded := params.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	code, err := callGlartStackUpdaterJSON(http.MethodGet, path, nil, preview, 30)
+	return preview, code, err
+}
+
 func callGlartStackUpdaterJSON(method string, path string, body []byte, target any, defaultTimeoutSeconds int) (int, error) {
 	updaterURL, token, enabled := glartStackUpdaterConfig()
 	if !enabled {
@@ -223,6 +305,8 @@ func callGlartStackUpdaterJSON(method string, path string, body []byte, target a
 		case *glartStackBackups:
 			value.Enabled = false
 			value.Message = "Glart stack updater is not configured"
+		case *glartStackCleanupPreview:
+			value.Enabled = false
 		}
 		return http.StatusOK, nil
 	}
@@ -255,6 +339,8 @@ func callGlartStackUpdaterJSON(method string, path string, body []byte, target a
 		value.Enabled = true
 	case *glartStackBackups:
 		value.Enabled = true
+	case *glartStackCleanupPreview:
+		value.Enabled = true
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -284,6 +370,8 @@ func callGlartStackUpdaterJSON(method string, path string, body []byte, target a
 				value.Message = fmt.Sprintf("Updater returned HTTP %d", resp.StatusCode)
 				message = value.Message
 			}
+		case *glartStackCleanupPreview:
+			message = "Glart stack cleanup preview failed"
 		}
 		return resp.StatusCode, errors.New(message)
 	}
@@ -444,6 +532,87 @@ func ListSystemUpdateBackups(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    backups,
+	})
+}
+
+func PreviewSystemCleanup(c *gin.Context) {
+	request := systemCleanupRequest{}
+	if value := c.Query("keep_rollback_images"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "keep_rollback_images must be an integer"})
+			return
+		}
+		request.KeepRollbackImages = &parsed
+	}
+	if value := c.Query("keep_backups"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "keep_backups must be an integer"})
+			return
+		}
+		request.KeepBackups = &parsed
+	}
+	if value := c.Query("build_cache_max_age_hours"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "build_cache_max_age_hours must be an integer"})
+			return
+		}
+		request.BuildCacheMaxAgeHours = &parsed
+	}
+	if value := c.Query("prune_dangling_images"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "prune_dangling_images must be a boolean"})
+			return
+		}
+		request.PruneDanglingImages = &parsed
+	}
+	if value := c.Query("prune_build_cache"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "prune_build_cache must be a boolean"})
+			return
+		}
+		request.PruneBuildCache = &parsed
+	}
+	preview, _, err := callGlartStackUpdaterCleanupPreview(request)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+			"data":    preview,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": preview})
+}
+
+func StartSystemCleanup(c *gin.Context) {
+	request := systemCleanupRequest{}
+	if err := decodeOptionalSystemUpdateRequest(c, &request); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	body, err := common.Marshal(request)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	status, _, err := callGlartStackUpdater(http.MethodPost, "/cleanup", body)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+			"data":    status,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Cleanup task started",
+		"data":    status,
 	})
 }
 

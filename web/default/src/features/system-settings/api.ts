@@ -163,6 +163,31 @@ export async function getSystemUpdateBackups(
   }
 }
 
+export async function getSystemCleanupPreview(
+  request: Partial<SystemCleanupRequest> = {}
+) {
+  const res = await api.get('/api/system_update/cleanup/preview', {
+    params: request,
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemCleanupPreview
+  }
+}
+
+export async function startSystemCleanup(request: SystemCleanupRequest = {}) {
+  const res = await api.post('/api/system_update/cleanup', request, {
+    disableDuplicate: true,
+  })
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: SystemUpdateStatus
+  }
+}
+
 export async function getCompressionSettings() {
   const res = await api.get('/api/settings/compression')
   return res.data as {
@@ -326,8 +351,70 @@ export type SystemUpdateStatus = {
   current_component?: SystemUpdateComponent
   current_backup_id?: string
   current_staging_dir?: string
+  last_cleanup?: SystemCleanupResult | null
   log_tail?: string[]
   upstream?: SystemUpdateUpstreamStatus
+}
+
+export type SystemCleanupRequest = {
+  keep_rollback_images?: number
+  keep_backups?: number
+  build_cache_max_age_hours?: number
+  prune_dangling_images?: boolean
+  prune_build_cache?: boolean
+}
+
+export type SystemCleanupPreview = {
+  enabled: boolean
+  checked_at?: string
+  policy: Required<
+    Pick<
+      SystemCleanupRequest,
+      | 'keep_rollback_images'
+      | 'keep_backups'
+      | 'build_cache_max_age_hours'
+      | 'prune_dangling_images'
+      | 'prune_build_cache'
+    >
+  >
+  disk: {
+    total_bytes: number
+    used_bytes: number
+    free_bytes: number
+    used_percent: number
+  }
+  docker?: Record<
+    string,
+    {
+      total: string
+      active: string
+      size: string
+      reclaimable: string
+    }
+  >
+  rollback_images?: {
+    candidate_count: number
+    by_component?: Record<string, number>
+  }
+  backups?: {
+    candidate_count: number
+    estimated_bytes: number
+    by_component?: Record<string, number>
+  }
+  estimated_backup_reclaimable_bytes: number
+}
+
+export type SystemCleanupResult = {
+  completed_at?: string
+  removed_rollback_images: number
+  removed_backups: number
+  dangling_images_pruned: boolean
+  build_cache_pruned: boolean
+  free_bytes_before: number
+  free_bytes_after: number
+  freed_bytes: number
+  errors?: string[]
+  preview?: SystemCleanupPreview
 }
 
 export type SystemUpdateCommitInfo = {
